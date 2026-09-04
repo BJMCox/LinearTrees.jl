@@ -1,4 +1,4 @@
-using StableRNGs
+using StableRNGs, Statistics
 import DecisionTree
 
 @testset "exact linear data gives one lin root" begin
@@ -53,6 +53,43 @@ end
     td = fit_tree(X[rows, :], y[rows]; min_fit = 12, min_leaf = 6)
     @test predict(tw, X) ≈ predict(td, X) atol = 1e-8
     @test length(tw.nodes) == length(td.nodes)
+end
+
+@testset "integer weights equal duplication, every loss (spec line 779-780)" begin
+    # Before the fix, median_abs took an unweighted median of the stored (not
+    # duplicated) rows, so the IRLS epsilon floor moved when weights were
+    # non-uniform: MAD and Quantile disagreed with duplication by ~1.8e-3 and
+    # ~1.9e-3 (measured interactively at FIX_BASE) despite the other losses
+    # already agreeing to 1e-11 or tighter.
+    rng = StableRNG(8)
+    n = 60
+    X = rand(rng, n, 2); y = X[:, 1] .+ 0.3 .* randn(rng, n)
+    w = Float64.(rand(rng, 1:3, n))
+    rows = reduce(vcat, [fill(i, Int(w[i])) for i in 1:n])
+    for (loss, yy) in ((MSE(), y), (Logistic(), Float64.(y .> median(y))),
+                       (Poisson(), Float64.(round.(Int, abs.(y) .* 3))),
+                       (MAD(), y), (Quantile(0.7), y))
+        tw = fit_tree(X, yy, loss; weights = w)
+        td = fit_tree(X[rows, :], yy[rows], loss)
+        @test maximum(abs.(predict(tw, X) .- predict(td, X))) < 1e-8
+    end
+end
+
+@testset "median_abs is a weighted median (I5)" begin
+    # Unit weights must reproduce Statistics.median for both parities; general
+    # weights must match Statistics.median on the row-duplicated data, which
+    # is the actual invariant fit_tree needs (spec line 779-780).
+    rng = StableRNG(78)
+    for m in 1:12
+        r = randn(rng, m)
+        @test LinearTrees.median_abs(r, ones(m)) ≈ median(abs.(r))
+    end
+    for _ in 1:50
+        m = rand(rng, 3:15)
+        r = randn(rng, m); w = Float64.(rand(rng, 1:4, m))
+        dup = reduce(vcat, [fill(r[i], Int(w[i])) for i in 1:m])
+        @test LinearTrees.median_abs(r, w) ≈ median(abs.(dup))
+    end
 end
 
 @testset "stopping rules" begin

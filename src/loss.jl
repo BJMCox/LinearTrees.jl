@@ -168,7 +168,7 @@ the current fit and bias the step; `l1weight` gives that row its correct
 one-sided weight (`τ` or `1-τ`) instead.
 """
 function irls_weights!(h::AbstractVector{T}, loss::Union{Quantile,MAD}, y::AbstractVector, f::AbstractVector;
-        ε = max(T(1e-3) * median_abs(y .- f), sqrt(eps(T)) * max(maximum(abs, y), one(T)))) where {T}
+        ε = max(irls_epsilon(y .- f, ones(T, length(y))), sqrt(eps(T)) * max(maximum(abs, y), one(T)))) where {T}
     r = y .- f
     for i in eachindex(h)
         h[i] = max(l1weight(loss, r[i]) / max(abs(r[i]), ε), T(HMIN))
@@ -176,7 +176,41 @@ function irls_weights!(h::AbstractVector{T}, loss::Union{Quantile,MAD}, y::Abstr
     return h
 end
 
-median_abs(r) = (a = sort(abs.(r)); m = length(a); isodd(m) ? a[(m + 1) ÷ 2] : (a[m ÷ 2] + a[m ÷ 2 + 1]) / 2)
+"""
+    median_abs(r, w)
+
+Weighted median of `abs.(r)` by `w`: sort by `|r|` and walk the cumulative
+weight, returning the value where it first reaches half the total, or the
+average with the next value when the half-point lands exactly on a block
+boundary -- the same tie a plain median takes on `r` duplicated `w[i]` times
+per row, when that duplicated count is even. With unit weights this is
+`Statistics.median(abs.(r))`; unlike an unweighted median of the stored
+(undeplicated) rows, it makes integer weights equal row duplication for the
+non-smooth losses (spec line 779-780).
+"""
+function median_abs(r::AbstractVector, w::AbstractVector)
+    a = abs.(r)
+    o = sortperm(a)
+    total = sum(w)
+    half = total / 2
+    cw = zero(total)
+    for (k, i) in enumerate(o)
+        cw += w[i]
+        cw > half && return a[i]
+        cw == half && return (a[i] + a[o[k + 1]]) / 2   # boundary lands exactly at half: average with the next value
+    end
+end
+
+"""
+    irls_epsilon(r, w)
+
+`1e-3` times the weighted median of `|r|` by `w`: the residual-scale half of
+the ε floor IRLS uses everywhere it re-solves the pseudo-hessian for a
+non-smooth loss. Written once here rather than copied at each call site
+(`irls_weights!`'s own default, `node_epsilon`, `irls_refit`); each caller
+still adds its own `sqrt(eps(T))` floor scaled by `y`'s own magnitude.
+"""
+irls_epsilon(r::AbstractVector{T}, w::AbstractVector) where {T} = T(1e-3) * median_abs(r, w)
 
 """
     l1weight(loss, r)

@@ -121,7 +121,7 @@ end
 # `ε` for IRLS is computed once over the whole `rows` set so a chunked pass
 # matches the serial one exactly; smooth losses ignore it.
 node_epsilon(st::FitState{T}, rows) where {T} = issmooth(st.loss) ? zero(T) :
-    max(T(1e-3) * median_abs(view(st.y, rows) .- view(st.f, rows)),
+    max(irls_epsilon(view(st.y, rows) .- view(st.f, rows), view(st.w, rows)),
         sqrt(eps(T)) * max(maximum(abs, view(st.y, rows)), one(T)))
 
 function refresh_chunk!(st::FitState, rows, ε)
@@ -430,11 +430,14 @@ function irls_refit(st::FitState{T,V}, n::Node{T,V}, rows, niter, masks::Vector{
             end
             resid[k] = st.z[i] - pred
         end
-        ε = max(T(1e-3) * median_abs(resid), sqrt(eps(T)) * yscale)
+        ε = max(irls_epsilon(resid, view(st.w, rows)), sqrt(eps(T)) * yscale)
         left = zero(MomentSums{V}); right = zero(MomentSums{V})
         for (k, i) in enumerate(rows)
             r = resid[k]
-            hi = st.w[i] * l1weight(st.loss, r) / max(abs(r), ε)
+            # floor the unweighted pseudo-hessian at HMIN before scaling by st.w[i],
+            # the same order irls_weights! applies it in, so a zero-weight row can't
+            # be the only thing keeping a non-smooth refit's Hessian away from zero
+            hi = st.w[i] * max(l1weight(st.loss, r) / max(abs(r), ε), oftype(r, HMIN))
             if n.model == CON
                 left = addrow(left, zero(T), st.z[i], hi)
             else
