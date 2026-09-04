@@ -19,6 +19,7 @@ using LinearAlgebra
     include("scan.jl")
     include("fit.jl")
     include("fit_losses.jl")
+    include("pilot_reference.jl")
     include("categorical.jl")
     include("softmax.jl")
     include("threads.jl")
