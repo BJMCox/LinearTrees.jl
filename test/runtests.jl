@@ -30,4 +30,5 @@ using LinearAlgebra
     include("serialize.jl")
     include("statsapi.jl")
     include("mlj.jl")
+    include("allocations.jl")
 end
