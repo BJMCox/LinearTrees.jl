@@ -260,8 +260,9 @@ deviance(loss::Loss, y, f, w) = 2 * sum(w[i] * pointloss(loss, y[i], f[i]) for i
     scorebound(loss, y; truncation_factor=3)
 
 `(lo, hi)` score-scale clamp bounds fit to the training target `y`, used when
-`fit_tree`'s `truncate` is set. `truncation_factor` widens the data-derived
-range by that multiple of its half-width.
+`fit_tree`'s `truncate` is set. With half-width `B = (max(y) - min(y)) / 2`,
+`truncation_factor` pads each side by `(truncation_factor - 1) * B`, so the
+bounds are `[min(y) - (truncation_factor - 1) B, max(y) + (truncation_factor - 1) B]`.
 """
 function scorebound(::Union{MSE,Huber,Quantile,MAD}, y; truncation_factor = 3)
     lo, hi = extrema(y)

@@ -198,7 +198,7 @@ end
 
 const AnyFit = Union{LinearTreeRegressorFit,LinearTreeClassifierFit}
 
-"Number of training rows kept after dropping zero-weight rows."
+"Number of rows passed to `fit`, zero-weight rows included."
 StatsAPI.nobs(m::AnyFit) = length(m.y)
 
 "Training row weights, as stored (ones when `fit` was called with no `weights`)."

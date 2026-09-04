@@ -19,6 +19,7 @@ LIN
 PCON
 BLIN
 PLIN
+MomentSums
 ```
 
 ## Selection rules
@@ -71,7 +72,6 @@ coeftable
 shap
 shap!
 ShapResult
-MomentSums
 ```
 
 ## StatsAPI and Tables.jl

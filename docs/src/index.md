@@ -18,6 +18,7 @@ See the [Guide](@ref) for model kinds, selection, and truncation, and
 
 ```julia
 using LinearTrees
+using AbstractTrees     # for print_tree
 
 X = rand(1000, 4)
 y = sin.(3 .* X[:, 1]) .+ 2 .* X[:, 2] .* (X[:, 3] .> 0.5) .+ 0.05 .* randn(1000)

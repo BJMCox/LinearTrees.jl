@@ -24,9 +24,10 @@ with `f` the raw score.
 | [`Tweedie`](@ref)`(ρ)` | `μ^(2-ρ) - y μ^(1-ρ)` | `(2-ρ)μ^(2-ρ) - (1-ρ) y μ^(1-ρ)` | log | `[-S, S]` |
 
 `[lo, hi]` comes from [`scorebound`](@ref) applied to the training target;
-`S = log(max(maximum(y), 1)) + 3` for the log-link losses. Every `h` is
-floored to `1e-6` after weighting (see `HMIN` in the source) so a node's
-summed Hessian stays strictly positive.
+`S = log(max(maximum(y), 1)) + 3` for the log-link losses. Every unweighted
+row Hessian is floored to `1e-6` (see `HMIN` in the source) before frequency
+weights are applied, so a zero or tiny weight still scales down from a
+strictly positive floor rather than from zero.
 
 `Softmax(K)` uses the diagonal of the true reference-logit Hessian,
 `diag(p) - p pᵀ` restricted to its diagonal: a per-class approximation, not

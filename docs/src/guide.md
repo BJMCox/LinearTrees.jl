@@ -29,23 +29,23 @@ lowest-scoring candidate.
 The default rule is [`BIC`](@ref), the PILOT selection rule:
 
 ```
-score = n * log(surrogate_deviance / n) + dof(kind) * log(n)
+score = n * log(surrogate_deviance / n) + dof(kind) * ncoord * log(n)
 ```
 
-`n = Σ w` over the node, and `dof` is `(1, 2, 5, 5, 7)` for
-`(con, lin, pcon, blin, plin)` by default. Lower `score` wins. For `MSE` the
-surrogate deviance is the residual sum of squares; for every other loss it is
-the second-order Taylor expansion of the deviance around the node's current
-score, which keeps each candidate `O(1)` to score. The rule is a field of
-`BIC`, so a custom `dof` tuple can be passed per loss:
-`BIC(dof = (1.0, 2.0, 5.0, 5.0, 7.0))`.
+`n = Σ w` over the node, `ncoord` is `K-1` for a `Softmax(K)` fit and 1
+otherwise, and `dof` is `(1, 2, 5, 5, 7)` for `(con, lin, pcon, blin, plin)`
+by default. Lower `score` wins. For `MSE` the surrogate deviance is the
+residual sum of squares; for every other loss it is the second-order Taylor
+expansion of the deviance around the node's current score, which keeps each
+candidate `O(1)` to score. `dof` is a field of the `BIC` instance, so a
+custom tuple can be passed: `BIC(dof = (1.0, 2.0, 5.0, 5.0, 7.0))`.
 
 A node stops splitting (becomes a leaf) when `CON` wins, when its total weight
-falls below `min_fit`, when it reaches `max_depth`, or when its summed
-Hessian falls below `min_sum_hessian`. There is no pruning pass. A guard,
-`max_lin_chain`, caps consecutive `LIN` fits along one root-to-node path (a
-`LIN` node adds no depth, so without this cap a chain of near-collinear
-features could recurse indefinitely).
+falls below `min_fit`, when it reaches `max_depth`, when its summed Hessian
+falls below `min_sum_hessian`, or when it has reached `max_lin_chain`
+consecutive `LIN` fits along its root-to-node path. There is no pruning pass.
+The `max_lin_chain` guard exists because a `LIN` node adds no depth, so
+without it a chain of near-collinear features could recurse indefinitely.
 
 ## Truncation
 
