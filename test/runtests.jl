@@ -23,4 +23,5 @@ using LinearAlgebra
     include("softmax.jl")
     include("threads.jl")
     include("importance.jl")
+    include("shap.jl")
 end
