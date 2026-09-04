@@ -116,10 +116,10 @@ the split-node list entirely, since `CON` is always a leaf on both sides
 
 ## Tie rule
 
-Ours: lowest feature index first, then lowest threshold. `src/fit.jl:242`
+Ours: lowest feature index first, then lowest threshold. `src/fit.jl:257`
 scans features in ascending order and only replaces `best` on a strictly
 lower score (`c.score < best.score`), so the first (lowest-index) feature
-keeps a tie; the parallel reduction at `src/fit.jl:277` restores that same
+keeps a tie; the parallel reduction at `src/fit.jl:282` restores that same
 lowest-feature-index tie-break explicitly, so the result does not depend
 on task completion order. Within a feature, `src/scan.jl`'s left-to-right
 sweep keeps the same way: the first (lowest) threshold that achieves the

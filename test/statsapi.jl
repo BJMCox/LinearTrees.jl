@@ -70,4 +70,10 @@ end
     end
     outn = LinearTrees.encode(enc, df)
     @test out1 == outn
+    # Minor 10: encode's own nthreads keyword, not just the row-count gate
+    @test LinearTrees.encode(enc, df; nthreads = 1) == outn
+    y = x .+ 0.1 .* randn(rng, n)
+    m1 = fit(LinearTreeRegressorFit, df, y; nthreads = 1)
+    mn = fit(LinearTreeRegressorFit, df, y)
+    @test m1.tree.nodes == mn.tree.nodes
 end

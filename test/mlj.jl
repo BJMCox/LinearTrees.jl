@@ -1,13 +1,13 @@
 using MLJBase, MLJTestInterface, CategoricalArrays, StableRNGs, Statistics
 
 @testset "MLJ generic interface tests" begin
-    fails, summary = MLJTestInterface.test([LinearTreeRegressor], MLJTestInterface.make_regression()...;
+    fails, _ = MLJTestInterface.test([LinearTreeRegressor], MLJTestInterface.make_regression()...;
         mod = @__MODULE__, verbosity = 0, throw = true)
     @test isempty(fails)
-    fails, summary = MLJTestInterface.test([LinearTreeClassifier], MLJTestInterface.make_multiclass()...;
+    fails, _ = MLJTestInterface.test([LinearTreeClassifier], MLJTestInterface.make_multiclass()...;
         mod = @__MODULE__, verbosity = 0, throw = true)
     @test isempty(fails)
-    fails, summary = MLJTestInterface.test([LinearTreeClassifier], MLJTestInterface.make_binary()...;
+    fails, _ = MLJTestInterface.test([LinearTreeClassifier], MLJTestInterface.make_binary()...;
         mod = @__MODULE__, verbosity = 0, throw = true)
     @test isempty(fails)
 end
@@ -18,6 +18,7 @@ end
     y = 3 .* X.a .+ 0.1 .* randn(rng, 200)
     mach = machine(LinearTreeRegressor(loss = Quantile(0.9)), X, y) |> fit!
     yhat = MLJBase.predict(mach, X)   # `predict` is ambiguous: LinearTrees and MLJBase both export it
+    @test length(yhat) == 200 && all(isfinite, yhat)
     imps = feature_importances(mach)
     @test first(imps).first == :a
     @test fitted_params(mach).tree isa LinearTree

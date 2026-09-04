@@ -276,7 +276,8 @@ pointloss(::MSE, y, f) = (y - f)^2 / 2
 pointloss(l::Huber, y, f) = (r = y - f; abs(r) <= l.δ ? r^2 / 2 : l.δ * (abs(r) - l.δ / 2))
 pointloss(l::Quantile, y, f) = (r = y - f; r >= 0 ? l.τ * r : (l.τ - 1) * r)
 pointloss(::MAD, y, f) = abs(y - f)
-pointloss(::Logistic, y, f) = log1p(exp(f)) - y * f
+# stable softplus: log1p(exp(f)) overflows to Inf past f = 709, where the true value is ≈ f
+pointloss(::Logistic, y, f) = (f > 0 ? f + log1p(exp(-f)) : log1p(exp(f))) - y * f
 pointloss(::Poisson, y, f) = exp(f) - y * f
 pointloss(::Gamma, y, f) = y * exp(-f) + f
 pointloss(l::Tweedie, y, f) = (μ = exp(f); ρ = l.ρ; -y * μ^(1 - ρ) / (1 - ρ) + μ^(2 - ρ) / (2 - ρ))

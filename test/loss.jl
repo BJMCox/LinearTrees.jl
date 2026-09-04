@@ -95,5 +95,9 @@ end
     @test scorebound(Poisson(), [0.0, 5.0]) == (-(log(5) + 3), log(5) + 3)
     @test scorebound(Poisson(), [0.0, 0.0]) == (-3.0, 3.0)
     @test deviance(MSE(), [1.0, 2.0], [0.0, 0.0], ones(2)) == 5.0    # Σ 2ℓ = Σ r²
+    # Minor 1: log1p(exp(f)) alone overflows to Inf past f = 709, where the true
+    # deviance is ≈ 0 since y == 1 makes the loss f - y*f = f - f in the f > 0 limit
+    @test isfinite(deviance(Logistic(), [1.0], [800.0], [1.0]))
+    @test deviance(Logistic(), [1.0], [800.0], [1.0]) ≈ 0 atol = 1e-6
     @test linkinv(Logistic(), 0.0) == 0.5 && linkinv(Poisson(), 0.0) == 1.0
 end

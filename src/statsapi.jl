@@ -52,23 +52,23 @@ function TableEncoder(table, unseen)
     return TableEncoder(names, categorical, levels, unseen)
 end
 
-function encode(::TableEncoder, X::AbstractMatrix)
+function encode(::TableEncoder, X::AbstractMatrix; nthreads = Threads.nthreads())
     any(ismissing, X) && throw(ArgumentError("missing values are not supported"))
     return Matrix{Float64}(X)
 end
 
 """
-    encode(enc, table) -> Matrix{Float64}
+    encode(enc, table; nthreads=Threads.nthreads()) -> Matrix{Float64}
 
 Apply `enc`'s stored level maps to `table`. Columns are independent, so the
-column loop threads when there are at least `PARALLEL_MIN_ROWS` rows; each
-column writes only its own slice of the output.
+column loop threads when there are at least `PARALLEL_MIN_ROWS` rows and
+`nthreads > 1`; each column writes only its own slice of the output.
 """
-function encode(enc::TableEncoder, table)
+function encode(enc::TableEncoder, table; nthreads = Threads.nthreads())
     cols = Tables.columns(table)
     n = length(Tables.getcolumn(cols, enc.names[1]))
     out = Matrix{Float64}(undef, n, length(enc.names))
-    if n >= PARALLEL_MIN_ROWS
+    if nthreads > 1 && n >= PARALLEL_MIN_ROWS
         Threads.@threads for j in eachindex(enc.names)
             encode_column!(out, enc, cols, j)
         end
@@ -160,17 +160,19 @@ from a matrix or Tables.jl table `X` and a target `y`. `kwargs` forward to
 [`fit_tree`](@ref). `unseen` is `:error` (default) or `:right`, applied to a
 categorical level absent from training at predict time.
 """
-function StatsAPI.fit(::Type{LinearTreeRegressorFit}, X, y; loss::Loss = MSE(), weights = nothing, unseen = :error, kwargs...)
+function StatsAPI.fit(::Type{LinearTreeRegressorFit}, X, y; loss::Loss = MSE(), weights = nothing, unseen = :error,
+        nthreads = Threads.nthreads(), kwargs...)
     enc = TableEncoder(X, unseen)
-    Xm = encode(enc, X)
+    Xm = encode(enc, X; nthreads)
     w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
-    tree = fit_tree(Xm, y, loss; weights = w, categorical = enc.categorical, kwargs...)
+    tree = fit_tree(Xm, y, loss; weights = w, categorical = enc.categorical, nthreads, kwargs...)
     return LinearTreeRegressorFit(tree, enc, Xm, Vector{Float64}(y), w)
 end
 
-function StatsAPI.fit(::Type{LinearTreeClassifierFit}, X, y; weights = nothing, unseen = :error, kwargs...)
+function StatsAPI.fit(::Type{LinearTreeClassifierFit}, X, y; weights = nothing, unseen = :error,
+        nthreads = Threads.nthreads(), kwargs...)
     enc = TableEncoder(X, unseen)
-    Xm = encode(enc, X)
+    Xm = encode(enc, X; nthreads)
     sorted = sort(unique(y))
     # `Vector{eltype(sorted)}`, not `collect`: a `CategoricalArray`'s own `sort`/`unique`
     # stay `CategoricalArray`-typed (not a `Vector`, so it can't match the struct's
@@ -183,7 +185,7 @@ function StatsAPI.fit(::Type{LinearTreeClassifierFit}, X, y; weights = nothing, 
     w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
     loss = K == 2 ? Logistic() : Softmax(K)
     ytarget = K == 2 ? Float64.(yi .== 1) : yi
-    tree = fit_tree(Xm, ytarget, loss; weights = w, categorical = enc.categorical, kwargs...)
+    tree = fit_tree(Xm, ytarget, loss; weights = w, categorical = enc.categorical, nthreads, kwargs...)
     return LinearTreeClassifierFit(tree, enc, Xm, yi, w, classes)
 end
 

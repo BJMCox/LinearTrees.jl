@@ -12,7 +12,7 @@ end
     x = collect(1.0:40.0); z = [i <= 20 ? 0.0 : 5.0 for i in 1:40]
     c = LinearTrees.scan_feature(x, z, ones(40), ones(40), BIC(), 5, 1e-12)
     @test c.kind == PCON
-    @test c.threshold == 20.0 && c.nleft == 20
+    @test c.threshold == 20.0
     @test c.lintercept ≈ 0 && c.rintercept ≈ 5
 end
 
@@ -32,10 +32,10 @@ end
     x = sort(randn(rng, 30)); z = randn(rng, 30)
     c = LinearTrees.scan_feature(x, z, ones(30), ones(30), BIC(), 5, 1e-12)
     @test c.kind == CON
-    # min_leaf = 15 leaves exactly one legal split position
+    # min_leaf = 15 leaves exactly one legal split position: at x = 15
     z2 = [i <= 15 ? 0.0 : 5.0 for i in 1:30]
     c2 = LinearTrees.scan_feature(collect(1.0:30.0), z2, ones(30), ones(30), MinDeviance((PCON,)), 15, 1e-12)
-    @test c2.nleft == 15
+    @test c2.threshold == 15.0
 end
 
 @testset "scan with MinDeviance never returns con" begin

@@ -21,3 +21,9 @@ end
     @test LinearTrees.selection_score(r, PCON, 3.0, 10.0, 1e-12) == 3.0
     @test LinearTrees.selection_score(r, CON, 0.0, 10.0, 1e-12) == Inf
 end
+
+@testset "GainRule raises ArgumentError, not a bare error (Minor 17)" begin
+    r = GainRule(0.1)
+    @test_throws ArgumentError LinearTrees.allowed(r, CON)
+    @test_throws ArgumentError LinearTrees.selection_score(r, CON, 1.0, 10.0, 1e-12)
+end

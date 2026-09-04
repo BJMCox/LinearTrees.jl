@@ -30,7 +30,7 @@ function allowed(r::MinDeviance, k::ModelKind)
     end
     return false
 end
-allowed(::GainRule, ::ModelKind) = error("GainRule is reserved for boosting")
+allowed(::GainRule, ::ModelKind) = throw(ArgumentError("GainRule is reserved for boosting"))
 
 # `ncoord` is the number of coefficient coordinates (K-1 for softmax, 1 otherwise):
 # every model kind fits `ncoord` times its scalar parameter count, so the BIC
@@ -46,4 +46,4 @@ end
     return isfinite(surrogate) ? Float64(surrogate) : Inf
 end
 
-selection_score(::GainRule, args...) = error("GainRule is reserved for boosting")
+selection_score(::GainRule, args...) = throw(ArgumentError("GainRule is reserved for boosting"))
