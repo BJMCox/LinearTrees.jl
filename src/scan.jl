@@ -16,10 +16,11 @@ struct Candidate{T,V}
     nleft::Int
 end
 
-"`zero(V) .+ Inf` gives `Inf` for scalar `V` and an all-`Inf` `SVector` for a vector `V`."
+"Number of coefficient coordinates: `K-1` for softmax, 1 otherwise."
 ncoord(::Type{<:Real}) = 1
 ncoord(::Type{V}) where {V<:SVector} = length(V)
 
+"`zero(V) .+ Inf` gives `Inf` for scalar `V` and an all-`Inf` `SVector` for a vector `V`."
 nocandidate(::Type{T}, ::Type{V}) where {T,V} =
     Candidate{T,V}(CON, T(NaN), zero(V), zero(V), zero(V), zero(V), zero(V) .+ Inf, Inf, 0)
 
