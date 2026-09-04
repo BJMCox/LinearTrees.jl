@@ -214,6 +214,7 @@ function grow!(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, linchain::Int
     if best.kind == LIN
         st.nodes[me] = Node{T,V}(; feature = bestj, threshold = T(NaN), lcoef = best.lcoef, lintercept = best.lintercept,
             rcoef = best.lcoef, rintercept = best.lintercept, xmin, xmax, cover = nw, xmean, model = LIN)
+        refit_node!(st, me, rows)
         update_score!(st, rows, me); refresh!(st, rows)
         child = grow!(st, rows, depth, linchain + 1)
         st.nodes[me] = Node{T,V}(st.nodes[me]; left = child, right = child)
@@ -225,12 +226,65 @@ function grow!(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, linchain::Int
     end
     st.nodes[me] = Node{T,V}(; feature = bestj, threshold = best.threshold, lcoef = best.lcoef, lintercept = best.lintercept,
         rcoef = best.rcoef, rintercept = best.rintercept, xmin, xmax, cover = nw, xmean, model = best.kind)
+    refit_node!(st, me, rows)
     update_score!(st, rows, me)
     refresh!(st, rows)
     left = grow!(st, leftrows, depth + 1, 0)
     right = grow!(st, rightrows, depth + 1, 0)
     st.nodes[me] = Node{T,V}(st.nodes[me]; left, right)
     return me
+end
+
+"""
+IRLS refit of one node's own coefficients on its own rows. `niter` passes:
+each recomputes the residual against the node's current fit, the scale-aware
+`ε`, and the L1-majorizer weight, then re-solves the node's model kind.
+Serial: this is one node's `MomentSums` reduction, not worth threading.
+"""
+function irls_refit!(st::FitState{T,V}, me::Integer, rows, niter) where {T,V}
+    n = st.nodes[me]
+    n.model == CON && return st
+    j = n.feature
+    resid = Vector{V}(undef, length(rows))
+    yscale = max(maximum(abs, view(st.y, rows)), one(T))
+    for _ in 1:niter
+        for (k, i) in enumerate(rows)
+            x = st.X[i, j]
+            goleft = n.model == LIN || x <= n.threshold
+            pred = goleft ? n.lcoef * x + n.lintercept : n.rcoef * x + n.rintercept
+            resid[k] = st.z[i] - pred
+        end
+        ε = max(T(1e-3) * median_abs(resid), sqrt(eps(T)) * yscale)
+        left = zero(MomentSums{V}); right = zero(MomentSums{V})
+        for (k, i) in enumerate(rows)
+            x = st.X[i, j]
+            goleft = n.model == LIN || x <= n.threshold
+            r = resid[k]
+            hi = st.w[i] * l1weight(st.loss, r) / max(abs(r), ε)
+            if n.model != LIN && !goleft
+                right = addrow(right, x, st.z[i], hi)
+            else
+                left = addrow(left, x, st.z[i], hi)
+            end
+        end
+        if n.model == LIN
+            r = fit_lin(left); r === nothing && break
+            a, b, _ = r
+            n = Node{T,V}(n; lcoef = a, lintercept = b, rcoef = a, rintercept = b)
+        elseif n.model == PCON
+            bl = fit_con(left)[1]; br = fit_con(right)[1]
+            n = Node{T,V}(n; lintercept = bl, rintercept = br)
+        elseif n.model == PLIN
+            rl = fit_lin(left); rr = fit_lin(right)
+            (rl === nothing || rr === nothing) && break
+            n = Node{T,V}(n; lcoef = rl[1], lintercept = rl[2], rcoef = rr[1], rintercept = rr[2])
+        else # BLIN
+            r = fit_blin(left, right, n.threshold); r === nothing && break
+            n = Node{T,V}(n; lcoef = r[1], lintercept = r[2], rcoef = r[3], rintercept = r[4])
+        end
+    end
+    st.nodes[me] = n
+    return st
 end
 
 function node_sums(st::FitState{T,V}, rows) where {T,V}

@@ -93,6 +93,24 @@ end
 
 median_abs(r) = (a = sort(abs.(r)); m = length(a); isodd(m) ? a[(m + 1) ÷ 2] : (a[m ÷ 2] + a[m ÷ 2 + 1]) / 2)
 
+"""
+    l1weight(loss, r)
+
+Majorizer weight on residual `r` for the L1-type losses: flat for MAD,
+`τ`/`1-τ` for the pinball loss above/below zero.
+"""
+l1weight(::MAD, r) = one(r)
+l1weight(l::Quantile, r) = r >= 0 ? oftype(r, l.τ) : oftype(r, 1 - l.τ)
+
+"""
+    refit_node!(st, me, rows, niter=5)
+
+IRLS refinement of a non-smooth node's coefficients on its own rows. Each
+iteration recomputes the pseudo-hessian at the current node prediction and
+re-solves the chosen model kind. Smooth losses return immediately.
+"""
+refit_node!(st, me, rows, niter = 5) = issmooth(st.loss) ? st : irls_refit!(st, me, rows, niter)
+
 # ---- init score ------------------------------------------------------------
 wmean(y, w) = sum(w .* y) / sum(w)
 
