@@ -105,6 +105,9 @@ function encode_column!(out::Matrix{Float64}, enc::TableEncoder, cols, j)
 end
 
 "Turn a single feature row `x` into what `encode(enc, ...)` expects: a `1 × p` matrix for a pass-through encoder, a one-row table otherwise."
+# `isempty(enc.categorical)` stands in for "pass-through or table without
+# categorical columns": both encode a matrix identically, since the matrix
+# method never reads names or levels. Revisit if a third encoder kind appears.
 reshape_row(enc::TableEncoder, x::AbstractVector) = isempty(enc.categorical) ? reshape(collect(x), 1, length(x)) :
     NamedTuple{Tuple(enc.names)}(Tuple(Any[v] for v in x))
 
