@@ -15,5 +15,6 @@ include("show.jl")
 include("serialize.jl")
 
 export ModelKind, CON, LIN, PCON, BLIN, PLIN, Node, LinearTree, MomentSums, MSE
+export score, predict, predict!
 
 end

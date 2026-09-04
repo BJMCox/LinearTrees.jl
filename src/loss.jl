@@ -5,3 +5,5 @@ A twice-differentiable or IRLS-approximated loss. Implement `gradhess!`,
 abstract type Loss end
 
 struct MSE <: Loss end
+
+linkinv(::MSE, s) = s

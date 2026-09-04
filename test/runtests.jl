@@ -11,4 +11,5 @@ using JET
         JET.test_package(LinearTrees)
     end
     include("node.jl")
+    include("predict.jl")
 end
