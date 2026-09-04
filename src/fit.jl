@@ -292,7 +292,7 @@ end
 leafnode(st::FitState{T,V}, rows, b) where {T,V} =
     Node{T,V}(; lintercept = b, cover = sum(view(st.w, rows)))
 
-"Row-count gate for sibling-subtree parallelism: a node above this depth may spawn its two children as separate tasks."
+"Depth gate for sibling-subtree parallelism: a node shallower than this may spawn its two children as separate tasks."
 const SUBTREE_PARALLEL_DEPTH = 3
 
 """
@@ -300,7 +300,7 @@ Add `idxoff` to every non-zero child index and `maskoff` to every non-zero
 `catstart` in `nodes`. Used by the splice step to relocate a subtree's local
 node vector and mask words into the parent's growing ones.
 """
-function shift(nodes::Vector{Node{T,V}}, idxoff::Int32, maskoff::Int32) where {T,V}
+function shift_subtree(nodes::Vector{Node{T,V}}, idxoff::Int32, maskoff::Int32) where {T,V}
     return [Node{T,V}(n; left = n.left == 0 ? Int32(0) : n.left + idxoff,
                         right = n.right == 0 ? Int32(0) : n.right + idxoff,
                         catstart = n.catwords == 0 ? Int32(0) : n.catstart + maskoff) for n in nodes]
@@ -350,7 +350,7 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, lincha
         update_score!(st, rows, me); refresh!(st, rows)
         cnodes, cmasks = grow_subtree(st, rows, depth, linchain + 1, tids)
         me = Node{T,V}(me; left = Int32(2), right = Int32(2))
-        nodes = vcat(Node{T,V}[me], shift(cnodes, Int32(1), Int32(0)))
+        nodes = vcat(Node{T,V}[me], shift_subtree(cnodes, Int32(1), Int32(0)))
         return nodes, cmasks
     end
     masks = UInt64[]
@@ -382,7 +382,7 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, lincha
     me = Node{T,V}(me; left = Int32(2), right = Int32(2) + nleft)
     # `masks` (this node's own mask, if any) lands first in `allmasks`, so lnodes'
     # and rnodes' catstart values shift by however many mask words precede them.
-    nodes = vcat(Node{T,V}[me], shift(lnodes, Int32(1), nmine), shift(rnodes, Int32(1) + nleft, nmine + nlmasks))
+    nodes = vcat(Node{T,V}[me], shift_subtree(lnodes, Int32(1), nmine), shift_subtree(rnodes, Int32(1) + nleft, nmine + nlmasks))
     allmasks = vcat(masks, lmasks, rmasks)
     return nodes, allmasks
 end

@@ -155,7 +155,7 @@ l1weight(::MAD, r) = one(r)
 l1weight(l::Quantile, r) = r >= 0 ? oftype(r, l.τ) : oftype(r, 1 - l.τ)
 
 """
-    refit_node(st, n, rows, niter=5) -> Node
+    refit_node(st, n, rows, masks=UInt64[], niter=5) -> Node
 
 IRLS refinement of a non-smooth node's coefficients on its own rows, including
 `CON` leaves. Each iteration recomputes the pseudo-hessian at the current node
