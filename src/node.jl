@@ -67,10 +67,12 @@ end
 True when level code `code` (1-based) is in the node's left set.
 Codes beyond the mask route right, which is the unseen-level policy.
 """
-function category_is_left(tree::LinearTree, n::Node, code::Integer)
+function category_is_left(masks::Vector{UInt64}, n::Node, code::Integer)
     code < 1 && return false
     word = (code - 1) >> 6
     word >= n.catwords && return false
     bit = (code - 1) & 63
-    return (tree.catmasks[n.catstart + word] >> bit) & 0x1 == 0x1
+    return (masks[n.catstart + word] >> bit) & 0x1 == 0x1
 end
+
+category_is_left(tree::LinearTree, n::Node, code::Integer) = category_is_left(tree.catmasks, n, code)

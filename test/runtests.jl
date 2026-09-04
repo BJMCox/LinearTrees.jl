@@ -18,4 +18,5 @@ using JET
     include("scan.jl")
     include("fit.jl")
     include("fit_losses.jl")
+    include("categorical.jl")
 end

@@ -17,6 +17,8 @@ mutable struct FitState{T,V,L<:Loss,R<:SelectionRule}
     scratch::Vector{Scratch{T,V}}   # one per worker
     nodes::Vector{Node{T,V}}
     catmasks::Vector{UInt64}
+    categorical::Vector{Int}
+    nlevels::Vector{Int}
     loss::L
     rule::R
     lo::V; hi::V
@@ -37,7 +39,6 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         max_depth = 12, min_fit = 10, min_leaf = 5, min_sum_hessian = 1.0,
         max_lin_chain = 10, truncate = true, truncation_factor = 3,
         nthreads = Threads.nthreads())
-    isempty(categorical) || throw(ArgumentError("categorical features arrive in Task 9"))
     nthreads = clamp(nthreads, 1, Threads.nthreads())
     T = float(promote_type(eltype(X), eltype(y)))
     n, p = size(X)
@@ -50,6 +51,13 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     Xm = Matrix{T}(X[keep, :]); yv = Vector{T}(y[keep]); w = w[keep]
     n = length(keep)
     V = T
+    nlevels = zeros(Int, p)
+    for j in categorical
+        col = view(Xm, :, j)
+        all(x -> isfinite(x) && x >= 1 && x == round(x), col) ||
+            throw(ArgumentError("categorical column $j must hold integer codes >= 1"))
+        nlevels[j] = Int(maximum(col))
+    end
     f0 = V(initscore(loss, yv, w))
     lo, hi = truncate ? scorebound(loss, yv; truncation_factor) : (V(-Inf), V(Inf))
     f = fill(clampscore(f0, lo, hi), n)
@@ -57,7 +65,7 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     presort!(idx, Xm, nthreads)
     st = FitState{T,V,typeof(loss),typeof(rule)}(Xm, yv, w, f, zeros(V, n), zeros(V, n), zeros(V, n), idx,
         [Scratch{T,V}(n) for _ in 1:nthreads],
-        Node{T,V}[], UInt64[], loss, rule, lo, hi, max_depth, T(min_fit), T(min_leaf),
+        Node{T,V}[], UInt64[], collect(Int, categorical), nlevels, loss, rule, lo, hi, max_depth, T(min_fit), T(min_leaf),
         T(min_sum_hessian), max_lin_chain, truncate, nthreads)
     rows = collect(Int32(1):Int32(n))
     refresh!(st, rows)
@@ -136,19 +144,93 @@ function gather!(st::FitState, sc::Scratch, inrow::BitVector, j)
     return m
 end
 
-"Serial search over `features` using scratch set `tid`. Returns the best candidate and its feature."
-function best_split_serial(st::FitState{T,V}, rows, inrow::BitVector, dmin, features, tid) where {T,V}
-    sc = st.scratch[tid]
-    best = nocandidate(T, V); bestj = 0
-    for j in features
-        m = gather!(st, sc, inrow, j)
-        c = scan_feature(view(sc.xs, 1:m), view(sc.zs, 1:m), view(sc.hs, 1:m), view(sc.ws, 1:m),
-            st.rule, st.min_leaf, dmin)
-        if c.score < best.score
-            best = c; bestj = j
+"Wrap a rule so only `con` and `pcon` are offered, for categorical scans."
+struct PconOnly{R<:SelectionRule} <: SelectionRule
+    inner::R
+end
+allowed(r::PconOnly, k::ModelKind) = (k == CON || k == PCON) && allowed(r.inner, k)
+selection_score(r::PconOnly, k, s, n, dmin) = allowed(r, k) ? selection_score(r.inner, k, s, n, dmin) : Inf
+
+"""
+Order the node's levels by weighted mean working response, scan a `pcon`
+split over the ranks, and return the candidate plus the left level codes.
+Runs on the worker's own scratch `sc`, so it is safe inside the threaded
+feature search: no shared mutable state.
+"""
+function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin) where {T,V}
+    L = st.nlevels[j]
+    sz = zeros(V, L); sw = zeros(T, L)
+    for i in rows
+        c = Int(st.X[i, j]); sz[c] += st.h[i] * st.z[i]; sw[c] += st.h[i]
+    end
+    present = findall(>(0), sw)
+    length(present) < 2 && return nocandidate(T, V), Int[]
+    order = sort(present; by = c -> sz[c] / sw[c])
+    rank = zeros(Int32, L)
+    for (r, lc) in enumerate(order)
+        rank[lc] = r
+    end
+    # Bucket rows by level in one O(L + |rows|) counting-sort pass, then walk
+    # the buckets in rank order to fill the scratch. No O(L · |rows|) rescans.
+    counts = zeros(Int, L + 1)
+    for i in rows
+        counts[Int(st.X[i, j]) + 1] += 1
+    end
+    cumoffset = zeros(Int, L + 1)
+    for c in 1:L
+        cumoffset[c + 1] = cumoffset[c] + counts[c + 1]
+    end
+    cursor = copy(cumoffset)
+    bucketed = Vector{Int32}(undef, length(rows))
+    for i in rows
+        c = Int(st.X[i, j])
+        cursor[c] += 1
+        bucketed[cursor[c]] = i
+    end
+    m = 0
+    for lc in order
+        for k in (cumoffset[lc] + 1):cumoffset[lc + 1]
+            i = bucketed[k]
+            m += 1
+            sc.xs[m] = T(rank[lc]); sc.zs[m] = st.z[i]; sc.hs[m] = st.h[i]; sc.ws[m] = st.w[i]
         end
     end
-    return best, bestj
+    rule = st.rule isa MinDeviance ? st.rule : PconOnly(st.rule)
+    cand = scan_feature(view(sc.xs, 1:m), view(sc.zs, 1:m), view(sc.hs, 1:m), view(sc.ws, 1:m), rule, st.min_leaf, dmin)
+    cand.kind == PCON || return cand, Int[]
+    leftcodes = [lc for lc in order if rank[lc] <= cand.threshold]
+    return cand, leftcodes
+end
+
+"Append a packed left-level mask to the tree's mask pool. Returns its `(catstart, catwords)`."
+function push_mask!(st::FitState, leftcodes, L)
+    words = (L + 63) >> 6
+    start = length(st.catmasks) + 1
+    append!(st.catmasks, zeros(UInt64, words))
+    for c in leftcodes
+        st.catmasks[start + ((c - 1) >> 6)] |= UInt64(1) << ((c - 1) & 63)
+    end
+    return Int32(start), Int32(words)
+end
+
+"Serial search over `features` using scratch set `tid`. Returns the best candidate, its feature, and (for a categorical winner) its left level codes."
+function best_split_serial(st::FitState{T,V}, rows, inrow::BitVector, dmin, features, tid) where {T,V}
+    sc = st.scratch[tid]
+    best = nocandidate(T, V); bestj = 0; bestleft = Int[]
+    for j in features
+        if j in st.categorical
+            c, leftcodes = scan_categorical(st, sc, rows, j, dmin)
+        else
+            m = gather!(st, sc, inrow, j)
+            c = scan_feature(view(sc.xs, 1:m), view(sc.zs, 1:m), view(sc.hs, 1:m), view(sc.ws, 1:m),
+                st.rule, st.min_leaf, dmin)
+            leftcodes = Int[]
+        end
+        if c.score < best.score
+            best = c; bestj = j; bestleft = leftcodes
+        end
+    end
+    return best, bestj, bestleft
 end
 
 """
@@ -163,14 +245,14 @@ function best_split(st::FitState{T,V}, rows, inrow::BitVector, dmin) where {T,V}
     end
     chunks = collect(Iterators.partition(1:p, cld(p, st.nthreads)))
     tasks = [Threads.@spawn best_split_serial(st, rows, inrow, dmin, ch, tid) for (tid, ch) in enumerate(chunks)]
-    best = nocandidate(T, V); bestj = 0
+    best = nocandidate(T, V); bestj = 0; bestleft = Int[]
     for t in tasks
-        c, j = fetch(t)
+        c, j, lc = fetch(t)
         if c.score < best.score || (c.score == best.score && j != 0 && (bestj == 0 || j < bestj))
-            best = c; bestj = j
+            best = c; bestj = j; bestleft = lc
         end
     end
-    return best, bestj
+    return best, bestj, bestleft
 end
 
 function dmin_for(st::FitState, rows)
@@ -203,16 +285,21 @@ function grow!(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, linchain::Int
     end
     dmin = dmin_for(st, rows)
     inrow = falses(length(st.y)); inrow[rows] .= true
-    best, bestj = best_split(st, rows, inrow, dmin)
+    best, bestj, leftcodes = best_split(st, rows, inrow, dmin)
     if best.kind == CON || bestj == 0
         st.nodes[me] = leafnode(st, rows, best.kind == CON ? best.lintercept : fit_con(node_sums(st, rows))[1])
         refit_node!(st, me, rows)
         update_score!(st, rows, me)
         return me
     end
-    xj = view(st.X, rows, bestj)
-    xmin, xmax = extrema(xj)
-    xmean = sum(st.w[i] * st.X[i, bestj] for i in rows) / nw
+    iscat = bestj in st.categorical
+    if iscat
+        xmin = xmax = xmean = zero(T)
+    else
+        xj = view(st.X, rows, bestj)
+        xmin, xmax = extrema(xj)
+        xmean = sum(st.w[i] * st.X[i, bestj] for i in rows) / nw
+    end
     if best.kind == LIN
         st.nodes[me] = Node{T,V}(; feature = bestj, threshold = T(NaN), lcoef = best.lcoef, lintercept = best.lintercept,
             rcoef = best.lcoef, rintercept = best.lintercept, xmin, xmax, cover = nw, xmean, model = LIN)
@@ -222,19 +309,32 @@ function grow!(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, linchain::Int
         st.nodes[me] = Node{T,V}(st.nodes[me]; left = child, right = child)
         return me
     end
-    leftrows = Int32[]; rightrows = Int32[]
-    for i in rows
-        (st.X[i, bestj] <= best.threshold ? push!(leftrows, i) : push!(rightrows, i))
+    catstart = Int32(0); catwords = Int32(0); threshold = best.threshold
+    if iscat
+        catstart, catwords = push_mask!(st, leftcodes, st.nlevels[bestj])
+        threshold = T(NaN)
     end
-    st.nodes[me] = Node{T,V}(; feature = bestj, threshold = best.threshold, lcoef = best.lcoef, lintercept = best.lintercept,
-        rcoef = best.rcoef, rintercept = best.rintercept, xmin, xmax, cover = nw, xmean, model = best.kind)
+    st.nodes[me] = Node{T,V}(; feature = bestj, threshold, lcoef = best.lcoef, lintercept = best.lintercept,
+        rcoef = best.rcoef, rintercept = best.rintercept, xmin, xmax, cover = nw, xmean, model = best.kind,
+        catstart, catwords)
     refit_node!(st, me, rows)
     update_score!(st, rows, me)
     refresh!(st, rows)
+    n = st.nodes[me]
+    leftrows = Int32[]; rightrows = Int32[]
+    for i in rows
+        (goes_left(st, n, i) ? push!(leftrows, i) : push!(rightrows, i))
+    end
     left = grow!(st, leftrows, depth + 1, 0)
     right = grow!(st, rightrows, depth + 1, 0)
     st.nodes[me] = Node{T,V}(st.nodes[me]; left, right)
     return me
+end
+
+"True when row `i` is routed left by node `n`. Categorical nodes route by mask; others by threshold."
+function goes_left(st::FitState, n::Node, i)
+    iscategorical(n) && return category_is_left(st.catmasks, n, Int(st.X[i, n.feature]))
+    return n.model == LIN || st.X[i, n.feature] <= n.threshold
 end
 
 """
@@ -254,7 +354,7 @@ function irls_refit!(st::FitState{T,V}, me::Integer, rows, niter) where {T,V}
                 n.lintercept
             else
                 x = st.X[i, j]
-                goleft = n.model == LIN || x <= n.threshold
+                goleft = goes_left(st, n, i)
                 goleft ? n.lcoef * x + n.lintercept : n.rcoef * x + n.rintercept
             end
             resid[k] = st.z[i] - pred
@@ -268,7 +368,7 @@ function irls_refit!(st::FitState{T,V}, me::Integer, rows, niter) where {T,V}
                 left = addrow(left, zero(T), st.z[i], hi)
             else
                 x = st.X[i, j]
-                goleft = n.model == LIN || x <= n.threshold
+                goleft = goes_left(st, n, i)
                 if n.model != LIN && !goleft
                     right = addrow(right, x, st.z[i], hi)
                 else
@@ -316,7 +416,7 @@ function update_score!(st::FitState, rows, me::Integer)
         else
             x = st.X[i, n.feature]
             x = st.truncate ? min(max(x, n.xmin), n.xmax) : x
-            goleft = n.model == LIN || x <= n.threshold
+            goleft = goes_left(st, n, i)
             inc = goleft ? n.lcoef * x + n.lintercept : n.rcoef * x + n.rintercept
         end
         s = st.f[i] + inc
