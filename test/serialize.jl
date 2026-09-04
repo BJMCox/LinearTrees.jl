@@ -8,6 +8,7 @@ using StableRNGs, Serialization, JSON3
         @test d["nodes"] isa Vector && d["loss"] isa Dict
         t2 = from_dict(d)
         @test t2.nodes == t.nodes && t2.catmasks == t.catmasks && t2.loss == t.loss
+        @test t2.base == t.base   # I6: tree.base is the SHAP empty-coalition value, round-trips exactly
         @test LinearTrees.predict(t2, X) == LinearTrees.predict(t, X)
         io = IOBuffer(); serialize(io, t); seekstart(io)
         @test LinearTrees.predict(deserialize(io), X) == LinearTrees.predict(t, X)

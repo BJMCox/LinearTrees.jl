@@ -101,6 +101,21 @@ end
     @test res.base ≈ t.base atol = 1e-10
 end
 
+@testset "tree.base is the SHAP empty-coalition value on a general (asymmetric) tree (I6)" begin
+    # Before the fix, tree.base was the cover-weighted mean training score, not
+    # the empty-coalition value shap uses; the two differed by 28% on a 62-node
+    # tree with mixed lcoef/rcoef (measured interactively: 1.5016 vs 1.9255).
+    # The PCON-only tree above can't show this, since every lcoef == rcoef == 0
+    # there; this one has LIN/PLIN/BLIN nodes where the two genuinely differ.
+    rng = StableRNG(50)
+    X = rand(rng, 400, 4)
+    y = sin.(3 .* X[:, 1]) .+ 2 .* X[:, 2] .* (X[:, 3] .> 0.5) .+ X[:, 4] .^ 2 .+ 0.05 .* randn(rng, 400)
+    t = fit_tree(X, y; max_depth = 5)
+    @test t.base == LinearTrees.expected_score(t)
+    res = shap(t, X[1:5, :])
+    @test res.base == t.base
+end
+
 "Walk `tree.nodes` from the root; true if a LIN node's feature also splits an ancestor."
 function has_lin_under_same_feature(tree)
     found = false

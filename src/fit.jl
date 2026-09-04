@@ -80,7 +80,10 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     f0c = clampscore(f0, lo, hi)
     st.nodes[1] = Node{T,V}(st.nodes[1]; lintercept = st.nodes[1].lintercept + f0c,
         rintercept = st.nodes[1].rintercept + f0c)
-    base = sum(w .* st.f) / sum(w)      # SHAP base value: cover-weighted mean of the training score
+    # `expected_score` only reads `nodes`/`catmasks` (see shap.jl), so build once with
+    # a placeholder base to get the real one, the empty-coalition value (spec line 669-670)
+    prelim = LinearTree{T,V,typeof(loss)}(st.nodes, st.catmasks, loss, lo, hi, zero(V), p, truncate)
+    base = expected_score(prelim)
     return LinearTree{T,V,typeof(loss)}(st.nodes, st.catmasks, loss, lo, hi, base, p, truncate)
 end
 
