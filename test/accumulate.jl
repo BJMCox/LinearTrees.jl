@@ -43,3 +43,19 @@ end
     for i in 1:6; sc = LinearTrees.addrow(sc, 1.0, z[i], h[i]); end
     @test LinearTrees.fit_lin(sc) === nothing
 end
+
+@testset "fit_blin guard is scale invariant" begin
+    x = collect(range(-1, 1, length = 12)); z = 0.5 .* x .+ 0.01 .* sin.(7 .* x); t = 0.05
+    function sums(hscale)
+        sl = zero(MomentSums{Float64}); sr = zero(MomentSums{Float64})
+        for i in 1:6; sl = LinearTrees.addrow(sl, x[i], z[i], hscale); end
+        for i in 7:12; sr = LinearTrees.addrow(sr, x[i], z[i], hscale); end
+        return sl, sr
+    end
+    r1 = LinearTrees.fit_blin(sums(1.0)..., t)
+    r30 = LinearTrees.fit_blin(sums(1e-30)..., t)
+    @test r30 !== nothing
+    @test all(isapprox.(r1[1:4], r30[1:4]; rtol = 1e-6))
+    # empty right child is singular
+    @test LinearTrees.fit_blin(sums(1.0)[1], zero(MomentSums{Float64}), t) === nothing
+end

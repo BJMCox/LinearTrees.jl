@@ -45,9 +45,9 @@ Simple linear fit `a x + b`. Returns `nothing` when the Gram determinant is
 below `tol · sw · sxx`, which covers a constant feature.
 """
 @inline function fit_lin(s::MomentSums; tol = SINGULAR_TOL)
-    det = s.sw * s.sxx - s.sx * s.sx
-    det <= tol * s.sw * s.sxx && return nothing
-    a = (s.sw * s.sxz - s.sx * s.sz) / det
+    d = s.sw * s.sxx - s.sx * s.sx
+    d <= tol * s.sw * s.sxx && return nothing
+    a = (s.sw * s.sxz - s.sx * s.sz) / d
     b = (s.sz - a * s.sx) / s.sw
     rss = s.szz - a * s.sxz - b * s.sz
     return a, b, rss
@@ -69,7 +69,7 @@ surrogate deviance, or `nothing` when the `3×3` system is singular.
                   sxu    su    suu]
     m = @SVector [s.sxz, s.sz, suz]
     d = det(G)
-    abs(d) <= tol * s.sxx * s.sw * max(suu, eps(T)) && return nothing
+    abs(d) <= tol * s.sxx * s.sw * max(suu, eps(T) * s.sxx) && return nothing
     β = G \ m
     a, b, c = β[1], β[2], β[3]
     rss = s.szz - a * s.sxz - b * s.sz - c * suz
