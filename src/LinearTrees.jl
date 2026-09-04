@@ -26,6 +26,7 @@ export Loss, MSE, Huber, Quantile, MAD, Logistic, Poisson, NegBin, Gamma, Tweedi
 export AdaptedLoss, IdentityLink, LogitLink, LogLink, canonical_scale
 export gradhess!, linkinv, initscore, deviance, scorebound, validate_target, issmooth, irls_weights!
 export LinearTreeRegressorFit, LinearTreeClassifierFit
+export LinearTreeRegressor, LinearTreeClassifier
 export fit, nobs, dof, weights, residuals
 
 end

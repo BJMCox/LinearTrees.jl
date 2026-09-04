@@ -160,7 +160,12 @@ end
 function StatsAPI.fit(::Type{LinearTreeClassifierFit}, X, y; weights = nothing, unseen = :error, kwargs...)
     enc = TableEncoder(X, unseen)
     Xm = encode(enc, X)
-    classes = sort(unique(y))
+    sorted = sort(unique(y))
+    # `Vector{eltype(sorted)}`, not `collect`: a `CategoricalArray`'s own `sort`/`unique`
+    # stay `CategoricalArray`-typed (not a `Vector`, so it can't match the struct's
+    # `classes::Vector{C}` field), but converting element-by-element to a `Vector`
+    # keeps each `CategoricalValue` (and the pool it carries) intact.
+    classes = Vector{eltype(sorted)}(sorted)
     K = length(classes)
     code = Dict(c => i for (i, c) in enumerate(classes))
     yi = [code[v] for v in y]

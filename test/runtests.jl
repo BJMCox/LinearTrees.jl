@@ -26,4 +26,5 @@ using LinearAlgebra
     include("shap.jl")
     include("lossfunctions.jl")
     include("statsapi.jl")
+    include("mlj.jl")
 end
