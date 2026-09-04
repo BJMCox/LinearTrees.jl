@@ -13,6 +13,17 @@ using StatsAPI, Tables, CategoricalArrays, DataFrames, StableRNGs, Statistics
     @test b + a' * X[1, :] ≈ score(m.tree, X[1:1, :]; clip = false)[1]
 end
 
+@testset "fit(LinearTreeRegressorFit, table, y) rejects a non-finite numeric column" begin
+    rng = StableRNG(43)
+    n = 300
+    df = DataFrame(a = randn(rng, n), b = randn(rng, n))
+    y = df.a .+ 0.1 .* randn(rng, n)
+    dfnan = deepcopy(df); dfnan.a[5] = NaN
+    dfinf = deepcopy(df); dfinf.b[9] = Inf
+    @test_throws ArgumentError fit(LinearTreeRegressorFit, dfnan, y)
+    @test_throws ArgumentError fit(LinearTreeRegressorFit, dfinf, y)
+end
+
 @testset "tables with categorical columns and stable level maps" begin
     rng = StableRNG(28)
     n = 200

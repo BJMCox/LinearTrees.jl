@@ -49,6 +49,7 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     keep = findall(>(0), w)
     isempty(keep) && throw(ArgumentError("total weight must be positive"))
     Xm = Matrix{T}(X[keep, :]); yv = Vector{T}(y[keep]); w = w[keep]
+    all(isfinite, Xm) || throw(ArgumentError("X contains NaN or Inf"))
     n = length(keep)
     V = coeftype(loss, T)
     nlevels = zeros(Int, p)

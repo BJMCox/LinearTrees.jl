@@ -98,7 +98,9 @@ function encode_column!(out::Matrix{Float64}, enc::TableEncoder, cols, j)
         end
     else
         for i in eachindex(col)
-            out[i, j] = Float64(col[i])
+            v = Float64(col[i])
+            isfinite(v) || throw(ArgumentError("column $nm contains NaN or Inf"))
+            out[i, j] = v
         end
     end
     return out

@@ -65,6 +65,15 @@ end
     @test length(fit_tree(X, y; min_fit = 1000).nodes) == 1
 end
 
+@testset "fit_tree rejects non-finite X (spec line 228)" begin
+    rng = StableRNG(9)
+    X = rand(rng, 300, 3); y = X[:, 1] .+ 0.1 .* randn(rng, 300)
+    Xnan = copy(X); Xnan[7, 1] = NaN
+    Xinf = copy(X); Xinf[11, 2] = Inf
+    @test_throws ArgumentError fit_tree(Xnan, y)
+    @test_throws ArgumentError fit_tree(Xinf, y)
+end
+
 @testset "Float32 and Float64 fits agree (spec property test)" begin
     # A noise-free linear fixture hits the dmin floor exactly, where Float32
     # rounding of a near-zero RSS can flip the winning kind; this fixture adds
