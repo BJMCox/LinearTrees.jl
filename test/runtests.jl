@@ -8,7 +8,7 @@ using JET
         Aqua.test_all(LinearTrees)
     end
     @testset "Code linting (JET.jl)" begin
-        JET.test_package(LinearTrees; target_defined_modules = true)
+        JET.test_package(LinearTrees)
     end
-    # Write your tests here.
+    include("node.jl")
 end
