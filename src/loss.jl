@@ -1,3 +1,5 @@
+using StaticArrays
+
 """
 A twice-differentiable or IRLS-approximated loss. Implement `gradhess!`,
 `linkinv`, `initscore`, `deviance`, `scorebound`, and `validate_target`.
@@ -29,13 +31,43 @@ struct Tweedie <: Loss
     Tweedie(ρ::Real) = (1 < ρ < 2 || throw(ArgumentError("ρ must lie in (1, 2)")); new(Float64(ρ)))
 end
 
+"K-class softmax with class K as the reference at logit zero. Diagonal Hessian."
+struct Softmax <: Loss
+    K::Int
+    Softmax(K) = (K >= 2 || throw(ArgumentError("K must be at least 2")); new(Int(K)))
+end
+
 issmooth(::Loss) = true
 issmooth(::Union{Quantile,MAD}) = false
+
+"""
+    coeftype(loss, T)
+
+Coefficient type for `loss` given feature type `T`. `T` for every scalar
+loss, `SVector{K-1,T}` for `Softmax(K)`.
+"""
+coeftype(::Loss, ::Type{T}) where {T} = T
+coeftype(l::Softmax, ::Type{T}) where {T} = SVector{l.K - 1,T}
 
 # ---- links -----------------------------------------------------------------
 linkinv(::Union{MSE,Huber,Quantile,MAD}, s) = s
 linkinv(::Logistic, s) = 1 / (1 + exp(-s))
 linkinv(::Union{Poisson,NegBin,Gamma,Tweedie}, s) = exp(s)
+
+"""
+    probs(loss, s)
+
+`K` class probabilities from the `K-1` reference-class logits `s`, with
+class `K` fixed at logit zero. Shifts by `max(maximum(s), 0)` for overflow
+safety without changing the result.
+"""
+function probs(l::Softmax, s::SVector{Km1,T}) where {Km1,T}
+    m = max(maximum(s), zero(T))
+    e = exp.(s .- m); e0 = exp(-m)
+    z = sum(e) + e0
+    return vcat(e ./ z, SVector{1,T}(e0 / z))
+end
+linkinv(l::Softmax, s::SVector) = probs(l, s)
 
 # ---- pointwise gradient and hessian in the score --------------------------
 @inline gh(::MSE, y, f) = (f - y, one(f))
@@ -71,6 +103,23 @@ function gradhess!(g::AbstractVector, h::AbstractVector, loss::Loss, y::Abstract
         gi, hi = gh(loss, y[i], f[i])
         g[i] = gi
         h[i] = max(hi, oftype(hi, HMIN))
+    end
+    return g
+end
+
+"""
+    gradhess!(g, h, ::Softmax, y, f)
+
+Per-row cross-entropy gradient and diagonal Hessian against the `K-1`
+reference-class logits, with integer class labels `y` in `1:K`.
+"""
+function gradhess!(g::AbstractVector{V}, h::AbstractVector{V}, l::Softmax, y::AbstractVector, f::AbstractVector{V}) where {Km1,T,V<:SVector{Km1,T}}
+    for i in eachindex(g, h, y, f)
+        p = probs(l, f[i])
+        pk = SVector{Km1,T}(ntuple(k -> p[k], Km1))
+        onehot = SVector{Km1,T}(ntuple(k -> T(y[i] == k), Km1))
+        g[i] = pk .- onehot
+        h[i] = max.(pk .* (1 .- pk), T(HMIN))
     end
     return g
 end
@@ -140,6 +189,20 @@ end
 initscore(::Union{Poisson,NegBin,Tweedie}, y, w) = log(max(wmean(y, w), 1e-6))
 initscore(::Gamma, y, w) = log(wmean(y, w))
 
+"""
+    initscore(::Softmax, y, w)
+
+Log-odds of each non-reference class against the reference class `K`,
+from the weighted class frequencies.
+"""
+function initscore(l::Softmax, y, w)
+    T = float(eltype(w))
+    tot = sum(w)
+    pk = ntuple(k -> clamp(sum(w[i] for i in eachindex(y) if y[i] == k; init = zero(T)) / tot, 1e-6, 1.0), l.K)
+    ref = log(pk[l.K])
+    return SVector{l.K - 1,T}(ntuple(k -> log(pk[k]) - ref, l.K - 1))
+end
+
 # ---- true deviance for reporting ------------------------------------------
 pointloss(::MSE, y, f) = (y - f)^2 / 2
 pointloss(l::Huber, y, f) = (r = y - f; abs(r) <= l.δ ? r^2 / 2 : l.δ * (abs(r) - l.δ / 2))
@@ -152,6 +215,8 @@ pointloss(l::Tweedie, y, f) = (μ = exp(f); ρ = l.ρ; -y * μ^(1 - ρ) / (1 - �
 pointloss(l::NegBin, y, f) = (μ = exp(f); θ = l.θ; -y * log(μ / (μ + θ)) + θ * log1p(μ / θ))
 
 deviance(loss::Loss, y, f, w) = 2 * sum(w[i] * pointloss(loss, y[i], f[i]) for i in eachindex(y))
+deviance(l::Softmax, y, f::AbstractVector{<:SVector}, w) =
+    2 * sum(w[i] * -log(probs(l, f[i])[Int(y[i])]) for i in eachindex(y))
 
 # ---- score bounds ----------------------------------------------------------
 function scorebound(::Union{MSE,Huber,Quantile,MAD}, y; truncation_factor = 3)
@@ -165,6 +230,10 @@ function scorebound(::Union{Poisson,NegBin,Gamma,Tweedie}, y; truncation_factor 
     S = log(max(maximum(y), 1)) + 3
     return (-S, S)
 end
+function scorebound(l::Softmax, y; truncation_factor = 3)
+    T = eltype(y)
+    return (fill(T(-10), SVector{l.K - 1}), fill(T(10), SVector{l.K - 1}))
+end
 
 # ---- target validation -----------------------------------------------------
 function validate_target(loss::Loss, y)
@@ -177,3 +246,7 @@ _validate(::Logistic, y) = all(v -> v == 0 || v == 1, y) || throw(ArgumentError(
 _validate(::Union{Poisson,NegBin}, y) = all(v -> v >= 0 && isinteger(v), y) || throw(ArgumentError("count losses need non-negative integers"))
 _validate(::Gamma, y) = all(>(0), y) || throw(ArgumentError("Gamma needs positive targets"))
 _validate(::Tweedie, y) = all(>=(0), y) || throw(ArgumentError("Tweedie needs non-negative targets"))
+function _validate(l::Softmax, y)
+    all(v -> isinteger(v) && 1 <= v <= l.K, y) || throw(ArgumentError("Softmax($(l.K)) needs integer targets in 1:$(l.K)"))
+    all(k -> any(==(k), y), 1:l.K) || throw(ArgumentError("every class in 1:$(l.K) must be present"))
+end

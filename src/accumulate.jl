@@ -22,34 +22,44 @@ Base.:-(a::MomentSums{V}, b::MomentSums{V}) where {V} =
 Base.isapprox(a::MomentSums, b::MomentSums; kw...) =
     all(isapprox(getfield(a, k), getfield(b, k); kw...) for k in fieldnames(MomentSums))
 
-"Add one row. `h` and `z` have type `V`, `x` has the feature type."
+"""
+Add one row. `h` and `z` have type `V`, `x` has the feature type. `h * x` and
+`hx * x` scale a `V` by the scalar feature value, which `*` already does for
+`SVector`; `h * z` and `z * z` multiply two `V`s elementwise, which needs `.*`
+since `SVector` has no vector-times-vector `*`.
+"""
 @inline function addrow(s::MomentSums{V}, x, z, h) where {V}
     hx = h * x
-    MomentSums{V}(s.sw + h, s.sx + hx, s.sxx + hx * x, s.sz + h * z, s.sxz + hx * z, s.szz + h * z * z)
+    MomentSums{V}(s.sw + h, s.sx + hx, s.sxx + hx * x, s.sz + h .* z, s.sxz + hx .* z, s.szz + h .* z .* z)
 end
 @inline function subrow(s::MomentSums{V}, x, z, h) where {V}
     hx = h * x
-    MomentSums{V}(s.sw - h, s.sx - hx, s.sxx - hx * x, s.sz - h * z, s.sxz - hx * z, s.szz - h * z * z)
+    MomentSums{V}(s.sw - h, s.sx - hx, s.sxx - hx * x, s.sz - h .* z, s.sxz - hx .* z, s.szz - h .* z .* z)
 end
 
 const SINGULAR_TOL = 1e-12
 
-"Constant fit: intercept and surrogate deviance."
+"""
+Constant fit: intercept and surrogate deviance. Dotted so `V` may be a
+scalar or an `SVector` (independent per-coordinate fits).
+"""
 @inline function fit_con(s::MomentSums)
-    b = s.sz / s.sw
-    return b, s.szz - s.sz * b
+    b = s.sz ./ s.sw
+    return b, s.szz .- s.sz .* b
 end
 
 """
 Simple linear fit `a x + b`. Returns `nothing` when the Gram determinant is
-below `tol · sw · sxx`, which covers a constant feature.
+below `tol · sw · sxx` for any coordinate, which covers a constant feature.
+Dotted so `V` may be a scalar or an `SVector` (independent per-coordinate
+fits).
 """
 @inline function fit_lin(s::MomentSums; tol = SINGULAR_TOL)
-    d = s.sw * s.sxx - s.sx * s.sx
-    d <= tol * s.sw * s.sxx && return nothing
-    a = (s.sw * s.sxz - s.sx * s.sz) / d
-    b = (s.sz - a * s.sx) / s.sw
-    rss = s.szz - a * s.sxz - b * s.sz
+    d = s.sw .* s.sxx .- s.sx .* s.sx
+    any(d .<= tol .* s.sw .* s.sxx) && return nothing
+    a = (s.sw .* s.sxz .- s.sx .* s.sz) ./ d
+    b = (s.sz .- a .* s.sx) ./ s.sw
+    rss = s.szz .- a .* s.sxz .- b .* s.sz
     return a, b, rss
 end
 
@@ -74,4 +84,31 @@ surrogate deviance, or `nothing` when the `3×3` system is singular.
     a, b, c = β[1], β[2], β[3]
     rss = s.szz - a * s.sxz - b * s.sz - c * suz
     return a, b, a + c, b - c * t, rss
+end
+
+"""
+`fit_blin` for `SVector` coefficients: solves one independent `3×3` system
+per coordinate `k`, with the same scale-invariant singular guard as the
+scalar method, and returns `nothing` if any coordinate is singular.
+"""
+@inline function fit_blin(sl::MomentSums{V}, sr::MomentSums{V}, t; tol = SINGULAR_TOL) where {Km1,T,V<:SVector{Km1,T}}
+    s = sl + sr
+    su  = sr.sx .- t .* sr.sw
+    suu = sr.sxx .- 2t .* sr.sx .+ t * t .* sr.sw
+    suz = sr.sxz .- t .* sr.sz
+    sxu = sr.sxx .- t .* sr.sx
+    a = zero(MVector{Km1,T}); b = zero(MVector{Km1,T}); c = zero(MVector{Km1,T})
+    for k in 1:Km1
+        G = @SMatrix [s.sxx[k]  s.sx[k]  sxu[k];
+                      s.sx[k]   s.sw[k]  su[k];
+                      sxu[k]    su[k]    suu[k]]
+        m = @SVector [s.sxz[k], s.sz[k], suz[k]]
+        d = det(G)
+        abs(d) <= tol * s.sxx[k] * s.sw[k] * max(suu[k], eps(T) * s.sxx[k]) && return nothing
+        β = G \ m
+        a[k], b[k], c[k] = β[1], β[2], β[3]
+    end
+    av, bv, cv = SVector(a), SVector(b), SVector(c)
+    rss = s.szz .- av .* s.sxz .- bv .* s.sz .- cv .* suz
+    return av, bv, av .+ cv, bv .- cv .* t, rss
 end

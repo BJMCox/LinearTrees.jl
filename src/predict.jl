@@ -3,6 +3,7 @@
 @inline function clampscore(s::T, lo::T, hi::T) where {T<:Real}
     return min(max(s, lo), hi)
 end
+clampscore(s::SVector, lo::SVector, hi::SVector) = min.(max.(s, lo), hi)
 
 """
 Unclipped or clipped path sum for row `i`. `clip=false` keeps the feature
@@ -58,6 +59,26 @@ function score(tree::LinearTree{T,V}, X::AbstractMatrix; clip::Bool = true, nthr
     return out
 end
 
+"""
+    score(tree, X; clip=true, nthreads=Threads.nthreads())
+
+`Softmax` override: `n × (K-1)` matrix of raw reference-class logits.
+"""
+function score(tree::LinearTree{T,V,<:Softmax}, X::AbstractMatrix; clip::Bool = true, nthreads = Threads.nthreads()) where {T,V}
+    n = size(X, 1)
+    Km1 = tree.loss.K - 1
+    out = Matrix{T}(undef, n, Km1)
+    row_blocks(n, nthreads) do rs
+        for i in rs
+            s = score_row(tree, X, i, clip)
+            for k in 1:Km1
+                out[i, k] = s[k]
+            end
+        end
+    end
+    return out
+end
+
 score_type(::LinearTree{T,V}) where {T,V} = V
 
 """
@@ -72,6 +93,27 @@ function predict!(out::AbstractVector, tree::LinearTree, X::AbstractMatrix; nthr
     row_blocks(length(out), nthreads) do rs
         for i in rs
             out[i] = linkinv(tree.loss, score_row(tree, X, i, true))
+        end
+    end
+    return out
+end
+
+"""
+    predict(tree, X; nthreads=Threads.nthreads())
+
+`Softmax` override: `n × K` matrix of class probabilities, `linkinv` applied
+row by row to the `K-1`-vector score.
+"""
+function predict(tree::LinearTree{T,V,<:Softmax}, X::AbstractMatrix; nthreads = Threads.nthreads()) where {T,V}
+    n = size(X, 1)
+    K = tree.loss.K
+    out = Matrix{T}(undef, n, K)
+    row_blocks(n, nthreads) do rs
+        for i in rs
+            p = linkinv(tree.loss, score_row(tree, X, i, true))
+            for k in 1:K
+                out[i, k] = p[k]
+            end
         end
     end
     return out

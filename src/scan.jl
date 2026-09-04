@@ -16,8 +16,9 @@ struct Candidate{T,V}
     nleft::Int
 end
 
+"`zero(V) .+ Inf` gives `Inf` for scalar `V` and an all-`Inf` `SVector` for a vector `V`."
 nocandidate(::Type{T}, ::Type{V}) where {T,V} =
-    Candidate{T,V}(CON, T(NaN), zero(V), zero(V), zero(V), zero(V), V(Inf), Inf, 0)
+    Candidate{T,V}(CON, T(NaN), zero(V), zero(V), zero(V), zero(V), zero(V) .+ Inf, Inf, 0)
 
 "Count of distinct values in a sorted vector."
 function nunique(xs::AbstractVector)
@@ -36,7 +37,7 @@ weights. `min_leaf` is the least `Σ w` per child. `dmin` is the BIC log
 floor.
 """
 function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::AbstractVector{V},
-        ws::AbstractVector{T}, rule::SelectionRule, min_leaf, dmin) where {T<:Real,V<:Real}
+        ws::AbstractVector{T}, rule::SelectionRule, min_leaf, dmin) where {T<:Real,V}
     m = length(xs)
     n = sum(ws)
     total = zero(MomentSums{V})
@@ -49,7 +50,7 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
     # con
     if allowed(rule, CON)
         b, rss = fit_con(total)
-        sc = selection_score(rule, CON, rss, n, dmin)
+        sc = selection_score(rule, CON, sum(rss), n, dmin)
         sc < best.score && (best = Candidate{T,V}(CON, T(NaN), zero(V), b, zero(V), b, rss, sc, 0))
     end
     # lin
@@ -57,7 +58,7 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
         r = fit_lin(total)
         if r !== nothing
             a, b, rss = r
-            sc = selection_score(rule, LIN, rss, n, dmin)
+            sc = selection_score(rule, LIN, sum(rss), n, dmin)
             sc < best.score && (best = Candidate{T,V}(LIN, T(NaN), a, b, a, b, rss, sc, 0))
         end
     end
@@ -79,14 +80,14 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
         if allowed(rule, PCON)
             bl, rl = fit_con(left); br, rr = fit_con(right)
             rss = rl + rr
-            sc = selection_score(rule, PCON, rss, n, dmin)
+            sc = selection_score(rule, PCON, sum(rss), n, dmin)
             sc < best.score && (best = Candidate{T,V}(PCON, t, zero(V), bl, zero(V), br, rss, sc, i))
         end
         if allowed(rule, BLIN) && nu >= 5
             r = fit_blin(left, right, t)
             if r !== nothing
                 al, bl, ar, br, rss = r
-                sc = selection_score(rule, BLIN, rss, n, dmin)
+                sc = selection_score(rule, BLIN, sum(rss), n, dmin)
                 sc < best.score && (best = Candidate{T,V}(BLIN, t, al, bl, ar, br, rss, sc, i))
             end
         end
@@ -95,7 +96,7 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
             if rl !== nothing && rr !== nothing
                 al, bl, rssl = rl; ar, br, rssr = rr
                 rss = rssl + rssr
-                sc = selection_score(rule, PLIN, rss, n, dmin)
+                sc = selection_score(rule, PLIN, sum(rss), n, dmin)
                 sc < best.score && (best = Candidate{T,V}(PLIN, t, al, bl, ar, br, rss, sc, i))
             end
         end

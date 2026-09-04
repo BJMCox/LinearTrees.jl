@@ -19,4 +19,5 @@ using JET
     include("fit.jl")
     include("fit_losses.jl")
     include("categorical.jl")
+    include("softmax.jl")
 end

@@ -50,7 +50,7 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     isempty(keep) && throw(ArgumentError("total weight must be positive"))
     Xm = Matrix{T}(X[keep, :]); yv = Vector{T}(y[keep]); w = w[keep]
     n = length(keep)
-    V = T
+    V = coeftype(loss, T)
     nlevels = zeros(Int, p)
     for j in categorical
         1 <= j <= p || throw(ArgumentError("categorical column $j is outside 1:$p"))
@@ -129,7 +129,7 @@ function refresh_chunk!(st::FitState, rows, ε)
     for i in rows
         st.g[i] *= st.w[i]
         st.h[i] *= st.w[i]
-        st.z[i] = -st.g[i] / st.h[i]
+        st.z[i] = -st.g[i] ./ st.h[i]   # `./` since `/` between two `V`s is undefined for `SVector`
     end
     return st
 end
@@ -157,22 +157,27 @@ Order the node's levels by weighted mean working response, scan a `pcon`
 split over the ranks, and return the candidate plus the left level codes.
 Runs on the worker's own scratch `sc`, so it is safe inside the threaded
 feature search: no shared mutable state.
+
+For a vector `V` (`Softmax`), one working response per coordinate gives one
+candidate order per coordinate `k`; each is scanned in turn and the
+lowest-scoring candidate wins. A scalar `V` has exactly one coordinate, so
+this reduces to the original single-order scan.
 """
 function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin) where {T,V}
     L = st.nlevels[j]
-    sz = zeros(V, L); sw = zeros(T, L)
+    sz = zeros(V, L); sw = zeros(V, L); count = zeros(Int, L)
     for i in rows
-        c = Int(st.X[i, j]); sz[c] += st.h[i] * st.z[i]; sw[c] += st.h[i]
+        c = Int(st.X[i, j])
+        sz[c] += st.h[i] .* st.z[i]
+        sw[c] += st.h[i]
+        count[c] += 1
     end
-    present = findall(>(0), sw)
+    present = findall(>(0), count)
     length(present) < 2 && return nocandidate(T, V), Int[]
-    order = sort(present; by = c -> sz[c] / sw[c])
-    rank = zeros(Int32, L)
-    for (r, lc) in enumerate(order)
-        rank[lc] = r
-    end
     # Bucket rows by level in one O(L + |rows|) counting-sort pass, then walk
     # the buckets in rank order to fill the scratch. No O(L · |rows|) rescans.
+    # The bucketing itself doesn't depend on level order, so it is built once
+    # and reused for every coordinate's ordering below.
     counts = zeros(Int, L + 1)
     for i in rows
         counts[Int(st.X[i, j]) + 1] += 1
@@ -188,19 +193,30 @@ function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin) wh
         cursor[c] += 1
         bucketed[cursor[c]] = i
     end
-    m = 0
-    for lc in order
-        for k in (cumoffset[lc] + 1):cumoffset[lc + 1]
-            i = bucketed[k]
-            m += 1
-            sc.xs[m] = T(rank[lc]); sc.zs[m] = st.z[i]; sc.hs[m] = st.h[i]; sc.ws[m] = st.w[i]
+    rule = PconOnly(st.rule)      # a categorical column never carries a linear piece, whatever the rule allows
+    Km = length(zero(V))
+    best = nocandidate(T, V); bestleft = Int[]
+    for k in 1:Km
+        order = sort(present; by = c -> sz[c][k] / sw[c][k])
+        rank = zeros(Int32, L)
+        for (r, lc) in enumerate(order)
+            rank[lc] = r
+        end
+        m = 0
+        for lc in order
+            for b in (cumoffset[lc] + 1):cumoffset[lc + 1]
+                i = bucketed[b]
+                m += 1
+                sc.xs[m] = T(rank[lc]); sc.zs[m] = st.z[i]; sc.hs[m] = st.h[i]; sc.ws[m] = st.w[i]
+            end
+        end
+        cand = scan_feature(view(sc.xs, 1:m), view(sc.zs, 1:m), view(sc.hs, 1:m), view(sc.ws, 1:m), rule, st.min_leaf, dmin)
+        if cand.score < best.score
+            best = cand
+            bestleft = cand.kind == PCON ? [lc for lc in order if rank[lc] <= cand.threshold] : Int[]
         end
     end
-    rule = PconOnly(st.rule)      # a categorical column never carries a linear piece, whatever the rule allows
-    cand = scan_feature(view(sc.xs, 1:m), view(sc.zs, 1:m), view(sc.hs, 1:m), view(sc.ws, 1:m), rule, st.min_leaf, dmin)
-    cand.kind == PCON || return cand, Int[]
-    leftcodes = [lc for lc in order if rank[lc] <= cand.threshold]
-    return cand, leftcodes
+    return best, bestleft
 end
 
 "Append a packed left-level mask to the tree's mask pool. Returns its `(catstart, catwords)`."
@@ -256,13 +272,13 @@ function best_split(st::FitState{T,V}, rows, inrow::BitVector, dmin) where {T,V}
     return best, bestj, bestleft
 end
 
-function dmin_for(st::FitState, rows)
-    s = zero(eltype(st.h))
+function dmin_for(st::FitState{T,V}, rows) where {T,V}
+    s = zero(T)
     for i in rows
-        s += st.h[i] * st.z[i]^2
+        s += sum(st.h[i] .* st.z[i] .^ 2)   # sum over coordinates for vector V; a no-op for scalar V
     end
     n = sum(view(st.w, rows))
-    return eps(eltype(st.h)) * max(s, n)
+    return eps(T) * max(s, n)
 end
 
 leafnode(st::FitState{T,V}, rows, b) where {T,V} =
@@ -274,7 +290,7 @@ Grow the subtree for `rows`. Returns the index of the created node.
 """
 function grow!(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, linchain::Int) where {T,V}
     nw = sum(view(st.w, rows))
-    sumh = sum(view(st.h, rows))
+    sumh = sum(sum(h) for h in view(st.h, rows))   # sum over coordinates too, for vector V
     push!(st.nodes, leafnode(st, rows, zero(V)))   # placeholder, filled below
     me = Int32(length(st.nodes))
     if nw < st.min_fit || depth >= st.max_depth || sumh < st.min_sum_hessian || linchain >= st.max_lin_chain
