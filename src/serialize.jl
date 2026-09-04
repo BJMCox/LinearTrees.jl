@@ -1,23 +1,52 @@
 # Model serialization to/from disk.
 
 """
+    jsonnum(x)
+
+`x` on a JSON-safe encoding: a finite `Real` as `Float64`, a non-finite
+`Real` (`Inf`, `-Inf`, `NaN`, none of which have a JSON literal) as the
+matching string, and an `SVector` mapped elementwise into a `Vector{Any}`.
+"""
+jsonnum(x::Real) = isfinite(x) ? Float64(x) : string(x)
+jsonnum(x::SVector) = Any[jsonnum(c) for c in x]
+
+"""
+    fromjsonnum(T, x)
+
+Inverse of the scalar case of [`jsonnum`](@ref): a number converts to `T`
+directly, and one of the strings `"Inf"`, `"-Inf"`, `"NaN"` parses back to
+the matching non-finite `T`. Broadcast over an `SVector`-encoded field.
+"""
+fromjsonnum(::Type{T}, x::Real) where {T} = T(x)
+fromjsonnum(::Type{T}, x::AbstractString) where {T} =
+    x == "Inf" ? T(Inf) : x == "-Inf" ? T(-Inf) : x == "NaN" ? T(NaN) :
+    throw(ArgumentError("unrecognised numeric string \"$x\""))
+
+"""
     to_dict(tree)
 
-JSON-friendly form: nodes as vectors of field dictionaries, masks as
-integers, loss as a name plus parameters, bounds and base as numbers or
-vectors. A `LIN` or leaf node's `threshold` is `NaN` on the struct; since
-`NaN` has no JSON literal, it is stored as `nothing` and restored to `NaN`
-by `from_dict`.
+JSON-friendly form: nodes as vectors of field dictionaries, loss as a name
+plus parameters. Three encodings keep every field JSON-safe:
+- Every `Real`-valued field (`threshold, lcoef, lintercept, rcoef,
+  rintercept, xmin, xmax, cover, xmean, gain, lo, hi, base`) goes through
+  [`jsonnum`](@ref): finite values become `Float64`, non-finite values
+  become the string `"Inf"`, `"-Inf"`, or `"NaN"`, and an `SVector` field
+  maps elementwise into a `Vector{Any}`.
+- Integer fields (`feature, left, right, catstart, catwords, model`) store
+  as `Int`, restored to their struct field type (`Int32` or `ModelKind`) by
+  `from_dict`.
+- `catmasks` (`UInt64`, may use the top bit) store as lowercase hex strings
+  via `string(m; base = 16)`, since a plain integer would overflow `Int64`
+  and lose exactness in a JSON parser; restored with `parse(UInt64, s; base
+  = 16)`.
 """
 function to_dict(t::LinearTree{T,V}) where {T,V}
-    vec_or_num(v) = v isa SVector ? collect(v) : v
-    nodefield(n, f) = f == :model ? Int(getfield(n, f)) :
-        f == :threshold ? (isnan(getfield(n, f)) ? nothing : getfield(n, f)) :
-        vec_or_num(getfield(n, f))
+    nodefield(n, f) = f in (:feature, :left, :right, :catstart, :catwords, :model) ?
+        Int(getfield(n, f)) : jsonnum(getfield(n, f))
     nodes = [Dict{String,Any}(String(f) => nodefield(n, f) for f in fieldnames(Node)) for n in t.nodes]
     return Dict{String,Any}("format" => 1, "T" => string(T), "K" => V <: SVector ? length(V) + 1 : 1,
-        "nodes" => nodes, "catmasks" => collect(t.catmasks), "loss" => lossdict(t.loss),
-        "lo" => vec_or_num(t.lo), "hi" => vec_or_num(t.hi), "base" => vec_or_num(t.base),
+        "nodes" => nodes, "catmasks" => [string(m; base = 16) for m in t.catmasks], "loss" => lossdict(t.loss),
+        "lo" => jsonnum(t.lo), "hi" => jsonnum(t.hi), "base" => jsonnum(t.base),
         "nfeatures" => t.nfeatures, "truncate" => t.truncate)
 end
 
@@ -58,13 +87,15 @@ function from_dict(d::AbstractDict)
     T = d["T"] == "Float32" ? Float32 : Float64
     K = d["K"]
     V = K == 1 ? T : SVector{K - 1,T}
-    conv(v) = V(v)
-    nodes = [Node{T,V}(Int32(n["feature"]), n["threshold"] === nothing ? T(NaN) : T(n["threshold"]),
+    convV(x) = V <: SVector ? V(fromjsonnum.(T, x)) : fromjsonnum(V, x)
+    nodes = [Node{T,V}(Int32(n["feature"]), fromjsonnum(T, n["threshold"]),
         Int32(n["left"]), Int32(n["right"]),
-        conv(n["lcoef"]), conv(n["lintercept"]), conv(n["rcoef"]), conv(n["rintercept"]),
-        T(n["xmin"]), T(n["xmax"]), T(n["cover"]), T(n["xmean"]), T(n["gain"]),
-        Int32(n["catstart"]), Int32(n["catwords"]), ModelKind(n["model"])) for n in d["nodes"]]
+        convV(n["lcoef"]), convV(n["lintercept"]), convV(n["rcoef"]), convV(n["rintercept"]),
+        fromjsonnum(T, n["xmin"]), fromjsonnum(T, n["xmax"]), fromjsonnum(T, n["cover"]),
+        fromjsonnum(T, n["xmean"]), fromjsonnum(T, n["gain"]),
+        Int32(n["catstart"]), Int32(n["catwords"]), ModelKind(Int(n["model"]))) for n in d["nodes"]]
     loss = lossfromdict(d["loss"])
-    return LinearTree{T,V,typeof(loss)}(nodes, UInt64.(d["catmasks"]), loss, conv(d["lo"]), conv(d["hi"]),
-        conv(d["base"]), Int(d["nfeatures"]), Bool(d["truncate"]))
+    catmasks = [parse(UInt64, s; base = 16) for s in d["catmasks"]]
+    return LinearTree{T,V,typeof(loss)}(nodes, catmasks, loss, convV(d["lo"]), convV(d["hi"]),
+        convV(d["base"]), Int(d["nfeatures"]), Bool(d["truncate"]))
 end

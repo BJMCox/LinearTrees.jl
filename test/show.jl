@@ -1,7 +1,7 @@
 using AbstractTrees, StableRNGs
 
 @testset "print_tree snapshot on the Figure 1 tree" begin
-    T = Float64; N(; kw...) = Node{T,T}(; kw...)
+    T = Float64; N(; kw...) = LinearTrees.Node{T,T}(; kw...)
     nodes = [N(feature = 1, threshold = 2.3, left = 2, right = 3, lcoef = 0.3, lintercept = 0.2,
                rcoef = 0.8, rintercept = -0.3, model = PLIN), N(lintercept = 0.0), N(lintercept = 0.0)]
     tree = LinearTree{T,T,MSE}(nodes, UInt64[], MSE(), -100.0, 100.0, 0.0, 1, true)
@@ -18,4 +18,13 @@ end
     s = sprint(show, MIME("text/plain"), t)
     @test startswith(s, "LinearTree{Float64, Float64, MSE}")
     @test occursin("nodes", s)
+end
+
+@testset "show on a Softmax tree does not throw" begin
+    rng = StableRNG(34)
+    X = rand(rng, 200, 3)
+    y = [X[i, 1] > 0.5 ? 1 : X[i, 3] > 0.5 ? 2 : 3 for i in 1:200]
+    t = fit_tree(X, y, Softmax(3))
+    s = sprint(show, MIME("text/plain"), t)
+    @test occursin("$(length(t.nodes)) nodes", s)
 end

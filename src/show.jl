@@ -26,7 +26,11 @@ AbstractTrees.nodevalue(v::TreeView) = v.tree
 
 fmtnum(x::Real) = replace(string(round(x; sigdigits = 3)), "-" => "−")
 fmtnum(x::SVector) = string("[", join(map(fmtnum, x), ", "), "]")
-piece(a, b, name) = a == 0 ? fmtnum(b) : string(fmtnum(a), "·", name, b < 0 ? " − " : " + ", fmtnum(abs(b)))
+
+"Coefficient · feature name + intercept, folding the intercept's sign into the operator."
+piece(a::Real, b::Real, name) = a == 0 ? fmtnum(b) : string(fmtnum(a), "·", name, b < 0 ? " − " : " + ", fmtnum(abs(b)))
+"Softmax pieces print every class's coefficient as a vector; no per-element sign folding."
+piece(a::SVector, b::SVector, name) = string(fmtnum(a), "·", name, " + ", fmtnum(b))
 
 function AbstractTrees.printnode(io::IO, h::NodeHandle)
     n = AbstractTrees.nodevalue(h)
