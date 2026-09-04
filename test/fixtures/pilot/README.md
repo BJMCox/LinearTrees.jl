@@ -125,7 +125,7 @@ on task completion order. Within a feature, `src/scan.jl`'s left-to-right
 sweep keeps the same way: the first (lowest) threshold that achieves the
 best score is never displaced by a later, merely-equal one.
 
-The reference does not follow a fixed rule: `Pilot.py:205`'s
+The reference does not follow a fixed rule: `Pilot.py:209`'s
 `random_sample` draws the cross-feature evaluation order from
 `np.random.choice`, seeded by the legacy global NumPy RNG, so which
 feature wins a cross-feature tie is RNG state, not a pinned rule.
@@ -152,7 +152,7 @@ need to be accounted for before extending the parity claim to other data.
 
 - **A node with exactly `min_fit` rows.** Ours splits it: `src/fit.jl:322`
   stops only when `nw < st.min_fit` (strict). The reference stops it:
-  `Pilot.py:636`'s `stop_criterion` allows further splitting only when
+  `Pilot.py:638`'s `stop_criterion` allows further splitting only when
   `y.shape[0] > self.min_sample_split`, i.e. it also stops at exactly
   `min_sample_split` rows. A node landing on exactly 10 rows (`min_fit =
   10` here) would disagree on whether to split at all.
@@ -166,7 +166,7 @@ need to be accounted for before extending the parity claim to other data.
   continuous `Uniform(-2, 2)` columns, so this never triggers.
 - **Singularity guards and RSS floors differ in kind.** The reference
   rejects a `blin` fit on an absolute `det(XtX) > 0.001`; ours uses a
-  scale-invariant guard (`1e-12 * sxx * sw * suu`, `src/scan.jl`). The
+  scale-invariant guard (`1e-12 * sxx * sw * suu`, `fit_blin`, `src/accumulate.jl`). The
   reference floors RSS at `1e-8` for split nodes only, leaving `con`/`lin`
   unfloored; ours floors every kind at `dmin = eps * max(Σ h z², n)`.
   Neither difference binds here (smallest eligible determinant is order
