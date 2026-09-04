@@ -4,12 +4,18 @@ version = "0.1.0"
 authors = ["Ben Cox <bcox@mpp.mpg.de>"]
 
 [deps]
+DataAPI = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LossFunctions = "30fc2ffe-d236-52d8-8643-a9d8f7c094a7"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+StatsAPI = "82ae8749-77ed-4fe6-ae5f-f523153014b0"
+Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 
 [compat]
+DataAPI = "1"
 LinearAlgebra = "1"
 LossFunctions = "1"
 StaticArrays = "1"
+StatsAPI = "1"
+Tables = "1"
 julia = "1.10"

@@ -1,5 +1,8 @@
 module LinearTrees
 
+import StatsAPI
+import StatsAPI: fit, predict, coeftable, deviance, nobs, dof, weights, residuals
+
 include("loss.jl")
 include("node.jl")
 include("accumulate.jl")
@@ -22,5 +25,7 @@ export shap, shap!, ShapResult
 export Loss, MSE, Huber, Quantile, MAD, Logistic, Poisson, NegBin, Gamma, Tweedie, Softmax
 export AdaptedLoss, IdentityLink, LogitLink, LogLink, canonical_scale
 export gradhess!, linkinv, initscore, deviance, scorebound, validate_target, issmooth, irls_weights!
+export LinearTreeRegressorFit, LinearTreeClassifierFit
+export fit, nobs, dof, weights, residuals
 
 end

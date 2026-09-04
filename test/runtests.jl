@@ -25,4 +25,5 @@ using LinearAlgebra
     include("importance.jl")
     include("shap.jl")
     include("lossfunctions.jl")
+    include("statsapi.jl")
 end
