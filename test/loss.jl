@@ -41,8 +41,19 @@ end
     @test !issmooth(MAD()) && !issmooth(Quantile(0.5))
 
     irls_weights!(h, Quantile(0.25), y, f)
-    @test h[1] ≈ 0.75 && h[3] ≈ 0.25          # |g| / |r| with |r| = 1
-    @test h[2] == LinearTrees.HMIN             # g = 0 at equality floors to HMIN
+    @test h[1] ≈ 0.75 && h[3] ≈ 0.25          # l1weight(r) / |r| with |r| = 1
+    @test h[2] > 100                           # r = 0: l1weight gives τ, not gh's exact-zero gradient
+end
+
+@testset "irls_weights! uses l1weight, not gh's boundary gradient" begin
+    # regression for the defect in irls_weights!: gh reports an exact-zero
+    # gradient at r == 0, which used to floor that row's weight to HMIN and
+    # bias the Newton step away from a boundary quantile. l1weight gives the
+    # row its correct one-sided weight (τ here) instead.
+    y = [1.0, 2.0, 2.5, 4.0, 10.0]; f = fill(10.0, 5)
+    h = similar(y)
+    irls_weights!(h, Quantile(0.9), y, f)
+    @test h[5] > 100
 end
 
 @testset "loss parameter validation" begin

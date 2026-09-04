@@ -78,15 +78,18 @@ end
 """
     irls_weights!(h, loss, y, f)
 
-IRLS pseudo-hessian for non-smooth losses: `|g| / max(|r|, ε)` for quantile,
-`1 / max(|r|, ε)` for MAD, with a positive scale-aware floor `ε`.
+IRLS pseudo-hessian for non-smooth losses: `l1weight(loss, r) / max(|r|, ε)`,
+with a positive scale-aware floor `ε`. Uses `l1weight` rather than `gh`'s
+gradient magnitude: at `r == 0` `gh` reports an exact-zero gradient (the
+boundary of its case split), which would zero out the very row sitting at
+the current fit and bias the step; `l1weight` gives that row its correct
+one-sided weight (`τ` or `1-τ`) instead.
 """
 function irls_weights!(h::AbstractVector{T}, loss::Union{Quantile,MAD}, y::AbstractVector, f::AbstractVector;
         ε = max(T(1e-3) * median_abs(y .- f), sqrt(eps(T)) * max(maximum(abs, y), one(T)))) where {T}
     r = y .- f
     for i in eachindex(h)
-        num = loss isa MAD ? one(T) : abs(first(gh(loss, y[i], f[i])))
-        h[i] = max(num / max(abs(r[i]), ε), T(HMIN))
+        h[i] = max(l1weight(loss, r[i]) / max(abs(r[i]), ε), T(HMIN))
     end
     return h
 end
@@ -105,9 +108,10 @@ l1weight(l::Quantile, r) = r >= 0 ? oftype(r, l.τ) : oftype(r, 1 - l.τ)
 """
     refit_node!(st, me, rows, niter=5)
 
-IRLS refinement of a non-smooth node's coefficients on its own rows. Each
-iteration recomputes the pseudo-hessian at the current node prediction and
-re-solves the chosen model kind. Smooth losses return immediately.
+IRLS refinement of a non-smooth node's coefficients on its own rows, including
+`CON` leaves. Each iteration recomputes the pseudo-hessian at the current node
+prediction and re-solves the chosen model kind. Smooth losses return
+immediately.
 """
 refit_node!(st, me, rows, niter = 5) = issmooth(st.loss) ? st : irls_refit!(st, me, rows, niter)
 

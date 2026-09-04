@@ -34,18 +34,32 @@ end
 end
 
 @testset "quantile oracle on a con root" begin
-    # n = 21 distinct points: a CON leaf takes exactly one Newton/IRLS step from
-    # f0, so the boundary row (y == f0) gets gradient 0 rather than its true
-    # subgradient. That step is exact only where (k-1) == τ*(n-1) for the
-    # target's rank k, which n = 5 cannot satisfy for τ = 0.9 (see deviation
-    # note in the report); n = 21 satisfies it for all three τ below.
+    y = [1.0, 2.0, 2.5, 4.0, 10.0]; X = zeros(5, 1)
+    for τ in (0.25, 0.5, 0.9)
+        t = fit_tree(X, y, Quantile(τ); min_fit = 100)
+        q = initscore(Quantile(τ), y, ones(5))
+        # the IRLS refit's ε floor (1e-3·median|r|) bounds how far the fixed
+        # point sits from the exact quantile, so this is not exact equality
+        @test predict(t, X)[1] ≈ q atol = 1e-2 * (maximum(y) - minimum(y))
+        # pinball loss at q is no larger than at either neighbour observation
+        pin(v) = sum(r >= 0 ? τ * r : (τ - 1) * r for r in y .- v)
+        ys = sort(y); k = findfirst(==(q), ys)
+        k > 1 && @test pin(q) <= pin(ys[k - 1]) + 1e-12
+        k < 5 && @test pin(q) <= pin(ys[k + 1]) + 1e-12
+    end
+end
+
+@testset "quantile oracle on a con root (n = 21, exact single-step case)" begin
+    # A CON leaf's IRLS fixed point is exact when the target's rank k satisfies
+    # k - 1 == τ*(n - 1); n = 21 satisfies this for all three τ below (unlike
+    # n = 5 above), so this keeps a tight, near-exact check alongside the
+    # brief's looser 5-point oracle test.
     n = 21
     y = collect(1.0:n); X = zeros(n, 1)
     for τ in (0.25, 0.5, 0.9)
         t = fit_tree(X, y, Quantile(τ); min_fit = 100)
         q = initscore(Quantile(τ), y, ones(n))
         @test predict(t, X)[1] ≈ q atol = 1e-9
-        # pinball loss at q is no larger than at either neighbour observation
         pin(v) = sum(r >= 0 ? τ * r : (τ - 1) * r for r in y .- v)
         ys = sort(y); k = findfirst(==(q), ys)
         k > 1 && @test pin(q) <= pin(ys[k - 1]) + 1e-12

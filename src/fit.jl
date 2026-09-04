@@ -197,6 +197,7 @@ function grow!(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, linchain::Int
     if nw < st.min_fit || depth >= st.max_depth || sumh < st.min_sum_hessian || linchain >= st.max_lin_chain
         b = fit_con(node_sums(st, rows))[1]
         st.nodes[me] = leafnode(st, rows, b)
+        refit_node!(st, me, rows)
         update_score!(st, rows, me)
         return me
     end
@@ -205,6 +206,7 @@ function grow!(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, linchain::Int
     best, bestj = best_split(st, rows, inrow, dmin)
     if best.kind == CON || bestj == 0
         st.nodes[me] = leafnode(st, rows, best.kind == CON ? best.lintercept : fit_con(node_sums(st, rows))[1])
+        refit_node!(st, me, rows)
         update_score!(st, rows, me)
         return me
     end
@@ -243,31 +245,41 @@ Serial: this is one node's `MomentSums` reduction, not worth threading.
 """
 function irls_refit!(st::FitState{T,V}, me::Integer, rows, niter) where {T,V}
     n = st.nodes[me]
-    n.model == CON && return st
     j = n.feature
     resid = Vector{V}(undef, length(rows))
     yscale = max(maximum(abs, view(st.y, rows)), one(T))
     for _ in 1:niter
         for (k, i) in enumerate(rows)
-            x = st.X[i, j]
-            goleft = n.model == LIN || x <= n.threshold
-            pred = goleft ? n.lcoef * x + n.lintercept : n.rcoef * x + n.rintercept
+            pred = if n.model == CON
+                n.lintercept
+            else
+                x = st.X[i, j]
+                goleft = n.model == LIN || x <= n.threshold
+                goleft ? n.lcoef * x + n.lintercept : n.rcoef * x + n.rintercept
+            end
             resid[k] = st.z[i] - pred
         end
         ε = max(T(1e-3) * median_abs(resid), sqrt(eps(T)) * yscale)
         left = zero(MomentSums{V}); right = zero(MomentSums{V})
         for (k, i) in enumerate(rows)
-            x = st.X[i, j]
-            goleft = n.model == LIN || x <= n.threshold
             r = resid[k]
             hi = st.w[i] * l1weight(st.loss, r) / max(abs(r), ε)
-            if n.model != LIN && !goleft
-                right = addrow(right, x, st.z[i], hi)
+            if n.model == CON
+                left = addrow(left, zero(T), st.z[i], hi)
             else
-                left = addrow(left, x, st.z[i], hi)
+                x = st.X[i, j]
+                goleft = n.model == LIN || x <= n.threshold
+                if n.model != LIN && !goleft
+                    right = addrow(right, x, st.z[i], hi)
+                else
+                    left = addrow(left, x, st.z[i], hi)
+                end
             end
         end
-        if n.model == LIN
+        if n.model == CON
+            b = fit_con(left)[1]
+            n = Node{T,V}(n; lintercept = b, rintercept = b)
+        elseif n.model == LIN
             r = fit_lin(left); r === nothing && break
             a, b, _ = r
             n = Node{T,V}(n; lcoef = a, lintercept = b, rcoef = a, rintercept = b)
