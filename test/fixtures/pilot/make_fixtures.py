@@ -5,7 +5,7 @@ LinearTrees.jl: the JSON files it writes are committed, and the Julia test
 suite reads only those files.
 
 To regenerate:
-    1. Clone https://github.com/STATforgery/pilot (or its current home) and
+    1. Clone https://github.com/STAN-UAntwerp/PILOT (or its current home) and
        check out commit ea769a0d55dd2babf4c57d31094758d7879f29ff.
     2. Set PILOT_REF_PATH to the clone root (the directory that contains the
        `pilot/` package, i.e. `pilot/Pilot.py`), or edit PILOT_REF_PATH below.

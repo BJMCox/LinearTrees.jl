@@ -114,6 +114,71 @@ test does not compare thresholds for `"lin"` (and excludes `"con"` from
 the split-node list entirely, since `CON` is always a leaf on both sides
 -- see below).
 
+## Tie rule
+
+Ours: lowest feature index first, then lowest threshold. `src/fit.jl:242`
+scans features in ascending order and only replaces `best` on a strictly
+lower score (`c.score < best.score`), so the first (lowest-index) feature
+keeps a tie; the parallel reduction at `src/fit.jl:277` restores that same
+lowest-feature-index tie-break explicitly, so the result does not depend
+on task completion order. Within a feature, `src/scan.jl`'s left-to-right
+sweep keeps the same way: the first (lowest) threshold that achieves the
+best score is never displaced by a later, merely-equal one.
+
+The reference does not follow a fixed rule: `Pilot.py:205`'s
+`random_sample` draws the cross-feature evaluation order from
+`np.random.choice`, seeded by the legacy global NumPy RNG, so which
+feature wins a cross-feature tie is RNG state, not a pinned rule.
+
+No cross-feature tie occurs among the split nodes these fixtures compare.
+Checked by refitting all five datasets with the legacy RNG seeded three
+different ways (the fixture's own seed, and two large perturbations of
+it) and confirming the recorded `lin`/`pcon`/`blin`/`plin` nodes and
+predictions are bit-identical across all three -- if any two features had
+tied at any split, permuting the evaluation order would have picked a
+different one. The one thing that *does* move is which feature gets
+attached to a `con` leaf: `con`'s loss never depends on the feature (it
+only uses `y`), so every feature ties for it by construction, and the
+recorded `con.pivot` feature is whichever one the RNG order visited first.
+This is harmless here since the test excludes `con` from the comparison
+entirely (see "CON nodes are leaves" below).
+
+## Scope of the parity claim
+
+The five fixtures establish parity for continuous, non-categorical
+splits, away from a few boundaries that the reference and LinearTrees.jl
+handle differently. None of these bind on the five fixtures; they would
+need to be accounted for before extending the parity claim to other data.
+
+- **A node with exactly `min_fit` rows.** Ours splits it: `src/fit.jl:322`
+  stops only when `nw < st.min_fit` (strict). The reference stops it:
+  `Pilot.py:636`'s `stop_criterion` allows further splitting only when
+  `y.shape[0] > self.min_sample_split`, i.e. it also stops at exactly
+  `min_sample_split` rows. A node landing on exactly 10 rows (`min_fit =
+  10` here) would disagree on whether to split at all.
+- **Numeric features with fewer than 5 unique values.** The reference
+  allocates its `coef`/`intercept` arrays once per `best_split` call and
+  only overwrites a row when `blin`/`plin` are eligible at a pivot; a
+  feature with under 5 unique values never becomes eligible, so its row
+  keeps stale values from whichever feature was scored just before it and
+  can still be scored (and win) against the current feature's moments.
+  Exact parity is not defined on such a feature. All five fixtures use
+  continuous `Uniform(-2, 2)` columns, so this never triggers.
+- **Singularity guards and RSS floors differ in kind.** The reference
+  rejects a `blin` fit on an absolute `det(XtX) > 0.001`; ours uses a
+  scale-invariant guard (`1e-12 * sxx * sw * suu`, `src/scan.jl`). The
+  reference floors RSS at `1e-8` for split nodes only, leaving `con`/`lin`
+  unfloored; ours floors every kind at `dmin = eps * max(Σ h z², n)`.
+  Neither difference binds here (smallest eligible determinant is order
+  1e2, residual RSS is order 0.75), but on small-`n` or small-scale data
+  one guard could accept a fit the other rejects.
+- **`max_lin_chain = 10` vs. the reference's `max_model_depth = 100`.**
+  Ours caps a chain of `lin` nodes at 10; the reference's much larger cap
+  effectively never binds. `linear` uses six `lin` fits in a row, four
+  short of ours, so this fixture doesn't exercise the cap either -- a
+  noisier linear design that needed more than 10 chained `lin` fits would
+  diverge.
+
 ## CON nodes are leaves
 
 In the reference, a `"con"` node's only child is `"END"`
@@ -137,13 +202,26 @@ dataset's position in the list below (1-5). Fit with `max_depth = 6`,
 | interaction | 4 | `1.2*X0 + 0.8*X1 + 0.6*X0*X1 + N(0, 0.05)` | lin, lin, lin, con |
 | step | 5 | `where(X0<0, -1, 1) + N(0, 0.02)` | pcon, con, con |
 
-`sha256` of `X.tobytes()` / `y.tobytes()` (post-rounding) is recorded in
-each JSON file for provenance; regenerating with the same seeds reproduces
-these exactly.
+Each JSON file also records the `sha256` of its own `X.tobytes()` /
+`y.tobytes()` (post-rounding) internally, for provenance; regenerating
+with the same seeds reproduces those exactly. The table below is a
+different thing: the SHA-256 of each *committed file's bytes as a whole*
+(`nodes`, `pred`, and everything else included, not just the `X`/`y`
+arrays), so a change to any part of a fixture is caught even where the
+internal `X`/`y` hash would not move.
+
+| file | sha256 |
+|---|---|
+| `linear.json` | `a8807ef9803fc480e6fd0f5166320f0b015f74dda54161a7ff3341042c9dfdd4` |
+| `piecewise.json` | `dcb6a802f23b45e3da066a5d9235a4e20378c314b22a4231be6d04ea9df4f9d6` |
+| `hinge.json` | `8db93f143ba483cd785d50ee7a0e6e0060076255d6af65c6ceeceb2d37e73cb8` |
+| `interaction.json` | `392e87bbfb06c9c18839bfe74a32138a66b47eb98f6d39dd7e3f85a2411cbc97` |
+| `step.json` | `126c5e0b779cadf694dfd601294df46d9e76a44072e61ce36fa97f41cdb64053` |
 
 ## Test outcome
 
-Full suite: 456 passed, 0 failed, 0 errored. All five fixtures pass exact
-structural and prediction parity (`fit_tree(...; max_depth = 6, min_leaf =
-5, min_fit = 10, truncation_factor = 3)` against `predict` at `1e-8`, and
-every non-leaf node's kind, 1-based feature, and threshold at `1e-8`).
+All five fixtures pass exact structural and prediction parity
+(`fit_tree(...; max_depth = 6, min_leaf = 5, min_fit = 10,
+truncation_factor = 3)` against `predict` at `1e-8`, and every non-leaf
+node's kind, 1-based feature, threshold, and `(coef, intercept)` on each
+side at `1e-8`, within the "Scope of the parity claim" above).
