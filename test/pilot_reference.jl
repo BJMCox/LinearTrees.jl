@@ -13,7 +13,7 @@ const PILOT_KINDS = Dict("con" => CON, "lin" => LIN, "pcon" => PCON, "blin" => B
         # entries (e.g. two lin nodes on the same feature) still pair deterministically
         ours = [(lowercase(string(n.model)), n.feature, n.threshold, n.lcoef, n.lintercept, n.rcoef, n.rintercept)
                 for n in t.nodes if !LinearTrees.isleaf(n)]
-        theirs = [(String(n.kind), Int(n.feature) + 1, Float64(n.threshold),
+        theirs = [(String(n.kind), Int(n.feature) + 1, n.kind == "lin" ? NaN : Float64(n.threshold),
                    Float64(n.lm_l[1]), Float64(n.lm_l[2]), Float64(n.lm_r[1]), Float64(n.lm_r[2]))
                   for n in fx.nodes if n.kind != "con"]
         @test length(ours) == length(theirs)
