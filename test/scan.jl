@@ -12,15 +12,17 @@ end
     x = collect(1.0:40.0); z = [i <= 20 ? 0.0 : 5.0 for i in 1:40]
     c = LinearTrees.scan_feature(x, z, ones(40), ones(40), BIC(), 5, 1e-12)
     @test c.kind == PCON
-    @test c.threshold == 20.5 && c.nleft == 20
+    @test c.threshold == 20.0 && c.nleft == 20
     @test c.lintercept ≈ 0 && c.rintercept ≈ 5
 end
 
 @testset "scan picks blin on a hinge" begin
-    x = collect(-2.025:0.05:1.975); z = max.(x, 0)  # kink at 0 falls between two grid points
+    # kink at 0 lands exactly on a grid point: the split point is the largest left value
+    # (PILOT parity), so blin's knot only lands on the true kink when 0 is itself a candidate
+    x = collect(-2.0:0.05:2.0); z = max.(x, 0)
     c = LinearTrees.scan_feature(x, z, ones(81), ones(81), BIC(), 5, 1e-12)
     @test c.kind == BLIN
-    @test c.threshold ≈ 0 atol = 0.05
+    @test c.threshold ≈ 0 atol = 1e-8
     @test c.lcoef ≈ 0 atol = 1e-8
     @test c.rcoef ≈ 1 atol = 1e-8
 end

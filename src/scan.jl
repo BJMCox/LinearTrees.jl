@@ -79,7 +79,7 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
         (i == 1 || xs[i] != xs[i - 1]) && (uleft += 1)
         xs[i] < xs[i + 1] || continue                  # only between distinct values
         (wleft >= min_leaf && wright >= min_leaf) || continue
-        t = (xs[i] + xs[i + 1]) / 2
+        t = xs[i]                                      # PILOT parity: split point and blin knot are the largest left value
         uright = nu - uleft
 
         if allowed(rule, PCON)
