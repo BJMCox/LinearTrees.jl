@@ -26,8 +26,8 @@ with `f` the raw score.
 `[lo, hi]` comes from [`scorebound`](@ref) applied to the training target;
 `S = log(max(maximum(y), 1)) + 3` for the log-link losses. Every unweighted
 row Hessian is floored to `1e-6` (see `HMIN` in the source) before frequency
-weights are applied, so a zero or tiny weight still scales down from a
-strictly positive floor rather than from zero.
+weights are applied, so a tiny weight scales the floor down with it.
+Zero-weight rows are dropped before fitting, so the floor never meets a zero.
 
 `Softmax(K)` uses the diagonal of the true reference-logit Hessian,
 `diag(p) - p pᵀ` restricted to its diagonal: a per-class approximation, not
