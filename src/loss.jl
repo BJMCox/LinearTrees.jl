@@ -214,9 +214,9 @@ pointloss(::Gamma, y, f) = y * exp(-f) + f
 pointloss(l::Tweedie, y, f) = (μ = exp(f); ρ = l.ρ; -y * μ^(1 - ρ) / (1 - ρ) + μ^(2 - ρ) / (2 - ρ))
 pointloss(l::NegBin, y, f) = (μ = exp(f); θ = l.θ; -y * log(μ / (μ + θ)) + θ * log1p(μ / θ))
 
+pointloss(l::Softmax, y, f::SVector) = -log(probs(l, f)[Int(y)])
+
 deviance(loss::Loss, y, f, w) = 2 * sum(w[i] * pointloss(loss, y[i], f[i]) for i in eachindex(y))
-deviance(l::Softmax, y, f::AbstractVector{<:SVector}, w) =
-    2 * sum(w[i] * -log(probs(l, f[i])[Int(y[i])]) for i in eachindex(y))
 
 # ---- score bounds ----------------------------------------------------------
 function scorebound(::Union{MSE,Huber,Quantile,MAD}, y; truncation_factor = 3)
@@ -231,7 +231,7 @@ function scorebound(::Union{Poisson,NegBin,Gamma,Tweedie}, y; truncation_factor 
     return (-S, S)
 end
 function scorebound(l::Softmax, y; truncation_factor = 3)
-    T = eltype(y)
+    T = float(eltype(y))
     return (fill(T(-10), SVector{l.K - 1}), fill(T(10), SVector{l.K - 1}))
 end
 

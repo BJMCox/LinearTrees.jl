@@ -150,7 +150,7 @@ struct PconOnly{R<:SelectionRule} <: SelectionRule
     inner::R
 end
 allowed(r::PconOnly, k::ModelKind) = (k == CON || k == PCON) && allowed(r.inner, k)
-selection_score(r::PconOnly, k, s, n, dmin) = allowed(r, k) ? selection_score(r.inner, k, s, n, dmin) : Inf
+selection_score(r::PconOnly, k, s, n, dmin, ncoord::Integer = 1) = allowed(r, k) ? selection_score(r.inner, k, s, n, dmin, ncoord) : Inf
 
 """
 Order the node's levels by weighted mean working response, scan a `pcon`
@@ -165,14 +165,14 @@ this reduces to the original single-order scan.
 """
 function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin) where {T,V}
     L = st.nlevels[j]
-    sz = zeros(V, L); sw = zeros(V, L); count = zeros(Int, L)
+    sz = zeros(V, L); sw = zeros(V, L); nrows = zeros(Int, L)
     for i in rows
         c = Int(st.X[i, j])
         sz[c] += st.h[i] .* st.z[i]
         sw[c] += st.h[i]
-        count[c] += 1
+        nrows[c] += 1
     end
-    present = findall(>(0), count)
+    present = findall(>(0), nrows)
     length(present) < 2 && return nocandidate(T, V), Int[]
     # Bucket rows by level in one O(L + |rows|) counting-sort pass, then walk
     # the buckets in rank order to fill the scratch. No O(L · |rows|) rescans.

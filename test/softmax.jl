@@ -46,3 +46,35 @@ end
     tn = fit_tree(X, y, Softmax(3))
     @test t1.nodes == tn.nodes
 end
+
+@testset "vector closed forms equal scalar per coordinate" begin
+    rng = StableRNG(19)
+    V = SVector{2,Float64}
+    sl = zero(LinearTrees.MomentSums{V}); sr = zero(LinearTrees.MomentSums{V})
+    a1 = zero(LinearTrees.MomentSums{Float64}); a2 = zero(LinearTrees.MomentSums{Float64})
+    b1 = zero(LinearTrees.MomentSums{Float64}); b2 = zero(LinearTrees.MomentSums{Float64})
+    x = sort(randn(rng, 30)); t = x[15]
+    for i in 1:30
+        z = V(randn(rng), randn(rng)); h = V(rand(rng) + 0.5, rand(rng) + 0.5)
+        if i <= 15
+            sl = LinearTrees.addrow(sl, x[i], z, h); a1 = LinearTrees.addrow(a1, x[i], z[1], h[1]); a2 = LinearTrees.addrow(a2, x[i], z[2], h[2])
+        else
+            sr = LinearTrees.addrow(sr, x[i], z, h); b1 = LinearTrees.addrow(b1, x[i], z[1], h[1]); b2 = LinearTrees.addrow(b2, x[i], z[2], h[2])
+        end
+    end
+    s = sl + sr
+    cv = LinearTrees.fit_con(s); c1 = LinearTrees.fit_con(a1 + b1); c2 = LinearTrees.fit_con(a2 + b2)
+    @test cv[1] ≈ V(c1[1], c2[1]) && cv[2] ≈ V(c1[2], c2[2])
+    lv = LinearTrees.fit_lin(s); l1 = LinearTrees.fit_lin(a1 + b1); l2 = LinearTrees.fit_lin(a2 + b2)
+    @test all(lv[k] ≈ V(l1[k], l2[k]) for k in 1:3)
+    bv = LinearTrees.fit_blin(sl, sr, t); bb1 = LinearTrees.fit_blin(a1, b1, t); bb2 = LinearTrees.fit_blin(a2, b2, t)
+    @test all(bv[k] ≈ V(bb1[k], bb2[k]) for k in 1:5)
+    # probabilities stay finite at extreme logits
+    p = LinearTrees.probs(Softmax(3), V(50.0, -50.0))
+    @test sum(p) ≈ 1 && all(isfinite, p)
+    # BIC penalty scales with the number of coordinates
+    @test LinearTrees.selection_score(BIC(), PLIN, 10.0, 100.0, 1e-12, 2) ≈ 100 * log(10 / 100) + 14 * log(100)
+    ts = fit_tree(randn(rng, 300, 2), rand(rng, 1:3, 300), Softmax(3); max_depth = 2)
+    out = Matrix{Float64}(undef, 300, 3)
+    @test predict!(out, ts, randn(rng, 300, 2)) === out
+end

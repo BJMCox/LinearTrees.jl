@@ -107,7 +107,13 @@ row by row to the `K-1`-vector score.
 function predict(tree::LinearTree{T,V,<:Softmax}, X::AbstractMatrix; nthreads = Threads.nthreads()) where {T,V}
     n = size(X, 1)
     K = tree.loss.K
-    out = Matrix{T}(undef, n, K)
+    return predict!(Matrix{T}(undef, n, K), tree, X; nthreads)
+end
+
+"In-place `Softmax` prediction into an `n × K` matrix."
+function predict!(out::AbstractMatrix, tree::LinearTree{T,V,<:Softmax}, X::AbstractMatrix; nthreads = Threads.nthreads()) where {T,V}
+    n = size(X, 1); K = tree.loss.K
+    size(out) == (n, K) || throw(DimensionMismatch("out must be $n × $K, got $(size(out))"))
     row_blocks(n, nthreads) do rs
         for i in rs
             p = linkinv(tree.loss, score_row(tree, X, i, true))
@@ -118,6 +124,8 @@ function predict(tree::LinearTree{T,V,<:Softmax}, X::AbstractMatrix; nthreads = 
     end
     return out
 end
+predict!(::AbstractVector, ::LinearTree{T,V,<:Softmax}, ::AbstractMatrix; kw...) where {T,V} =
+    throw(ArgumentError("Softmax prediction needs an n × K matrix output"))
 
 "Run `f` over `nthreads` contiguous row blocks, threaded when `n` is large enough."
 function row_blocks(f, n::Integer, nthreads::Integer)

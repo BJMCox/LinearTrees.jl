@@ -32,13 +32,16 @@ function allowed(r::MinDeviance, k::ModelKind)
 end
 allowed(::GainRule, ::ModelKind) = error("GainRule is reserved for boosting")
 
-@inline function selection_score(r::BIC, kind::ModelKind, surrogate, n, dmin)
+# `ncoord` is the number of coefficient coordinates (K-1 for softmax, 1 otherwise):
+# every model kind fits `ncoord` times its scalar parameter count, so the BIC
+# penalty scales with it while the deviance term already sums over coordinates.
+@inline function selection_score(r::BIC, kind::ModelKind, surrogate, n, dmin, ncoord::Integer = 1)
     (isfinite(surrogate) && isfinite(n) && n > 0) || return Inf
     dev = max(surrogate, dmin)
-    return n * log(dev / n) + r.dof[Int(kind) + 1] * log(n)
+    return n * log(dev / n) + ncoord * r.dof[Int(kind) + 1] * log(n)
 end
 
-@inline function selection_score(r::MinDeviance, kind::ModelKind, surrogate, n, dmin)
+@inline function selection_score(r::MinDeviance, kind::ModelKind, surrogate, n, dmin, ncoord::Integer = 1)
     allowed(r, kind) || return Inf
     return isfinite(surrogate) ? Float64(surrogate) : Inf
 end
