@@ -11,7 +11,7 @@ clamp and drops the score clamp, which is what SHAP explains.
 @inline function score_row(tree::LinearTree{T,V}, X::AbstractMatrix, i::Integer, clip::Bool) where {T,V}
     nodes = tree.nodes
     doclip = clip & tree.truncate
-    s = zero(V)
+    s = tree.base   # nodes fit residuals atop the initial score; base restores it
     k = 1
     while true
         n = nodes[k]
@@ -39,16 +39,20 @@ clamp and drops the score clamp, which is what SHAP explains.
 end
 
 """
-    score(tree, X; clip=true)
+    score(tree, X; clip=true, nthreads=Threads.nthreads())
 
 Raw path sum per row on the link scale. `clip=false` returns the additive
-unclipped sum.
+unclipped sum. Rows split into `nthreads` contiguous blocks when there are at
+least `PARALLEL_MIN_ROWS` of them; each row writes only its own output slot,
+so the result matches the serial loop exactly.
 """
-function score(tree::LinearTree{T,V}, X::AbstractMatrix; clip::Bool = true) where {T,V}
+function score(tree::LinearTree{T,V}, X::AbstractMatrix; clip::Bool = true, nthreads = Threads.nthreads()) where {T,V}
     n = size(X, 1)
     out = Vector{V}(undef, n)
-    for i in 1:n
-        out[i] = score_row(tree, X, i, clip)
+    row_blocks(n, nthreads) do rs
+        for i in rs
+            out[i] = score_row(tree, X, i, clip)
+        end
     end
     return out
 end
@@ -56,15 +60,34 @@ end
 score_type(::LinearTree{T,V}) where {T,V} = V
 
 """
-    predict(tree, X)
+    predict(tree, X; nthreads=Threads.nthreads())
 
 Prediction on the response scale, `linkinv(tree.loss, score)`.
 """
-predict(tree::LinearTree, X::AbstractMatrix) = predict!(Vector{eltype(score_type(tree))}(undef, size(X, 1)), tree, X)
+predict(tree::LinearTree, X::AbstractMatrix; nthreads = Threads.nthreads()) =
+    predict!(Vector{eltype(score_type(tree))}(undef, size(X, 1)), tree, X; nthreads)
 
-function predict!(out::AbstractVector, tree::LinearTree, X::AbstractMatrix)
-    for i in eachindex(out)
-        out[i] = linkinv(tree.loss, score_row(tree, X, i, true))
+function predict!(out::AbstractVector, tree::LinearTree, X::AbstractMatrix; nthreads = Threads.nthreads())
+    row_blocks(length(out), nthreads) do rs
+        for i in rs
+            out[i] = linkinv(tree.loss, score_row(tree, X, i, true))
+        end
     end
     return out
+end
+
+"Run `f` over `nthreads` contiguous row blocks, threaded when `n` is large enough."
+function row_blocks(f, n::Integer, nthreads::Integer)
+    nthreads = clamp(nthreads, 1, Threads.nthreads())
+    if nthreads == 1 || n < PARALLEL_MIN_ROWS
+        f(1:n)
+    else
+        chunk = cld(n, nthreads)
+        Threads.@threads for t in 1:nthreads
+            lo = (t - 1) * chunk + 1
+            hi = min(t * chunk, n)
+            lo <= hi && f(lo:hi)
+        end
+    end
+    return nothing
 end

@@ -38,6 +38,14 @@ end
 isleaf(n::Node) = n.feature == 0
 iscategorical(n::Node) = n.catwords > 0
 
+"Copy `n` with new children."
+Node{T,V}(n::Node{T,V}; left = n.left, right = n.right) where {T,V} =
+    Node{T,V}(n.feature, n.threshold, left, right, n.lcoef, n.lintercept, n.rcoef, n.rintercept,
+        n.xmin, n.xmax, n.cover, n.xmean, n.catstart, n.catwords, n.model)
+
+"Row-count gate: below this, threaded work is not worth the task overhead."
+const PARALLEL_MIN_ROWS = 2^14
+
 """
 Fitted tree. `lo`, `hi` are the stored first-truncation bounds on the score
 scale. `base` is the SHAP empty-coalition value. `truncate == false` disables
