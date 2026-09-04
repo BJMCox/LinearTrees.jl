@@ -53,6 +53,7 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     V = T
     nlevels = zeros(Int, p)
     for j in categorical
+        1 <= j <= p || throw(ArgumentError("categorical column $j is outside 1:$p"))
         col = view(Xm, :, j)
         all(x -> isfinite(x) && x >= 1 && x == round(x), col) ||
             throw(ArgumentError("categorical column $j must hold integer codes >= 1"))
@@ -195,7 +196,7 @@ function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin) wh
             sc.xs[m] = T(rank[lc]); sc.zs[m] = st.z[i]; sc.hs[m] = st.h[i]; sc.ws[m] = st.w[i]
         end
     end
-    rule = st.rule isa MinDeviance ? st.rule : PconOnly(st.rule)
+    rule = PconOnly(st.rule)      # a categorical column never carries a linear piece, whatever the rule allows
     cand = scan_feature(view(sc.xs, 1:m), view(sc.zs, 1:m), view(sc.hs, 1:m), view(sc.ws, 1:m), rule, st.min_leaf, dmin)
     cand.kind == PCON || return cand, Int[]
     leftcodes = [lc for lc in order if rank[lc] <= cand.threshold]
@@ -414,10 +415,14 @@ function update_score!(st::FitState, rows, me::Integer)
         if isleaf(n)
             inc = n.lintercept
         else
-            x = st.X[i, n.feature]
-            x = st.truncate ? min(max(x, n.xmin), n.xmax) : x
             goleft = goes_left(st, n, i)
-            inc = goleft ? n.lcoef * x + n.lintercept : n.rcoef * x + n.rintercept
+            if iscategorical(n)
+                inc = goleft ? n.lintercept : n.rintercept
+            else
+                x = st.X[i, n.feature]
+                x = st.truncate ? min(max(x, n.xmin), n.xmax) : x
+                inc = goleft ? n.lcoef * x + n.lintercept : n.rcoef * x + n.rintercept
+            end
         end
         s = st.f[i] + inc
         st.f[i] = st.truncate ? clampscore(s, st.lo, st.hi) : s

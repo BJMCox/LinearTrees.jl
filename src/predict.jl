@@ -21,8 +21,9 @@ clamp and drops the score clamp, which is what SHAP explains.
         end
         xraw = T(X[i, n.feature])
         if iscategorical(n)
-            goleft = category_is_left(tree, n, round(Int, xraw))
-            x = xraw
+            # non-finite or non-integer codes are unseen levels and route right
+            goleft = isfinite(xraw) && category_is_left(tree, n, round(Int, xraw))
+            x = zero(T)      # categorical pieces are constants
         else
             x = tree.truncate ? min(max(xraw, n.xmin), n.xmax) : xraw
             goleft = x <= n.threshold

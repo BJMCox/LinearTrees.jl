@@ -53,3 +53,21 @@ end
     @test t1.nodes == tn.nodes
     @test t1.catmasks == tn.catmasks
 end
+
+@testset "categorical guards" begin
+    rng = StableRNG(17)
+    n = 4000; L = 20
+    lvl = rand(rng, 1:L, n); means = [l <= 10 ? Float64(l) : 40.0 + l for l in 1:L]
+    y = means[lvl] .+ 0.1 .* randn(rng, n)
+    X = Float64.(reshape(lvl, n, 1))
+    # a rule that allows linear kinds still gives pcon on a categorical column
+    t = fit_tree(X, y; categorical = [1], rule = MinDeviance((PCON, PLIN)), max_depth = 4)
+    @test all(nd.model == PCON for nd in t.nodes if !LinearTrees.isleaf(nd))
+    @test maximum(abs, predict(t, X) .- means[lvl]) < 5
+    # non-finite code routes right like an unseen level
+    tb = fit_tree(X, y; categorical = [1], max_depth = 1)
+    right = findfirst(c -> !LinearTrees.category_is_left(tb, tb.nodes[1], c), 1:L)
+    @test predict(tb, [NaN;;])[1] == predict(tb, [Float64(right);;])[1]
+    @test_throws ArgumentError fit_tree(X, y; categorical = [3])
+    @test_throws ArgumentError fit_tree(X .+ 0.5, y; categorical = [1])
+end
