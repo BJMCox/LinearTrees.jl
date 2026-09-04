@@ -39,6 +39,21 @@ end
     irls_weights!(h, MAD(), y, f)
     @test h[1] ≈ 1.0 && h[3] ≈ 1.0 && isfinite(h[2]) && h[2] > 0   # exact residual uses the positive floor
     @test !issmooth(MAD()) && !issmooth(Quantile(0.5))
+
+    irls_weights!(h, Quantile(0.25), y, f)
+    @test h[1] ≈ 0.75 && h[3] ≈ 0.25          # |g| / |r| with |r| = 1
+    @test h[2] == LinearTrees.HMIN             # g = 0 at equality floors to HMIN
+end
+
+@testset "loss parameter validation" begin
+    @test_throws ArgumentError Huber(-1.0)
+    @test_throws ArgumentError Huber(0.0)
+    @test_throws ArgumentError Quantile(1.5)
+    @test_throws ArgumentError Quantile(0.0)
+    @test_throws ArgumentError Tweedie(0.5)
+    @test_throws ArgumentError Tweedie(2.0)
+    @test_throws ArgumentError NegBin(-2.0)
+    @test Huber(1).δ === 1.0 && Quantile(1//4).τ === 0.25
 end
 
 @testset "init scores, domains, bounds" begin

@@ -8,19 +8,26 @@ abstract type Loss end
 const HMIN = 1e-6
 
 struct MSE <: Loss end
-struct Huber <: Loss; δ::Float64; end
-struct Quantile <: Loss; τ::Float64; end
+struct Huber <: Loss
+    δ::Float64
+    Huber(δ::Real) = (δ > 0 || throw(ArgumentError("δ must be positive")); new(Float64(δ)))
+end
+struct Quantile <: Loss
+    τ::Float64
+    Quantile(τ::Real) = (0 < τ < 1 || throw(ArgumentError("τ must lie in (0, 1)")); new(Float64(τ)))
+end
 struct MAD <: Loss end
 struct Logistic <: Loss end
 struct Poisson <: Loss end
-struct NegBin <: Loss; θ::Float64; end
+struct NegBin <: Loss
+    θ::Float64
+    NegBin(θ::Real) = (θ > 0 || throw(ArgumentError("θ must be positive")); new(Float64(θ)))
+end
 struct Gamma <: Loss end
-struct Tweedie <: Loss; ρ::Float64; end
-
-Quantile(τ::Real) = (0 < τ < 1 || throw(ArgumentError("τ must lie in (0, 1)")); Quantile(Float64(τ)))
-Tweedie(ρ::Real) = (1 < ρ < 2 || throw(ArgumentError("ρ must lie in (1, 2)")); Tweedie(Float64(ρ)))
-NegBin(θ::Real) = (θ > 0 || throw(ArgumentError("θ must be positive")); NegBin(Float64(θ)))
-Huber(δ::Real) = (δ > 0 || throw(ArgumentError("δ must be positive")); Huber(Float64(δ)))
+struct Tweedie <: Loss
+    ρ::Float64
+    Tweedie(ρ::Real) = (1 < ρ < 2 || throw(ArgumentError("ρ must lie in (1, 2)")); new(Float64(ρ)))
+end
 
 issmooth(::Loss) = true
 issmooth(::Union{Quantile,MAD}) = false
