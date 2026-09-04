@@ -35,7 +35,7 @@ function coeftable(tree::LinearTree{T,V}, x::AbstractVector) where {T,V}
         end
         xraw = T(x[n.feature])
         if iscategorical(n)
-            goleft = category_is_left(tree, n, round(Int, xraw))
+            goleft = isfinite(xraw) && category_is_left(tree, n, round(Int, xraw))   # non-finite codes route right, as in score_row
             intercept += goleft ? n.lintercept : n.rintercept
         else
             xc = tree.truncate ? min(max(xraw, n.xmin), n.xmax) : xraw

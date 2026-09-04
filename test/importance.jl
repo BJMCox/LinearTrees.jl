@@ -24,3 +24,15 @@ end
     @test a[1] == 0
     @test b + dot(a, xfar) ≈ score(t, reshape(xfar, 1, 2); clip = false)[1] atol = 1e-10
 end
+
+@testset "coeftable mirrors categorical routing" begin
+    rng = StableRNG(21)
+    n = 300; lvl = Float64.(rand(rng, 1:5, n)); x2 = randn(rng, n)
+    y = [l in (1.0, 3.0) ? 2.0 : -1.0 for l in lvl] .+ x2
+    t = fit_tree([lvl x2], y; categorical = [1])
+    for xq in ([2.0, 0.3], [9.0, -0.4], [NaN, 0.1])
+        b, a = coeftable(t, xq)
+        @test a[1] == 0
+        @test b + a[2] * xq[2] ≈ score(t, reshape(xq, 1, 2); clip = false)[1] atol = 1e-10
+    end
+end
