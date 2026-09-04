@@ -329,6 +329,8 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, lincha
     dmin = dmin_for(st, rows)
     inrow = falses(length(st.y)); inrow[rows] .= true
     best, bestj, leftcodes = best_split(st, rows, inrow, dmin, tids)
+    con_surrogate = fit_con(node_sums(st, rows))[2]
+    gain = T(sum(con_surrogate) - sum(best.surrogate))
     if best.kind == CON || bestj == 0
         me = leafnode(st, rows, best.kind == CON ? best.lintercept : fit_con(node_sums(st, rows))[1])
         me = refit_node(st, me, rows)
@@ -345,7 +347,7 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, lincha
     end
     if best.kind == LIN
         me = Node{T,V}(; feature = bestj, threshold = T(NaN), lcoef = best.lcoef, lintercept = best.lintercept,
-            rcoef = best.lcoef, rintercept = best.lintercept, xmin, xmax, cover = nw, xmean, model = LIN)
+            rcoef = best.lcoef, rintercept = best.lintercept, xmin, xmax, cover = nw, xmean, gain, model = LIN)
         me = refit_node(st, me, rows)
         update_score!(st, rows, me); refresh!(st, rows)
         cnodes, cmasks = grow_subtree(st, rows, depth, linchain + 1, tids)
@@ -360,7 +362,7 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, lincha
         threshold = T(NaN)
     end
     me = Node{T,V}(; feature = bestj, threshold, lcoef = best.lcoef, lintercept = best.lintercept,
-        rcoef = best.rcoef, rintercept = best.rintercept, xmin, xmax, cover = nw, xmean, model = best.kind,
+        rcoef = best.rcoef, rintercept = best.rintercept, xmin, xmax, cover = nw, xmean, gain, model = best.kind,
         catstart, catwords)
     me = refit_node(st, me, rows, masks)
     update_score!(st, rows, me, masks)

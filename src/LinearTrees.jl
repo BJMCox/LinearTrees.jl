@@ -17,6 +17,7 @@ include("serialize.jl")
 export ModelKind, CON, LIN, PCON, BLIN, PLIN, Node, LinearTree, MomentSums
 export BIC, MinDeviance, GainRule
 export score, predict, predict!, fit_tree
+export feature_importance, coeftable
 export Loss, MSE, Huber, Quantile, MAD, Logistic, Poisson, NegBin, Gamma, Tweedie, Softmax
 export gradhess!, linkinv, initscore, deviance, scorebound, validate_target, issmooth, irls_weights!
 

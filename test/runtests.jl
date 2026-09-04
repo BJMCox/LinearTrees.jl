@@ -2,6 +2,7 @@ using LinearTrees
 using Test
 using Aqua
 using JET
+using LinearAlgebra
 
 @testset "LinearTrees.jl" begin
     @testset "Code quality (Aqua.jl)" begin
@@ -21,4 +22,5 @@ using JET
     include("categorical.jl")
     include("softmax.jl")
     include("threads.jl")
+    include("importance.jl")
 end

@@ -22,6 +22,7 @@ struct Node{T,V}
     xmax::T
     cover::T
     xmean::T
+    gain::T
     catstart::Int32
     catwords::Int32
     model::ModelKind
@@ -29,10 +30,10 @@ end
 
 function Node{T,V}(; feature = 0, threshold = zero(T), left = 0, right = 0,
         lcoef = zero(V), lintercept = zero(V), rcoef = zero(V), rintercept = zero(V),
-        xmin = T(-Inf), xmax = T(Inf), cover = zero(T), xmean = zero(T),
+        xmin = T(-Inf), xmax = T(Inf), cover = zero(T), xmean = zero(T), gain = zero(T),
         catstart = 0, catwords = 0, model = CON) where {T,V}
     Node{T,V}(feature, threshold, left, right, lcoef, lintercept, rcoef, rintercept,
-        xmin, xmax, cover, xmean, catstart, catwords, model)
+        xmin, xmax, cover, xmean, gain, catstart, catwords, model)
 end
 
 isleaf(n::Node) = n.feature == 0
@@ -40,9 +41,9 @@ iscategorical(n::Node) = n.catwords > 0
 
 "Copy `n` with new children, coefficients, intercepts, or mask offset."
 Node{T,V}(n::Node{T,V}; left = n.left, right = n.right, lcoef = n.lcoef, rcoef = n.rcoef,
-        lintercept = n.lintercept, rintercept = n.rintercept, catstart = n.catstart) where {T,V} =
+        lintercept = n.lintercept, rintercept = n.rintercept, gain = n.gain, catstart = n.catstart) where {T,V} =
     Node{T,V}(n.feature, n.threshold, left, right, lcoef, lintercept, rcoef, rintercept,
-        n.xmin, n.xmax, n.cover, n.xmean, catstart, n.catwords, n.model)
+        n.xmin, n.xmax, n.cover, n.xmean, gain, catstart, n.catwords, n.model)
 
 "Row-count gate: below this, threaded work is not worth the task overhead."
 const PARALLEL_MIN_ROWS = 2^14
