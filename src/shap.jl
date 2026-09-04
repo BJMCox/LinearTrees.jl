@@ -100,6 +100,7 @@ function attribute_constant!(φ::AbstractArray{T,3}, path::Vector{PathElem}, v::
     return nothing
 end
 
+"Extend `path` by one element, then dispatch. Called once per row, for the root only -- a split node's own hot/cold recursion already holds an extended path and calls `visit!` on it directly."
 function shap_recurse!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem},
         zerofrac, onefrac, feature) where {T,V}
     path = extend!(copy(path), zerofrac, onefrac, feature)
@@ -164,7 +165,10 @@ function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem}) wh
     hotcov, coldcov = goleft ? (covl, covr) : (covr, covl)
     hotval, coldval = goleft ? (lval, rval) : (rval, lval)
     hotown = goleft ? ownl : ownr
-    # constant part of the taken branch's piece, one level down
+    # constant part of the taken branch's piece, one level down.  hotpath and
+    # coldpath are already the paths the hot/cold recursion needs, so they are
+    # passed straight into visit! rather than rebuilt there -- shap_recurse!
+    # would otherwise copy(path) and extend! a second time for the same result.
     hotpath = extend!(copy(path), hotcov * izero, ione, j)
     attribute_constant!(φ, hotpath, hotval, row)
     # own-feature linear term: only present when j is in the coalition, so
@@ -173,8 +177,8 @@ function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem}) wh
     attribute_constant!(φ, ownpath, hotown, row)
     coldpath = extend!(copy(path), coldcov * izero, 0.0, j)
     attribute_constant!(φ, coldpath, coldval, row)
-    shap_recurse!(φ, tree, x, row, hot, path, hotcov * izero, ione, j)
-    shap_recurse!(φ, tree, x, row, cold, path, coldcov * izero, 0.0, j)
+    visit!(φ, tree, x, row, hot, hotpath)
+    visit!(φ, tree, x, row, cold, coldpath)
     return nothing
 end
 
@@ -205,6 +209,13 @@ function expected_score(tree::LinearTree{T,V}, k::Integer = 1) where {T,V}
     return covl * (lval + expected_score(tree, n.left)) + covr * (rval + expected_score(tree, n.right))
 end
 
+"""
+    shap!(values, clipped, tree, X; nthreads=Threads.nthreads())
+
+In-place [`shap`](@ref): write into `values` (`n × p`, or `n × p × (K-1)` for
+`Softmax`) and `clipped` (`Vector{Bool}`, length `n`), then return a
+[`ShapResult`](@ref) wrapping them.
+"""
 function shap!(values, clipped::Vector{Bool}, tree::LinearTree{T,V}, X::AbstractMatrix;
         nthreads = Threads.nthreads()) where {T,V}
     n = size(X, 1)
@@ -218,6 +229,13 @@ function shap!(values, clipped::Vector{Bool}, tree::LinearTree{T,V}, X::Abstract
     return ShapResult(values, expected_score(tree), clipped)
 end
 
+"""
+    shap(tree, X; nthreads=Threads.nthreads()) -> ShapResult
+
+Path-dependent TreeSHAP values for every row of `X` against every feature of
+`tree`, on the unclipped score scale. Each row's SHAP values sum to
+`score_row(tree, X, i, false) - result.base`, the game's efficiency identity.
+"""
 function shap(tree::LinearTree{T,V}, X::AbstractMatrix; nthreads = Threads.nthreads()) where {T,V}
     n = size(X, 1); p = tree.nfeatures
     values = V <: SVector ? zeros(T, n, p, length(V)) : zeros(T, n, p)
