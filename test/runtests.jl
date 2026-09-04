@@ -10,6 +10,7 @@ using JET
     @testset "Code linting (JET.jl)" begin
         JET.test_package(LinearTrees)
     end
+    include("loss.jl")
     include("node.jl")
     include("predict.jl")
 end

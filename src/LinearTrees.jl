@@ -14,7 +14,9 @@ include("mlj.jl")
 include("show.jl")
 include("serialize.jl")
 
-export ModelKind, CON, LIN, PCON, BLIN, PLIN, Node, LinearTree, MomentSums, MSE
+export ModelKind, CON, LIN, PCON, BLIN, PLIN, Node, LinearTree, MomentSums
 export score, predict, predict!
+export Loss, MSE, Huber, Quantile, MAD, Logistic, Poisson, NegBin, Gamma, Tweedie
+export gradhess!, linkinv, initscore, deviance, scorebound, validate_target, issmooth, irls_weights!
 
 end
