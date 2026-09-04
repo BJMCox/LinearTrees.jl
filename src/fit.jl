@@ -158,7 +158,7 @@ on ties, the lowest feature index, so the result equals the serial search.
 """
 function best_split(st::FitState{T,V}, rows, inrow::BitVector, dmin) where {T,V}
     p = size(st.X, 2)
-    if length(rows) < PARALLEL_MIN_ROWS || st.nthreads == 1 || p == 1
+    if size(st.X, 1) < PARALLEL_MIN_ROWS || st.nthreads == 1 || p == 1   # gather! scans the full presorted column, so the cost is O(n) per feature regardless of node size
         return best_split_serial(st, rows, inrow, dmin, 1:p, 1)
     end
     chunks = collect(Iterators.partition(1:p, cld(p, st.nthreads)))
