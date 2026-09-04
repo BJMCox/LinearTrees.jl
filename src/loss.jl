@@ -81,9 +81,9 @@ end
 IRLS pseudo-hessian for non-smooth losses: `|g| / max(|r|, ε)` for quantile,
 `1 / max(|r|, ε)` for MAD, with a positive scale-aware floor `ε`.
 """
-function irls_weights!(h::AbstractVector{T}, loss::Union{Quantile,MAD}, y::AbstractVector, f::AbstractVector) where {T}
+function irls_weights!(h::AbstractVector{T}, loss::Union{Quantile,MAD}, y::AbstractVector, f::AbstractVector;
+        ε = max(T(1e-3) * median_abs(y .- f), sqrt(eps(T)) * max(maximum(abs, y), one(T)))) where {T}
     r = y .- f
-    ε = max(T(1e-3) * median_abs(r), sqrt(eps(T)) * max(maximum(abs, y), one(T)))
     for i in eachindex(h)
         num = loss isa MAD ? one(T) : abs(first(gh(loss, y[i], f[i])))
         h[i] = max(num / max(abs(r[i]), ε), T(HMIN))

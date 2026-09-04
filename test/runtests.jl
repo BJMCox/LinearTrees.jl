@@ -16,4 +16,5 @@ using JET
     include("accumulate.jl")
     include("select.jl")
     include("scan.jl")
+    include("fit.jl")
 end
