@@ -15,4 +15,5 @@ using JET
     include("predict.jl")
     include("accumulate.jl")
     include("select.jl")
+    include("scan.jl")
 end
