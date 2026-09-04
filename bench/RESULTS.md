@@ -3,8 +3,11 @@
 Machine: Apple M4 Pro, 10 CPU threads (`Sys.CPU_THREADS`), 64.0 GiB memory.
 Julia 1.12.7. `DecisionTree.build_tree(y, X, 0, 8, 5, 10)` as the comparison
 baseline; `fit_tree(X, y; max_depth = 8)` for LinearTrees. Data: `StableRNG(1)`,
-`n = 100_000`, `p = 20`, from `bench/run.jl`. California Housing is skipped
-when `MLDatasets` is not installed, which is the case here.
+`n = 100_000`, `p = 20`, from `bench/run.jl`. The plan's California Housing
+benchmark is not in `bench/run.jl`: `MLDatasets` does not ship that dataset
+(its supervised sets are BostonHousing, Titanic, Iris, Wine, Mutagenesis, and
+SMSSpamCollection), so the item was dropped rather than left as an
+unreachable branch.
 
 Reproduce with `julia --project=bench -t 1 bench/run.jl` and
 `julia --project=bench -t auto bench/run.jl` (instantiate `bench/` first).
@@ -44,7 +47,9 @@ than-serial finding to report here. Threaded `fit_tree` does allocate more
 (3912 vs. 901 allocations on linear) from the per-task scratch buffers and
 `Threads.@spawn` overhead, but the wall-clock win dominates.
 
-`LinearTrees.predict` beats `DecisionTree.build_tree`'s single fit by three
-orders of magnitude in wall time on every configuration, because it is
-prediction, not tree growth; it is included for scale, not as a fair
-apples-to-apples comparison with `build_tree`.
+`LinearTrees.predict`'s median beats `DecisionTree.build_tree`'s median by
+405x (serial linear, 636 ms / 1.571 ms) up to about 4,390x (threaded
+piecewise, 654 ms / 149 μs) — roughly 2.6 to 3.6 orders of magnitude, not a
+flat three. This is expected, since it is prediction, not tree growth; it is
+included for scale, not as a fair apples-to-apples comparison with
+`build_tree`.

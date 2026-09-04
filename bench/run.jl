@@ -30,15 +30,3 @@ ypw = [X[i, 1] > 0.5 ? 2X[i, 2] : -X[i, 3] for i in 1:n] .+ 0.1 .* randn(rng, n)
 
 bench_set("linear", X, ylin)
 bench_set("piecewise", X, ypw)
-
-# California Housing is fetched through MLDatasets, an optional dependency this
-# package never requires: skip cleanly rather than force it onto every user.
-if Base.find_package("MLDatasets") !== nothing
-    @eval using MLDatasets
-    housing = MLDatasets.CaliforniaHousing()
-    Xh = Matrix{Float64}(Matrix(housing.features)')
-    yh = Vector{Float64}(housing.targets[1, :])
-    bench_set("california housing", Xh, yh)
-else
-    println("MLDatasets not installed -- California Housing benchmark skipped.")
-end
