@@ -24,6 +24,18 @@
     out = similar(s); predict!(out, tree, X); @test out == s
 end
 
+@testset "predict! rejects a mismatched output length" begin
+    T = Float64
+    N(; kw...) = Node{T,T}(; kw...)
+    nodes = [N(feature = 1, left = 2, right = 2, lcoef = 2.0, lintercept = 0.0,
+               rcoef = 2.0, rintercept = 0.0, xmin = 0.0, xmax = 1.0, model = LIN),
+             N(lintercept = 1.0)]
+    tree = LinearTree{T,T,MSE}(nodes, UInt64[], MSE(), -1.0, 1.0, 0.0, 1, true)
+    X = reshape(collect(1.0:5.0), 5, 1)
+    @test_throws DimensionMismatch predict!(zeros(3), tree, X)   # short out: used to silently write 3 values
+    @test_throws DimensionMismatch predict!(zeros(7), tree, X)   # long out: used to BoundsError inside score_row
+end
+
 @testset "clamps and lin nodes" begin
     T = Float64
     N(; kw...) = Node{T,T}(; kw...)

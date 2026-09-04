@@ -90,6 +90,7 @@ predict(tree::LinearTree, X::AbstractMatrix; nthreads = Threads.nthreads()) =
     predict!(Vector{eltype(score_type(tree))}(undef, size(X, 1)), tree, X; nthreads)
 
 function predict!(out::AbstractVector, tree::LinearTree, X::AbstractMatrix; nthreads = Threads.nthreads())
+    length(out) == size(X, 1) || throw(DimensionMismatch("out has length $(length(out)), X has $(size(X, 1)) rows"))
     row_blocks(length(out), nthreads) do rs
         for i in rs
             out[i] = linkinv(tree.loss, score_row(tree, X, i, true))
