@@ -28,5 +28,6 @@ export gradhess!, linkinv, initscore, deviance, scorebound, validate_target, iss
 export LinearTreeRegressorFit, LinearTreeClassifierFit
 export LinearTreeRegressor, LinearTreeClassifier
 export fit, nobs, dof, weights, residuals
+export TreeView, to_dict, from_dict
 
 end

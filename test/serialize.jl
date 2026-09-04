@@ -1,0 +1,47 @@
+using StableRNGs, Serialization
+
+@testset "to_dict round trip" begin
+    rng = StableRNG(33)
+    X = rand(rng, 200, 3); y = sin.(3 .* X[:, 1]) .+ X[:, 2]
+    for t in (fit_tree(X, y), fit_tree(X, [X[i, 1] > 0.5 ? 1 : X[i, 3] > 0.5 ? 2 : 3 for i in 1:200], Softmax(3)))
+        d = to_dict(t)
+        @test d["nodes"] isa Vector && d["loss"] isa Dict
+        t2 = from_dict(d)
+        @test t2.nodes == t.nodes && t2.catmasks == t.catmasks && t2.loss == t.loss
+        @test predict(t2, X) == predict(t, X)
+        io = IOBuffer(); serialize(io, t); seekstart(io)
+        @test predict(deserialize(io), X) == predict(t, X)
+    end
+end
+
+@testset "to_dict round trip: categorical, MAD, LIN-root" begin
+    rng = StableRNG(41)
+    X = rand(rng, 150, 2); lev = rand(rng, 1:4, 150)
+    y = [lev[i] in (1, 2) ? X[i, 1] : -X[i, 1] for i in 1:150] .+ 0.01 .* randn(rng, 150)
+    Xc = hcat(X, Float64.(lev))
+    tcat = fit_tree(Xc, y; categorical = [3])
+    dcat = to_dict(tcat); t2 = from_dict(dcat)
+    @test t2.nodes == tcat.nodes && t2.catmasks == tcat.catmasks && t2.loss == tcat.loss
+    @test predict(t2, Xc) == predict(tcat, Xc)
+
+    ymad = 3 .* X[:, 1] .+ 2 .+ 0.01 .* randn(rng, 150)
+    tmad = fit_tree(X, ymad, MAD())
+    dmad = to_dict(tmad); t3 = from_dict(dmad)
+    @test t3.nodes == tmad.nodes && t3.loss == tmad.loss
+    @test predict(t3, X) == predict(tmad, X)
+
+    Xlin = reshape(collect(range(0, 1, length = 50)), 50, 1)
+    ylin = 3 .* Xlin[:, 1] .+ 2
+    tlin = fit_tree(Xlin, ylin)
+    @test tlin.nodes[1].model == LIN && isnan(tlin.nodes[1].threshold)
+    dlin = to_dict(tlin)
+    @test dlin["nodes"][1]["threshold"] === nothing
+    t4 = from_dict(dlin)
+    @test t4.nodes == tlin.nodes
+    @test predict(t4, Xlin) == predict(tlin, Xlin)
+end
+
+@testset "from_dict rejects an unknown loss" begin
+    d = Dict{String,Any}("name" => "NotALoss", "params" => Dict{String,Any}())
+    @test_throws ArgumentError LinearTrees.lossfromdict(d)
+end
