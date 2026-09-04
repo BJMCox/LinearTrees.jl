@@ -101,6 +101,39 @@ end
     @test res.base ≈ t.base atol = 1e-10
 end
 
+"Walk `tree.nodes` from the root; true if a LIN node's feature also splits an ancestor."
+function has_lin_under_same_feature(tree)
+    found = false
+    function walk(k, ancestors)
+        n = tree.nodes[k]
+        LinearTrees.isleaf(n) && return
+        j = n.feature
+        islin = !LinearTrees.iscategorical(n) && n.left == n.right
+        islin && j in ancestors && (found = true)
+        newanc = islin ? ancestors : (ancestors ∪ (j,))
+        walk(n.left, newanc)
+        n.right != n.left && walk(n.right, newanc)
+    end
+    walk(1, Set{Int}())
+    return found
+end
+
+@testset "shap matches brute force with a LIN node under an ancestor split on the same feature" begin
+    rng = StableRNG(2)
+    X = rand(rng, 300, 4)
+    y = sin.(3 .* X[:, 1]) .+ 2 .* X[:, 2] .* (X[:, 3] .> 0.5) .+ X[:, 4] .^ 2 .+ 0.05 .* randn(rng, 300)
+    t = fit_tree(X, y; max_depth = 4, truncate = false)
+    @test has_lin_under_same_feature(t)   # node 19 (LIN, feature 4) sits under node 14 (SPLIT, feature 4)
+
+    res = shap(t, X[1:10, :])
+    for i in 1:10
+        φ, base = brute_shap(t, X[i, :])
+        @test res.values[i, :] ≈ φ atol = 1e-10
+        @test res.base ≈ base atol = 1e-10
+    end
+    @test vec(sum(res.values; dims = 2)) .+ res.base ≈ score(t, X[1:10, :]; clip = false) atol = 1e-10
+end
+
 @testset "shap threaded matches serial on a large set" begin
     rng = StableRNG(26)
     n = 20_000; X = rand(rng, n, 3); y = sin.(3 .* X[:, 1]) .+ 2 .* X[:, 2] .+ 0.05 .* randn(rng, n)

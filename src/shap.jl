@@ -127,14 +127,18 @@ function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem}) wh
         # j here would rescale every other element's weight for no reason,
         # since a (zerofrac=1, onefrac=1) element is not a no-op mid-path.
         # Only the own-feature term lcoef * (x - xmean) is conditional on
-        # presence, and only it adds a real dimension to the path.
+        # presence. If an ancestor already split on j, that ancestor fixed
+        # j's coalition state (its onefrac); the own term reuses that state
+        # (unwind the stale element, extend with zerofrac 0 and the
+        # ancestor's onefrac) on its own copy of path, leaving path itself,
+        # the constant attribution and the child recursion untouched.
         xc = tree.truncate ? min(max(xraw, n.xmin), n.xmax) : xraw
         val = n.lcoef * n.xmean + n.lintercept
         own = n.lcoef * (xc - n.xmean)
-        prev = findfirst(e -> e.feature == j, path)
-        prev !== nothing && unwind!(path, prev)
         attribute_constant!(φ, path, val, row)
-        ownpath = extend!(copy(path), 0.0, 1.0, j)
+        prev = findfirst(e -> e.feature == j, path)
+        ownpath = prev === nothing ? extend!(copy(path), 0.0, 1.0, j) :
+            extend!(unwind!(copy(path), prev), 0.0, path[prev].onefrac, j)
         attribute_constant!(φ, ownpath, own, row)
         visit!(φ, tree, x, row, n.left, path)
         return nothing
@@ -185,6 +189,12 @@ Equal to `tree.base` only when every non-leaf node has `lcoef == rcoef`.
 function expected_score(tree::LinearTree{T,V}, k::Integer = 1) where {T,V}
     n = tree.nodes[k]
     isleaf(n) && return n.lintercept
+    if !iscategorical(n) && n.left == n.right
+        # LIN node: single child, covr == 0 -- skip the right term entirely
+        # rather than recurse into n.right (== n.left) and multiply by 0
+        lval = n.lcoef * n.xmean + n.lintercept
+        return lval + expected_score(tree, n.left)
+    end
     if iscategorical(n)
         lval = n.lintercept; rval = n.rintercept
     else
