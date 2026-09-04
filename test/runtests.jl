@@ -13,4 +13,5 @@ using JET
     include("loss.jl")
     include("node.jl")
     include("predict.jl")
+    include("accumulate.jl")
 end

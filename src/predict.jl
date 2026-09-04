@@ -13,7 +13,7 @@ clamp and drops the score clamp, which is what SHAP explains.
     doclip = clip & tree.truncate
     s = zero(V)
     k = 1
-    @inbounds while true
+    while true
         n = nodes[k]
         if isleaf(n)
             s += n.lintercept
@@ -47,7 +47,7 @@ unclipped sum.
 function score(tree::LinearTree{T,V}, X::AbstractMatrix; clip::Bool = true) where {T,V}
     n = size(X, 1)
     out = Vector{V}(undef, n)
-    @inbounds for i in 1:n
+    for i in 1:n
         out[i] = score_row(tree, X, i, clip)
     end
     return out
@@ -63,7 +63,7 @@ Prediction on the response scale, `linkinv(tree.loss, score)`.
 predict(tree::LinearTree, X::AbstractMatrix) = predict!(Vector{eltype(score_type(tree))}(undef, size(X, 1)), tree, X)
 
 function predict!(out::AbstractVector, tree::LinearTree, X::AbstractMatrix)
-    @inbounds for i in eachindex(out)
+    for i in eachindex(out)
         out[i] = linkinv(tree.loss, score_row(tree, X, i, true))
     end
     return out
