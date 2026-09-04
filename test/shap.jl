@@ -158,3 +158,16 @@ end
     @test r1.values == rn.values
     @test r1.clipped == rn.clipped
 end
+
+@testset "shap base comes from the nodes, not the base field" begin
+    # a hand-built tree with a stale `base` (the constructor default pattern) must still satisfy efficiency
+    N(; kw...) = LinearTrees.Node{Float64,Float64}(; kw...)
+    nodes = [N(feature = 1, threshold = 0.5, left = 2, right = 3, lcoef = 0.3, lintercept = 0.2, rcoef = 0.8,
+               rintercept = -0.3, cover = 10.0, xmean = 0.5, xmin = 0.0, xmax = 1.0, model = PLIN),
+             N(lintercept = 0.1, cover = 4.0), N(lintercept = -0.2, cover = 6.0)]
+    t = LinearTree{Float64,Float64,MSE}(nodes, UInt64[], MSE(), -100.0, 100.0, 0.0, 1, false)
+    X = reshape(collect(0.05:0.1:0.95), :, 1)
+    res = shap(t, X)
+    @test res.base != t.base
+    @test vec(sum(res.values; dims = 2)) .+ res.base ≈ score(t, X; clip = false) atol = 1e-12
+end

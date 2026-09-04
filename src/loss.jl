@@ -192,6 +192,7 @@ function median_abs(r::AbstractVector, w::AbstractVector)
     a = abs.(r)
     o = sortperm(a)
     total = sum(w)
+    total > 0 || throw(ArgumentError("weights must have a positive sum"))
     half = total / 2
     cw = zero(total)
     for (k, i) in enumerate(o)
@@ -199,6 +200,7 @@ function median_abs(r::AbstractVector, w::AbstractVector)
         cw > half && return a[i]
         cw == half && return (a[i] + a[o[k + 1]]) / 2   # boundary lands exactly at half: average with the next value
     end
+    return a[o[end]]   # unreachable once total > 0; keeps the return type concrete
 end
 
 """

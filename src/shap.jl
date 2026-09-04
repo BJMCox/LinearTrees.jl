@@ -5,7 +5,7 @@
     ShapResult{A,B,C}
 
 `values` is `n × p` for scalar-score trees, `n × p × (K-1)` for `Softmax`.
-`base` is the game's empty-coalition value, `tree.base` (see `expected_score`).
+`base` is the game's empty-coalition value, `expected_score(tree)`; `fit_tree` stores the same number in `tree.base`.
 `clipped[i]` is true when the score bound changed row `i`'s prediction.
 """
 struct ShapResult{A,B,C}
@@ -187,8 +187,9 @@ end
 Cover-weighted `game_value(tree, ·, ∅)` over the whole tree: at each split
 the absent feature's piece is evaluated at the node's `xmean` on both
 children, weighted by `cover(child) / cover(parent)`. Independent of `x`.
-`fit_tree` calls this once to fill `tree.base`; `shap`/`shap!` read it from
-there rather than recomputing it on every call.
+`fit_tree` stores it in `tree.base`. `shap`/`shap!` recompute it from the
+nodes (`O(nodes)`) so a hand-built tree whose `base` field is stale still
+satisfies the efficiency identity.
 """
 function expected_score(tree::LinearTree{T,V}, k::Integer = 1) where {T,V}
     n = tree.nodes[k]
@@ -226,7 +227,7 @@ function shap!(values, clipped::Vector{Bool}, tree::LinearTree{T,V}, X::Abstract
             clipped[i] = score_row(tree, X, i, true) != score_row(tree, X, i, false)
         end
     end
-    return ShapResult(values, tree.base, clipped)   # tree.base is expected_score(tree), computed once at fit time
+    return ShapResult(values, expected_score(tree), clipped)   # derived from the nodes, not trusted from tree.base
 end
 
 """
