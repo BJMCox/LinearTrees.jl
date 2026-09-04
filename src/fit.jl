@@ -62,6 +62,12 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     rows = collect(Int32(1):Int32(n))
     refresh!(st, rows)
     grow!(st, rows, 0, 0)
+    # Fold the clamped start score into the root node: training accumulates it in
+    # st.f before any node is fit, but prediction starts score_row at zero, so the
+    # root's own intercepts must carry it. Exact for every loss, clamped or not.
+    f0c = clampscore(f0, lo, hi)
+    st.nodes[1] = Node{T,V}(st.nodes[1]; lintercept = st.nodes[1].lintercept + f0c,
+        rintercept = st.nodes[1].rintercept + f0c)
     base = sum(w .* st.f) / sum(w)      # SHAP base value: cover-weighted mean of the training score
     return LinearTree{T,V,typeof(loss)}(st.nodes, st.catmasks, loss, lo, hi, base, p, truncate)
 end

@@ -6,7 +6,7 @@ import DecisionTree
     y = 3 .* X[:, 1] .+ 2
     t = fit_tree(X, y)
     @test t.nodes[1].model == LIN
-    @test t.nodes[1].lcoef ≈ 3 && t.nodes[1].lintercept ≈ 2 - 3.5   # residual after the root score mean(y) = 3.5
+    @test t.nodes[1].lcoef ≈ 3 && t.nodes[1].lintercept ≈ 2   # root intercept includes the folded start score mean(y) = 3.5
     @test predict(t, X) ≈ y atol = 1e-8
 end
 

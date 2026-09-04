@@ -11,7 +11,7 @@ clamp and drops the score clamp, which is what SHAP explains.
 @inline function score_row(tree::LinearTree{T,V}, X::AbstractMatrix, i::Integer, clip::Bool) where {T,V}
     nodes = tree.nodes
     doclip = clip & tree.truncate
-    s = tree.base   # nodes fit residuals atop the initial score; base restores it
+    s = zero(V)
     k = 1
     while true
         n = nodes[k]

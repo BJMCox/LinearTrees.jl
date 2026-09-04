@@ -38,9 +38,10 @@ end
 isleaf(n::Node) = n.feature == 0
 iscategorical(n::Node) = n.catwords > 0
 
-"Copy `n` with new children."
-Node{T,V}(n::Node{T,V}; left = n.left, right = n.right) where {T,V} =
-    Node{T,V}(n.feature, n.threshold, left, right, n.lcoef, n.lintercept, n.rcoef, n.rintercept,
+"Copy `n` with new children or intercepts."
+Node{T,V}(n::Node{T,V}; left = n.left, right = n.right,
+        lintercept = n.lintercept, rintercept = n.rintercept) where {T,V} =
+    Node{T,V}(n.feature, n.threshold, left, right, n.lcoef, lintercept, n.rcoef, rintercept,
         n.xmin, n.xmax, n.cover, n.xmean, n.catstart, n.catwords, n.model)
 
 "Row-count gate: below this, threaded work is not worth the task overhead."
