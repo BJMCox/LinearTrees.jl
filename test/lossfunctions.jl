@@ -1,4 +1,5 @@
 using LossFunctions, StableRNGs
+import Distributions
 
 @testset "L2DistLoss adapter equals MSE" begin
     rng = StableRNG(24)
@@ -27,4 +28,30 @@ end
 @testset "L1DistLoss adapter uses IRLS" begin
     @test !issmooth(Loss(L1DistLoss()))
     @test !issmooth(Loss(QuantileLoss(0.3)))
+end
+
+@testset "QuantileLoss adapter matches native Quantile at the zero-residual tie" begin
+    rng = StableRNG(30)
+    X = randn(rng, 500, 3); y = X[:, 1] .+ 0.5 .* X[:, 2] .+ 0.3 .* randn(rng, 500)
+    t1 = fit_tree(X, y, Quantile(0.3)); t2 = fit_tree(X, y, Loss(QuantileLoss(0.3)))
+    @test predict(t1, X) == predict(t2, X)
+end
+
+@testset "PoissonLoss adapter equals native Poisson through LogLink" begin
+    rng = StableRNG(31)
+    X = randn(rng, 300, 2)
+    μ = exp.(X[:, 1])
+    y = Float64.(rand.(rng, Distributions.Poisson.(μ)))
+    t1 = fit_tree(X, y, Poisson()); t2 = fit_tree(X, y, Loss(PoissonLoss(), LinearTrees.LogLink()))
+    f = 0.3 .* randn(rng, 20); yy = Float64.(rand(rng, 0:6, 20))
+    g1 = similar(f); h1 = similar(f); g2 = similar(f); h2 = similar(f)
+    gradhess!(g1, h1, Poisson(), yy, f)
+    gradhess!(g2, h2, Loss(PoissonLoss(), LinearTrees.LogLink()), yy, f)
+    @test g1 ≈ g2 atol = 1e-12
+    @test h1 ≈ h2 atol = 1e-12
+    @test predict(t1, X) == predict(t2, X)
+end
+
+@testset "Loss constructor rejects unsupported link pairings" begin
+    @test_throws ArgumentError Loss(L2DistLoss(), LinearTrees.LogLink())
 end

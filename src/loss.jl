@@ -253,7 +253,7 @@ function _validate(l::Softmax, y)
 end
 
 # ---- LossFunctions.jl adapter -----------------------------------------------
-using LossFunctions: SupervisedLoss, DistanceLoss, MarginLoss, L2DistLoss, L1DistLoss, QuantileLoss, deriv, deriv2
+using LossFunctions: SupervisedLoss, DistanceLoss, MarginLoss, L2DistLoss, L1DistLoss, QuantileLoss, PoissonLoss, deriv, deriv2
 
 "Score-space link between the tree's raw score and the value the inner loss expects."
 struct IdentityLink end
@@ -278,10 +278,25 @@ canonical_scale(::SupervisedLoss) = 1.0
 """
     Loss(l::LossFunctions.SupervisedLoss, link = IdentityLink(); scale = canonical_scale(l))
 
-Wrap a `LossFunctions.SupervisedLoss` as a `Loss` for `fit_tree`. `link` maps
-the tree's raw score to the value `l` is defined on.
+Wrap a `LossFunctions.SupervisedLoss` as a `Loss` for `fit_tree`. `link`
+declares the scale `l`'s `output` argument already lives on, and is used only
+to pick `linkinv`, `initscore`, and `scorebound`; it never enters `gh` or
+`pointloss` and no chain rule is applied. Allowed pairings: a `DistanceLoss`
+with `IdentityLink` (output on the response scale), a `MarginLoss` with
+`LogitLink` or `IdentityLink` (output is the logit), and `PoissonLoss` with
+`LogLink` (output is the log mean).
 """
-Loss(l::SupervisedLoss, link = IdentityLink(); scale = canonical_scale(l)) = AdaptedLoss(l, link, Float64(scale))
+function Loss(l::SupervisedLoss, link = IdentityLink(); scale = canonical_scale(l))
+    _check_link(l, link)
+    return AdaptedLoss(l, link, Float64(scale))
+end
+
+_check_link(::DistanceLoss, ::IdentityLink) = nothing
+_check_link(::MarginLoss, ::Union{LogitLink,IdentityLink}) = nothing
+_check_link(::PoissonLoss, ::LogLink) = nothing
+_check_link(l::SupervisedLoss, link) = throw(ArgumentError(
+    "Loss($(typeof(l)), $(typeof(link))) is not a supported pairing: " *
+    "DistanceLoss needs IdentityLink, MarginLoss needs LogitLink or IdentityLink, PoissonLoss needs LogLink"))
 
 issmooth(a::AdaptedLoss) = !(a.inner isa L1DistLoss || a.inner isa QuantileLoss)
 
@@ -291,13 +306,22 @@ linkinv(::AdaptedLoss{<:Any,LogLink}, s) = exp(s)
 
 _target(::DistanceLoss, y) = y
 _target(::MarginLoss, y) = 2y - 1
+_target(::PoissonLoss, y) = y
+
+# `QuantileLoss`'s own `deriv` returns the one-sided `-τ` at an exact tie
+# (f == t); native `Quantile`'s hand-written `gh` returns 0 there instead
+# (loss.jl's `gh(::Quantile, ...)`), and `initscore` for the quantile adapter
+# is a data quantile, so ties happen on the very first refresh at the root.
+# Match the native boundary value here so the two agree bit-for-bit.
+_deriv(l::QuantileLoss, f, t) = f == t ? zero(f) : deriv(l, f, t)
+_deriv(l, f, t) = deriv(l, f, t)
 
 # `deriv`/`deriv2` take (loss, output, target); a distance loss reads target
 # as-is, a margin loss reads it as ±1. Both conventions checked against
 # LossFunctions' own definitions and against a finite-difference probe.
 @inline function gh(a::AdaptedLoss, y, f)
     t = _target(a.inner, y)
-    return a.scale * deriv(a.inner, f, t), a.scale * deriv2(a.inner, f, t)
+    return a.scale * _deriv(a.inner, f, t), a.scale * deriv2(a.inner, f, t)
 end
 pointloss(a::AdaptedLoss, y, f) = a.scale * a.inner(f, _target(a.inner, y))
 
@@ -322,3 +346,4 @@ scorebound(::AdaptedLoss{<:Any,LogLink}, y; kw...) = scorebound(Poisson(), y; kw
 
 _validate(::AdaptedLoss{<:DistanceLoss}, y) = nothing
 _validate(::AdaptedLoss{<:MarginLoss}, y) = _validate(Logistic(), y)
+_validate(::AdaptedLoss{<:PoissonLoss}, y) = _validate(Poisson(), y)
