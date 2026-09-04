@@ -23,7 +23,13 @@ struct GainRule <: SelectionRule
 end
 
 allowed(::BIC, ::ModelKind) = true
-allowed(r::MinDeviance, k::ModelKind) = k in r.kinds
+function allowed(r::MinDeviance, k::ModelKind)
+    # explicit loop: `in` over a Vararg tuple infers Union{Missing,Bool} and allocates in the scan
+    for kk in r.kinds
+        kk == k && return true
+    end
+    return false
+end
 allowed(::GainRule, ::ModelKind) = error("GainRule is reserved for boosting")
 
 @inline function selection_score(r::BIC, kind::ModelKind, surrogate, n, dmin)
