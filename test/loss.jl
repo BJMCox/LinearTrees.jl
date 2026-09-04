@@ -67,6 +67,18 @@ end
     @test Huber(1).δ === 1.0 && Quantile(1//4).τ === 0.25
 end
 
+@testset "gh is type-stable at Float32 (deferred item 4)" begin
+    # Huber's `copysign(l.δ, r)` and Quantile's `1 - l.τ`/`-l.τ` used to promote a
+    # Float32 `f` to Float64 on one branch, giving a non-concrete Union return
+    # type; Tweedie and NegBin widened fully via their Float64-typed fields.
+    losses = (MSE(), Huber(1.0), Quantile(0.3), MAD(), Logistic(),
+              Poisson(), NegBin(2.0), Gamma(), Tweedie(1.5))
+    for loss in losses
+        @test only(Base.return_types(LinearTrees.gh, Tuple{typeof(loss),Float32,Float32})) == Tuple{Float32,Float32}
+        @test @inferred(LinearTrees.gh(loss, 1.0f0, 0.3f0)) isa Tuple{Float32,Float32}
+    end
+end
+
 @testset "init scores, domains, bounds" begin
     @test initscore(MSE(), [1.0, 3.0], [1.0, 1.0]) == 2.0
     @test initscore(MSE(), [1.0, 3.0], [3.0, 1.0]) == 1.5

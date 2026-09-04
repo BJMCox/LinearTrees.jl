@@ -103,9 +103,10 @@ linkinv(l::Softmax, s::SVector) = probs(l, s)
 @inline gh(::MSE, y, f) = (f - y, one(f))
 @inline function gh(l::Huber, y, f)
     r = float(f - y)
-    abs(r) <= l.δ ? (r, one(r)) : (copysign(l.δ, r), zero(r))
+    # `l.δ` is always `Float64`; `oftype(r, ...)` keeps both branches at `r`'s type
+    abs(r) <= l.δ ? (r, one(r)) : (copysign(oftype(r, l.δ), r), zero(r))
 end
-@inline gh(l::Quantile, y, f) = (y < f ? 1 - l.τ : y > f ? -l.τ : zero(f), zero(f))
+@inline gh(l::Quantile, y, f) = (y < f ? oftype(f, 1 - l.τ) : y > f ? oftype(f, -l.τ) : zero(f), zero(f))
 @inline gh(::MAD, y, f) = (sign(f - y), zero(f))
 @inline function gh(::Logistic, y, f)
     p = 1 / (1 + exp(-f))
@@ -114,11 +115,13 @@ end
 @inline gh(::Poisson, y, f) = (μ = exp(f); (μ - y, μ))
 @inline gh(::Gamma, y, f) = (μ = exp(f); (1 - y / μ, y / μ))
 @inline function gh(l::Tweedie, y, f)
-    μ = exp(f); ρ = l.ρ
+    # `l.ρ` is always `Float64`; `^` between a narrower base and a `Float64`
+    # exponent promotes to `Float64`, so match `ρ` to `f`'s type first
+    μ = exp(f); ρ = oftype(f, l.ρ)
     (μ^(2 - ρ) - y * μ^(1 - ρ), (2 - ρ) * μ^(2 - ρ) - (1 - ρ) * y * μ^(1 - ρ))
 end
 @inline function gh(l::NegBin, y, f)
-    μ = exp(f); θ = l.θ
+    μ = exp(f); θ = oftype(f, l.θ)   # `l.θ` is always `Float64`
     (θ * (μ - y) / (μ + θ), θ * μ * (θ + y) / (μ + θ)^2)
 end
 

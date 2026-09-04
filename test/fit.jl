@@ -65,6 +65,36 @@ end
     @test length(fit_tree(X, y; min_fit = 1000).nodes) == 1
 end
 
+@testset "Float32 and Float64 fits agree (spec property test)" begin
+    # A noise-free linear fixture hits the dmin floor exactly, where Float32
+    # rounding of a near-zero RSS can flip the winning kind; this fixture adds
+    # real noise so the winning kind (LIN) beats the runner-up (BLIN) by a
+    # margin measured directly from scan_feature's BIC scores at the root, not
+    # assumed: 10.395 in Float64, 10.398 in Float32 (checked interactively;
+    # both comfortably above the spec's 1e-3 floor). The intercept keeps every
+    # predicted value away from zero, since a value near zero would blow up
+    # the relative-difference check with no fault of Float32 fitting.
+    rng = StableRNG(301)
+    n = 300
+    x1 = rand(rng, n)
+    y64 = 10.0 .+ 4.0 .* x1 .+ 0.8 .* randn(rng, n)
+    X64 = reshape(x1, n, 1)
+    X32 = Float32.(X64); y32 = Float32.(y64)
+    t64 = fit_tree(X64, y64)
+    t32 = fit_tree(X32, y32)
+    @test [n.model for n in t64.nodes] == [n.model for n in t32.nodes]
+    p64 = predict(t64, X64); p32 = predict(t32, X32)
+    @test maximum(abs.(Float64.(p32) .- p64) ./ abs.(p64)) < 1e-4
+end
+
+@testset "Float32 Logistic fits with truncate = true (C1 regression)" begin
+    rng = StableRNG(302)
+    X = Float32.(rand(rng, 100, 2)); y = Float32.(rand(rng, Bool, 100))
+    t = fit_tree(X, y, Logistic(); truncate = true)
+    @test t isa LinearTree
+    @test all(p -> 0 <= p <= 1, predict(t, X))
+end
+
 @testset "threaded split search equals serial" begin
     rng = StableRNG(35)
     X = rand(rng, 40_000, 6); y = sin.(3 .* X[:, 1]) .+ X[:, 2] .* X[:, 3] .+ 0.1 .* randn(rng, 40_000)

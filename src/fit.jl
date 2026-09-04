@@ -60,7 +60,9 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         nlevels[j] = Int(maximum(col))
     end
     f0 = V(initscore(loss, yv, w))
-    lo, hi = truncate ? scorebound(loss, yv; truncation_factor) : (V(-Inf), V(Inf))
+    # every `scorebound` method returns bounds in its own working type (often
+    # `Float64`, regardless of `V`), so convert here rather than trust each method
+    lo, hi = truncate ? map(V, scorebound(loss, yv; truncation_factor)) : (V(-Inf), V(Inf))
     f = fill(clampscore(f0, lo, hi), n)
     idx = Matrix{Int32}(undef, n, p)
     presort!(idx, Xm, nthreads)
