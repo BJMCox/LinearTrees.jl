@@ -70,7 +70,7 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         T(min_sum_hessian), max_lin_chain, truncate, nthreads)
     rows = collect(Int32(1):Int32(n))
     refresh!(st, rows)
-    grow!(st, rows, 0, 0)
+    st.nodes, st.catmasks = grow_subtree(st, rows, 0, 0, 1:nthreads)
     # Fold the clamped start score into the root node: training accumulates it in
     # st.f before any node is fit, but prediction starts score_row at zero, so the
     # root's own intercepts must carry it. Exact for every loss, clamped or not.
@@ -219,13 +219,18 @@ function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin) wh
     return best, bestleft
 end
 
-"Append a packed left-level mask to the tree's mask pool. Returns its `(catstart, catwords)`."
-function push_mask!(st::FitState, leftcodes, L)
+"""
+Append a packed left-level mask to a subtree-local mask pool `masks`.
+Returns its `(catstart, catwords)`, local to `masks`. The parent splice
+offsets `catstart` by the number of mask words already placed ahead of it,
+exactly like it offsets node indices.
+"""
+function push_mask!(masks::Vector{UInt64}, leftcodes, L)
     words = (L + 63) >> 6
-    start = length(st.catmasks) + 1
-    append!(st.catmasks, zeros(UInt64, words))
+    start = length(masks) + 1
+    append!(masks, zeros(UInt64, words))
     for c in leftcodes
-        st.catmasks[start + ((c - 1) >> 6)] |= UInt64(1) << ((c - 1) & 63)
+        masks[start + ((c - 1) >> 6)] |= UInt64(1) << ((c - 1) & 63)
     end
     return Int32(start), Int32(words)
 end
@@ -251,17 +256,20 @@ function best_split_serial(st::FitState{T,V}, rows, inrow::BitVector, dmin, feat
 end
 
 """
-Search all features. Large nodes split the feature range across `nthreads`
-tasks, each with its own scratch. The reduction takes the lowest score and,
-on ties, the lowest feature index, so the result equals the serial search.
+Search all features using only the subtree's own scratch sets `tids`. Large
+nodes split the feature range across `length(tids)` tasks, each with its own
+scratch. The reduction takes the lowest score and, on ties, the lowest
+feature index, so the result equals the serial search regardless of task
+completion order.
 """
-function best_split(st::FitState{T,V}, rows, inrow::BitVector, dmin) where {T,V}
+function best_split(st::FitState{T,V}, rows, inrow::BitVector, dmin, tids::UnitRange{Int}) where {T,V}
     p = size(st.X, 2)
-    if size(st.X, 1) < PARALLEL_MIN_ROWS || st.nthreads == 1 || p == 1   # gather! scans the full presorted column, so the cost is O(n) per feature regardless of node size
-        return best_split_serial(st, rows, inrow, dmin, 1:p, 1)
+    if size(st.X, 1) < PARALLEL_MIN_ROWS || length(tids) == 1 || p == 1   # gather! scans the full presorted column, so the cost is O(n) per feature regardless of node size
+        return best_split_serial(st, rows, inrow, dmin, 1:p, first(tids))
     end
-    chunks = collect(Iterators.partition(1:p, cld(p, st.nthreads)))
-    tasks = [Threads.@spawn best_split_serial(st, rows, inrow, dmin, ch, tid) for (tid, ch) in enumerate(chunks)]
+    nt = length(tids)
+    chunks = collect(Iterators.partition(1:p, cld(p, nt)))
+    tasks = [Threads.@spawn best_split_serial(st, rows, inrow, dmin, ch, tid) for (tid, ch) in zip(tids, chunks)]
     best = nocandidate(T, V); bestj = 0; bestleft = Int[]
     for t in tasks
         c, j, lc = fetch(t)
@@ -284,30 +292,48 @@ end
 leafnode(st::FitState{T,V}, rows, b) where {T,V} =
     Node{T,V}(; lintercept = b, cover = sum(view(st.w, rows)))
 
+"Row-count gate for sibling-subtree parallelism: a node above this depth may spawn its two children as separate tasks."
+const SUBTREE_PARALLEL_DEPTH = 3
+
 """
-Grow the subtree for `rows`. Returns the index of the created node.
-`linchain` counts consecutive `lin` fits in this node position.
+Add `idxoff` to every non-zero child index and `maskoff` to every non-zero
+`catstart` in `nodes`. Used by the splice step to relocate a subtree's local
+node vector and mask words into the parent's growing ones.
 """
-function grow!(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, linchain::Int) where {T,V}
+function shift(nodes::Vector{Node{T,V}}, idxoff::Int32, maskoff::Int32) where {T,V}
+    return [Node{T,V}(n; left = n.left == 0 ? Int32(0) : n.left + idxoff,
+                        right = n.right == 0 ? Int32(0) : n.right + idxoff,
+                        catstart = n.catwords == 0 ? Int32(0) : n.catstart + maskoff) for n in nodes]
+end
+
+"""
+Grow the subtree for `rows` into a fresh local node vector and mask pool.
+Returns `(nodes, masks)` with the subtree root at local index 1. `linchain`
+counts consecutive `lin` fits in this node position. `tids` is the range of
+`st.scratch` sets this subtree, and only this subtree, may use; a spawned
+sibling gets a disjoint sub-range, so no two concurrent subtrees ever touch
+the same scratch set. `st.nodes` and `st.catmasks` are written only once, by
+the splice at the root call in `fit_tree`, so the recursion itself never
+touches them.
+"""
+function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, linchain::Int, tids::UnitRange{Int}) where {T,V}
     nw = sum(view(st.w, rows))
     sumh = sum(sum(h) for h in view(st.h, rows))   # sum over coordinates too, for vector V
-    push!(st.nodes, leafnode(st, rows, zero(V)))   # placeholder, filled below
-    me = Int32(length(st.nodes))
     if nw < st.min_fit || depth >= st.max_depth || sumh < st.min_sum_hessian || linchain >= st.max_lin_chain
         b = fit_con(node_sums(st, rows))[1]
-        st.nodes[me] = leafnode(st, rows, b)
-        refit_node!(st, me, rows)
+        me = leafnode(st, rows, b)
+        me = refit_node(st, me, rows)
         update_score!(st, rows, me)
-        return me
+        return Node{T,V}[me], UInt64[]
     end
     dmin = dmin_for(st, rows)
     inrow = falses(length(st.y)); inrow[rows] .= true
-    best, bestj, leftcodes = best_split(st, rows, inrow, dmin)
+    best, bestj, leftcodes = best_split(st, rows, inrow, dmin, tids)
     if best.kind == CON || bestj == 0
-        st.nodes[me] = leafnode(st, rows, best.kind == CON ? best.lintercept : fit_con(node_sums(st, rows))[1])
-        refit_node!(st, me, rows)
+        me = leafnode(st, rows, best.kind == CON ? best.lintercept : fit_con(node_sums(st, rows))[1])
+        me = refit_node(st, me, rows)
         update_score!(st, rows, me)
-        return me
+        return Node{T,V}[me], UInt64[]
     end
     iscat = bestj in st.categorical
     if iscat
@@ -318,39 +344,59 @@ function grow!(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, linchain::Int
         xmean = sum(st.w[i] * st.X[i, bestj] for i in rows) / nw
     end
     if best.kind == LIN
-        st.nodes[me] = Node{T,V}(; feature = bestj, threshold = T(NaN), lcoef = best.lcoef, lintercept = best.lintercept,
+        me = Node{T,V}(; feature = bestj, threshold = T(NaN), lcoef = best.lcoef, lintercept = best.lintercept,
             rcoef = best.lcoef, rintercept = best.lintercept, xmin, xmax, cover = nw, xmean, model = LIN)
-        refit_node!(st, me, rows)
+        me = refit_node(st, me, rows)
         update_score!(st, rows, me); refresh!(st, rows)
-        child = grow!(st, rows, depth, linchain + 1)
-        st.nodes[me] = Node{T,V}(st.nodes[me]; left = child, right = child)
-        return me
+        cnodes, cmasks = grow_subtree(st, rows, depth, linchain + 1, tids)
+        me = Node{T,V}(me; left = Int32(2), right = Int32(2))
+        nodes = vcat(Node{T,V}[me], shift(cnodes, Int32(1), Int32(0)))
+        return nodes, cmasks
     end
+    masks = UInt64[]
     catstart = Int32(0); catwords = Int32(0); threshold = best.threshold
     if iscat
-        catstart, catwords = push_mask!(st, leftcodes, st.nlevels[bestj])
+        catstart, catwords = push_mask!(masks, leftcodes, st.nlevels[bestj])
         threshold = T(NaN)
     end
-    st.nodes[me] = Node{T,V}(; feature = bestj, threshold, lcoef = best.lcoef, lintercept = best.lintercept,
+    me = Node{T,V}(; feature = bestj, threshold, lcoef = best.lcoef, lintercept = best.lintercept,
         rcoef = best.rcoef, rintercept = best.rintercept, xmin, xmax, cover = nw, xmean, model = best.kind,
         catstart, catwords)
-    refit_node!(st, me, rows)
-    update_score!(st, rows, me)
+    me = refit_node(st, me, rows, masks)
+    update_score!(st, rows, me, masks)
     refresh!(st, rows)
-    n = st.nodes[me]
     leftrows = Int32[]; rightrows = Int32[]
     for i in rows
-        (goes_left(st, n, i) ? push!(leftrows, i) : push!(rightrows, i))
+        (goes_left(st, me, i, masks) ? push!(leftrows, i) : push!(rightrows, i))
     end
-    left = grow!(st, leftrows, depth + 1, 0)
-    right = grow!(st, rightrows, depth + 1, 0)
-    st.nodes[me] = Node{T,V}(st.nodes[me]; left, right)
-    return me
+    if st.nthreads > 1 && depth < SUBTREE_PARALLEL_DEPTH && length(tids) >= 2
+        mid = first(tids) + length(tids) ÷ 2 - 1
+        task = Threads.@spawn grow_subtree(st, rightrows, depth + 1, 0, (mid + 1):last(tids))
+        lnodes, lmasks = grow_subtree(st, leftrows, depth + 1, 0, first(tids):mid)
+        rnodes, rmasks = fetch(task)
+    else
+        lnodes, lmasks = grow_subtree(st, leftrows, depth + 1, 0, tids)
+        rnodes, rmasks = grow_subtree(st, rightrows, depth + 1, 0, tids)
+    end
+    nleft = Int32(length(lnodes)); nmine = Int32(length(masks)); nlmasks = Int32(length(lmasks))
+    me = Node{T,V}(me; left = Int32(2), right = Int32(2) + nleft)
+    # `masks` (this node's own mask, if any) lands first in `allmasks`, so lnodes'
+    # and rnodes' catstart values shift by however many mask words precede them.
+    nodes = vcat(Node{T,V}[me], shift(lnodes, Int32(1), nmine), shift(rnodes, Int32(1) + nleft, nmine + nlmasks))
+    allmasks = vcat(masks, lmasks, rmasks)
+    return nodes, allmasks
 end
 
-"True when row `i` is routed left by node `n`. Categorical nodes route by mask; others by threshold."
-function goes_left(st::FitState, n::Node, i)
-    iscategorical(n) && return category_is_left(st.catmasks, n, Int(st.X[i, n.feature]))
+"""
+True when row `i` is routed left by node `n`. Categorical nodes route by
+mask; others by threshold. `masks` must be the mask pool `n.catstart`
+indexes into: during growth that is the growing subtree's own local mask
+vector, since `st.catmasks` is not assembled until the root splice; after
+fitting it is `tree.catmasks`. Non-categorical nodes never touch `masks`,
+so the empty default is safe wherever the node cannot be categorical.
+"""
+function goes_left(st::FitState, n::Node, i, masks::Vector{UInt64} = UInt64[])
+    iscategorical(n) && return category_is_left(masks, n, Int(st.X[i, n.feature]))
     return n.model == LIN || st.X[i, n.feature] <= n.threshold
 end
 
@@ -359,9 +405,12 @@ IRLS refit of one node's own coefficients on its own rows. `niter` passes:
 each recomputes the residual against the node's current fit, the scale-aware
 `ε`, and the L1-majorizer weight, then re-solves the node's model kind.
 Serial: this is one node's `MomentSums` reduction, not worth threading.
+Takes and returns a `Node` value so it works on a node still local to a
+growing subtree, before it has a place in `st.nodes`. `masks` is the pool
+`n.catstart` indexes into (see `goes_left`); irrelevant, so omitted, for a
+node that cannot be categorical.
 """
-function irls_refit!(st::FitState{T,V}, me::Integer, rows, niter) where {T,V}
-    n = st.nodes[me]
+function irls_refit(st::FitState{T,V}, n::Node{T,V}, rows, niter, masks::Vector{UInt64} = UInt64[]) where {T,V}
     j = n.feature
     resid = Vector{V}(undef, length(rows))
     yscale = max(maximum(abs, view(st.y, rows)), one(T))
@@ -371,7 +420,7 @@ function irls_refit!(st::FitState{T,V}, me::Integer, rows, niter) where {T,V}
                 n.lintercept
             else
                 x = st.X[i, j]
-                goleft = goes_left(st, n, i)
+                goleft = goes_left(st, n, i, masks)
                 goleft ? n.lcoef * x + n.lintercept : n.rcoef * x + n.rintercept
             end
             resid[k] = st.z[i] - pred
@@ -385,7 +434,7 @@ function irls_refit!(st::FitState{T,V}, me::Integer, rows, niter) where {T,V}
                 left = addrow(left, zero(T), st.z[i], hi)
             else
                 x = st.X[i, j]
-                goleft = goes_left(st, n, i)
+                goleft = goes_left(st, n, i, masks)
                 if n.model != LIN && !goleft
                     right = addrow(right, x, st.z[i], hi)
                 else
@@ -412,8 +461,7 @@ function irls_refit!(st::FitState{T,V}, me::Integer, rows, niter) where {T,V}
             n = Node{T,V}(n; lcoef = r[1], lintercept = r[2], rcoef = r[3], rintercept = r[4])
         end
     end
-    st.nodes[me] = n
-    return st
+    return n
 end
 
 function node_sums(st::FitState{T,V}, rows) where {T,V}
@@ -424,14 +472,13 @@ function node_sums(st::FitState{T,V}, rows) where {T,V}
     return s
 end
 
-"Add node `me`'s piece to the score of `rows`, then clamp."
-function update_score!(st::FitState, rows, me::Integer)
-    n = st.nodes[me]
+"Add node `n`'s piece to the score of `rows`, then clamp. `masks` is the pool `n.catstart` indexes into (see `goes_left`)."
+function update_score!(st::FitState, rows, n::Node, masks::Vector{UInt64} = UInt64[])
     for i in rows
         if isleaf(n)
             inc = n.lintercept
         else
-            goleft = goes_left(st, n, i)
+            goleft = goes_left(st, n, i, masks)
             if iscategorical(n)
                 inc = goleft ? n.lintercept : n.rintercept
             else

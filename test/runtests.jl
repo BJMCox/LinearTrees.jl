@@ -20,4 +20,5 @@ using JET
     include("fit_losses.jl")
     include("categorical.jl")
     include("softmax.jl")
+    include("threads.jl")
 end
