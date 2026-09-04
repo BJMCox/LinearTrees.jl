@@ -7,6 +7,7 @@ makedocs(;
     modules=[LinearTrees],
     authors="Ben Cox <bcox@mpp.mpg.de>",
     sitename="LinearTrees.jl",
+    checkdocs=:exports,
     format=Documenter.HTML(;
         canonical="https://BJMCox.github.io/LinearTrees.jl",
         edit_link="main",
@@ -14,6 +15,9 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "Guide" => "guide.md",
+        "Losses" => "losses.md",
+        "API reference" => "api.md",
     ],
 )
 

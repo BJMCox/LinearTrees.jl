@@ -4,11 +4,33 @@ CurrentModule = LinearTrees
 
 # LinearTrees
 
-Documentation for [LinearTrees](https://github.com/BJMCox/LinearTrees.jl).
+LinearTrees fits PILOT-style linear model trees: each node is either a
+constant, a simple line, a broken line, or a pair of lines, chosen by a BIC
+selection rule at every split. The fitter works for any twice-differentiable
+loss (or an IRLS-approximated one), covers categorical features and sample
+weights, and includes split-gain feature importance and path-dependent
+TreeSHAP.
 
-```@index
+See the [Guide](@ref) for model kinds, selection, and truncation, and
+[Losses](@ref) for the loss table.
+
+## Quick start
+
+```julia
+using LinearTrees
+
+X = rand(1000, 4)
+y = sin.(3 .* X[:, 1]) .+ 2 .* X[:, 2] .* (X[:, 3] .> 0.5) .+ 0.05 .* randn(1000)
+
+tree = fit_tree(X, y; max_depth = 4)
+ŷ = predict(tree, X)
+
+print_tree(TreeView(tree))
+
+φ = shap(tree, X)          # φ.values[i, j] is feature j's SHAP value for row i
 ```
 
-```@autodocs
-Modules = [LinearTrees]
+## Index
+
+```@index
 ```

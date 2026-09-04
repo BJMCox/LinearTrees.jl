@@ -29,7 +29,7 @@ JSON-friendly form: nodes as vectors of field dictionaries, loss as a name
 plus parameters. Three encodings keep every field JSON-safe:
 - Every `Real`-valued field (`threshold, lcoef, lintercept, rcoef,
   rintercept, xmin, xmax, cover, xmean, gain, lo, hi, base`) goes through
-  [`jsonnum`](@ref): finite values become `Float64`, non-finite values
+  `jsonnum`: finite values become `Float64`, non-finite values
   become the string `"Inf"`, `"-Inf"`, or `"NaN"`, and an `SVector` field
   maps elementwise into a `Vector{Any}`.
 - Integer fields (`feature, left, right, catstart, catwords, model`) store
@@ -50,6 +50,7 @@ function to_dict(t::LinearTree{T,V}) where {T,V}
         "nfeatures" => t.nfeatures, "truncate" => t.truncate)
 end
 
+"JSON-friendly `Dict` for `l`: its type name plus a name-to-value map of its fields."
 lossdict(l::Loss) = Dict{String,Any}("name" => string(nameof(typeof(l))),
     "params" => Dict{String,Any}(String(f) => getfield(l, f) for f in fieldnames(typeof(l))))
 lossdict(l::AdaptedLoss) = throw(ArgumentError(

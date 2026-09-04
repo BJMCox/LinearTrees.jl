@@ -149,6 +149,15 @@ struct LinearTreeClassifierFit{Tr<:LinearTree,C} <: StatsAPI.StatisticalModel
     classes::Vector{C}
 end
 
+"""
+    fit(LinearTreeRegressorFit, X, y; loss=MSE(), weights=nothing, unseen=:error, kwargs...)
+    fit(LinearTreeClassifierFit, X, y; weights=nothing, unseen=:error, kwargs...)
+
+Fit a [`LinearTreeRegressorFit`](@ref) or [`LinearTreeClassifierFit`](@ref)
+from a matrix or Tables.jl table `X` and a target `y`. `kwargs` forward to
+[`fit_tree`](@ref). `unseen` is `:error` (default) or `:right`, applied to a
+categorical level absent from training at predict time.
+"""
 function StatsAPI.fit(::Type{LinearTreeRegressorFit}, X, y; loss::Loss = MSE(), weights = nothing, unseen = :error, kwargs...)
     enc = TableEncoder(X, unseen)
     Xm = encode(enc, X)
@@ -189,9 +198,23 @@ end
 
 const AnyFit = Union{LinearTreeRegressorFit,LinearTreeClassifierFit}
 
+"Number of training rows kept after dropping zero-weight rows."
 StatsAPI.nobs(m::AnyFit) = length(m.y)
+
+"Training row weights, as stored (ones when `fit` was called with no `weights`)."
 StatsAPI.weights(m::AnyFit) = m.w
+
+"""
+    dof(m)
+
+Count of stored coefficients across every node: 1 for `CON`, 2 for `LIN` or
+`PCON`, 3 for `BLIN`, 4 for `PLIN`, times `K-1` for a `Softmax` fit. A
+parameter count, not an effective degrees of freedom, and unrelated to
+`BIC`'s per-kind selection penalty of the same name.
+"""
 StatsAPI.dof(m::AnyFit) = sum(ncoef(n) for n in m.tree.nodes)
+
+"Training residuals `y - predict(tree, X)`, on the response scale."
 StatsAPI.residuals(m::LinearTreeRegressorFit) = m.y .- predict(m.tree, m.X)
 StatsAPI.deviance(m::LinearTreeRegressorFit) = deviance(m.tree.loss, m.y, score(m.tree, m.X), m.w)
 StatsAPI.coeftable(m::AnyFit, x) = coeftable(m.tree, vec(encode(m.encoder, reshape_row(m.encoder, x))))

@@ -9,23 +9,40 @@ abstract type Loss end
 "Floor applied to every unweighted row hessian before frequency weighting."
 const HMIN = 1e-6
 
+"Squared-error loss for a real-valued target. Identity link."
 struct MSE <: Loss end
+
+"Huber loss with transition `δ`: quadratic within `δ` of the target, linear beyond it. Identity link."
 struct Huber <: Loss
     δ::Float64
     Huber(δ::Real) = (δ > 0 || throw(ArgumentError("δ must be positive")); new(Float64(δ)))
 end
+
+"Pinball (quantile) loss at quantile `τ`. Non-smooth: fit by IRLS. Identity link."
 struct Quantile <: Loss
     τ::Float64
     Quantile(τ::Real) = (0 < τ < 1 || throw(ArgumentError("τ must lie in (0, 1)")); new(Float64(τ)))
 end
+
+"Mean absolute deviation loss. Non-smooth: fit by IRLS. Identity link."
 struct MAD <: Loss end
+
+"Logistic (binomial cross-entropy) loss for a `{0,1}` target. Logit link."
 struct Logistic <: Loss end
+
+"Poisson deviance loss for a non-negative integer count target. Log link."
 struct Poisson <: Loss end
+
+"Negative binomial deviance loss with dispersion `θ`, for an overdispersed count target. Log link."
 struct NegBin <: Loss
     θ::Float64
     NegBin(θ::Real) = (θ > 0 || throw(ArgumentError("θ must be positive")); new(Float64(θ)))
 end
+
+"Gamma deviance loss for a positive real target. Log link."
 struct Gamma <: Loss end
+
+"Tweedie deviance loss with power `ρ ∈ (1, 2)`, for a non-negative target with a point mass at zero. Log link."
 struct Tweedie <: Loss
     ρ::Float64
     Tweedie(ρ::Real) = (1 < ρ < 2 || throw(ArgumentError("ρ must lie in (1, 2)")); new(Float64(ρ)))
@@ -37,6 +54,12 @@ struct Softmax <: Loss
     Softmax(K) = (K >= 2 || throw(ArgumentError("K must be at least 2")); new(Int(K)))
 end
 
+"""
+    issmooth(loss)
+
+`true` when `loss` has a well-defined Hessian everywhere and fits by Newton
+steps; `false` for the L1-type losses (`Quantile`, `MAD`), which fit by IRLS.
+"""
 issmooth(::Loss) = true
 issmooth(::Union{Quantile,MAD}) = false
 
@@ -50,6 +73,13 @@ coeftype(::Loss, ::Type{T}) where {T} = T
 coeftype(l::Softmax, ::Type{T}) where {T} = SVector{l.K - 1,T}
 
 # ---- links -----------------------------------------------------------------
+"""
+    linkinv(loss, s)
+
+Map raw score `s` to the response scale: the identity for `MSE`, `Huber`,
+`Quantile`, and `MAD`, the logistic sigmoid for `Logistic`, `exp` for the
+count and rate losses, and class probabilities for `Softmax`.
+"""
 linkinv(::Union{MSE,Huber,Quantile,MAD}, s) = s
 linkinv(::Logistic, s) = 1 / (1 + exp(-s))
 linkinv(::Union{Poisson,NegBin,Gamma,Tweedie}, s) = exp(s)
@@ -217,9 +247,22 @@ pointloss(l::NegBin, y, f) = (μ = exp(f); θ = l.θ; -y * log(μ / (μ + θ)) +
 
 pointloss(l::Softmax, y, f::SVector) = -log(probs(l, f)[Int(y)])
 
+"""
+    deviance(loss, y, f, w)
+
+Weighted `2 Σ w[i] pointloss(loss, y[i], f[i])`, the model's reported deviance
+on the score scale `f`.
+"""
 deviance(loss::Loss, y, f, w) = 2 * sum(w[i] * pointloss(loss, y[i], f[i]) for i in eachindex(y))
 
 # ---- score bounds ----------------------------------------------------------
+"""
+    scorebound(loss, y; truncation_factor=3)
+
+`(lo, hi)` score-scale clamp bounds fit to the training target `y`, used when
+`fit_tree`'s `truncate` is set. `truncation_factor` widens the data-derived
+range by that multiple of its half-width.
+"""
 function scorebound(::Union{MSE,Huber,Quantile,MAD}, y; truncation_factor = 3)
     lo, hi = extrema(y)
     B = (hi - lo) / 2
@@ -237,6 +280,13 @@ function scorebound(l::Softmax, y; truncation_factor = 3)
 end
 
 # ---- target validation -----------------------------------------------------
+"""
+    validate_target(loss, y)
+
+Throw `ArgumentError` if `y` is not finite everywhere or does not satisfy
+`loss`'s domain (e.g. `{0,1}` for `Logistic`, non-negative integers for
+`Poisson`); otherwise return `nothing`.
+"""
 function validate_target(loss::Loss, y)
     all(isfinite, y) || throw(ArgumentError("target contains NaN or Inf"))
     _validate(loss, y)
@@ -257,7 +307,11 @@ using LossFunctions: SupervisedLoss, DistanceLoss, MarginLoss, L2DistLoss, L1Dis
 
 "Score-space link between the tree's raw score and the value the inner loss expects."
 struct IdentityLink end
+
+"Score-space link marking the tree's raw score as a logit, for a margin loss."
 struct LogitLink end
+
+"Score-space link marking the tree's raw score as a log mean, for `PoissonLoss`."
 struct LogLink end
 
 """

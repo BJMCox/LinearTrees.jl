@@ -3,6 +3,21 @@ Per-node model kind. `LIN` nodes have one child and add no depth.
 """
 @enum ModelKind::UInt8 CON LIN PCON BLIN PLIN
 
+"Constant node: one intercept, no split."
+CON
+
+"Single line across the whole node: `a x + b`. One child, no added depth."
+LIN
+
+"Two constants, one per side of a threshold."
+PCON
+
+"Broken line, continuous at the threshold: basis `[x, 1, max(x - t, 0)]`."
+BLIN
+
+"Two independent lines, one per side of a threshold."
+PLIN
+
 """
 One node of a linear model tree. Coefficients have type `V`, which is the
 feature type `T` for scalar-score losses and `SVector{K-1,T}` for softmax.
