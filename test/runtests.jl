@@ -24,4 +24,5 @@ using LinearAlgebra
     include("threads.jl")
     include("importance.jl")
     include("shap.jl")
+    include("lossfunctions.jl")
 end

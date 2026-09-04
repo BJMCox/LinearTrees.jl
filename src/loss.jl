@@ -251,3 +251,74 @@ function _validate(l::Softmax, y)
     all(v -> isinteger(v) && 1 <= v <= l.K, y) || throw(ArgumentError("Softmax($(l.K)) needs integer targets in 1:$(l.K)"))
     all(k -> any(==(k), y), 1:l.K) || throw(ArgumentError("every class in 1:$(l.K) must be present"))
 end
+
+# ---- LossFunctions.jl adapter -----------------------------------------------
+using LossFunctions: SupervisedLoss, DistanceLoss, MarginLoss, L2DistLoss, L1DistLoss, QuantileLoss, deriv, deriv2
+
+"Score-space link between the tree's raw score and the value the inner loss expects."
+struct IdentityLink end
+struct LogitLink end
+struct LogLink end
+
+"""
+Adapter around a `LossFunctions.SupervisedLoss`. Margin losses receive
+targets in `{0,1}` and are re-expressed with `t = 2y - 1`. The pointwise loss,
+gradient, and hessian are multiplied by `scale`.
+"""
+struct AdaptedLoss{L<:SupervisedLoss,K} <: Loss
+    inner::L
+    link::K
+    scale::Float64
+end
+
+"Newton-step scale that lines an inner loss up with the matching native `Loss`."
+canonical_scale(::L2DistLoss) = 0.5
+canonical_scale(::SupervisedLoss) = 1.0
+
+"""
+    Loss(l::LossFunctions.SupervisedLoss, link = IdentityLink(); scale = canonical_scale(l))
+
+Wrap a `LossFunctions.SupervisedLoss` as a `Loss` for `fit_tree`. `link` maps
+the tree's raw score to the value `l` is defined on.
+"""
+Loss(l::SupervisedLoss, link = IdentityLink(); scale = canonical_scale(l)) = AdaptedLoss(l, link, Float64(scale))
+
+issmooth(a::AdaptedLoss) = !(a.inner isa L1DistLoss || a.inner isa QuantileLoss)
+
+linkinv(::AdaptedLoss{<:Any,IdentityLink}, s) = s
+linkinv(::AdaptedLoss{<:Any,LogitLink}, s) = 1 / (1 + exp(-s))
+linkinv(::AdaptedLoss{<:Any,LogLink}, s) = exp(s)
+
+_target(::DistanceLoss, y) = y
+_target(::MarginLoss, y) = 2y - 1
+
+# `deriv`/`deriv2` take (loss, output, target); a distance loss reads target
+# as-is, a margin loss reads it as ±1. Both conventions checked against
+# LossFunctions' own definitions and against a finite-difference probe.
+@inline function gh(a::AdaptedLoss, y, f)
+    t = _target(a.inner, y)
+    return a.scale * deriv(a.inner, f, t), a.scale * deriv2(a.inner, f, t)
+end
+pointloss(a::AdaptedLoss, y, f) = a.scale * a.inner(f, _target(a.inner, y))
+
+_irls_inner(a::AdaptedLoss) = a.inner isa L1DistLoss ? MAD() : Quantile(a.inner.τ)
+
+function irls_weights!(h::AbstractVector{T}, a::AdaptedLoss, y::AbstractVector, f::AbstractVector; ε) where {T}
+    irls_weights!(h, _irls_inner(a), y, f; ε)
+    h .*= a.scale
+    return h
+end
+
+l1weight(a::AdaptedLoss, r) = l1weight(_irls_inner(a), r)
+
+initscore(a::AdaptedLoss{<:Any,IdentityLink}, y, w) = a.inner isa QuantileLoss ? wquantile(y, w, a.inner.τ) :
+    a.inner isa L1DistLoss ? wquantile(y, w, 0.5) : wmean(y, w)
+initscore(::AdaptedLoss{<:Any,LogitLink}, y, w) = initscore(Logistic(), y, w)
+initscore(::AdaptedLoss{<:Any,LogLink}, y, w) = initscore(Poisson(), y, w)
+
+scorebound(::AdaptedLoss{<:Any,IdentityLink}, y; truncation_factor = 3) = scorebound(MSE(), y; truncation_factor)
+scorebound(::AdaptedLoss{<:Any,LogitLink}, y; kw...) = scorebound(Logistic(), y; kw...)
+scorebound(::AdaptedLoss{<:Any,LogLink}, y; kw...) = scorebound(Poisson(), y; kw...)
+
+_validate(::AdaptedLoss{<:DistanceLoss}, y) = nothing
+_validate(::AdaptedLoss{<:MarginLoss}, y) = _validate(Logistic(), y)

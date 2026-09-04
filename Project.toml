@@ -5,9 +5,11 @@ authors = ["Ben Cox <bcox@mpp.mpg.de>"]
 
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LossFunctions = "30fc2ffe-d236-52d8-8643-a9d8f7c094a7"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
 LinearAlgebra = "1"
+LossFunctions = "1"
 StaticArrays = "1"
 julia = "1.10"

@@ -20,6 +20,7 @@ export score, predict, predict!, fit_tree
 export feature_importance, coeftable
 export shap, shap!, ShapResult
 export Loss, MSE, Huber, Quantile, MAD, Logistic, Poisson, NegBin, Gamma, Tweedie, Softmax
+export AdaptedLoss, IdentityLink, LogitLink, LogLink, canonical_scale
 export gradhess!, linkinv, initscore, deviance, scorebound, validate_target, issmooth, irls_weights!
 
 end
