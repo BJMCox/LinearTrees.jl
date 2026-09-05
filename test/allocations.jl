@@ -30,7 +30,7 @@ end
             0.05 .* randn(rng, 600)
         t = fit_tree(X, y; max_depth = 8)
         φ = zeros(2, 4)
-        pool = LinearTrees.PathPool(LinearTrees.shap_depth(t))
+        pool = LinearTrees.PathPool()
         x1 = view(X, 1, :); x2 = view(X, 2, :)
         LinearTrees.shap_recurse!(φ, t, x1, 1, 1, pool, 1.0, 1.0, 0)
         return @allocated LinearTrees.shap_recurse!(φ, t, x2, 2, 1, pool, 1.0, 1.0, 0)
