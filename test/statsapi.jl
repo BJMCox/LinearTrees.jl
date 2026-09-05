@@ -1,4 +1,4 @@
-using StatsAPI, Tables, CategoricalArrays, DataFrames, StableRNGs, Statistics
+using StatsAPI, CategoricalArrays, DataFrames, StableRNGs, Statistics
 
 @testset "regressor on a matrix" begin
     rng = StableRNG(27)
@@ -32,10 +32,9 @@ end
     @test isfinite(predict(m2, df3)[1])
 end
 
-@testset "TableEncoder rejects an unrecognised unseen policy" begin
-    # fails if a typo'd `unseen` silently selects :error instead of raising here
-    @test_throws ArgumentError LinearTrees.TableEncoder(rand(5, 2), :nope)
-    @test_throws ArgumentError LinearTrees.TableEncoder(DataFrame(x = [1.0, 2.0]), :nope)
+@testset "fit rejects an unrecognised unseen policy" begin
+    # fails if a typo'd `unseen` silently selects :error instead of raising
+    @test_throws ArgumentError fit(LinearTreeRegressorFit, rand(5, 2), rand(5); unseen = :nope)
 end
 
 @testset "classifier" begin
@@ -55,21 +54,14 @@ end
     @test deviance(mb) ≈ deviance(mb.tree.loss, Float64.(mb.y .== 1), score(mb.tree, X), mb.w)
 end
 
-@testset "threaded table encoding equals serial" begin
+@testset "threaded table fit equals serial" begin
+    # above the row-count gate the table is encoded in parallel blocks, so a
+    # block that read the wrong rows or the wrong level map would move the tree
     rng = StableRNG(30)
     n = 20_000
     colour = categorical(rand(rng, ["red", "green", "blue"], n))
     x = randn(rng, n)
     df = DataFrame(colour = colour, x = x)
-    enc = LinearTrees.TableEncoder(df, :error)
-    out1 = Matrix{Float64}(undef, n, 2)
-    for j in 1:2
-        LinearTrees.encode_column!(out1, enc, Tables.columns(df), j)
-    end
-    outn = LinearTrees.encode(enc, df)
-    @test out1 == outn
-    # Minor 10: encode's own nthreads keyword, not just the row-count gate
-    @test LinearTrees.encode(enc, df; nthreads = 1) == outn
     y = x .+ 0.1 .* randn(rng, n)
     m1 = fit(LinearTreeRegressorFit, df, y; nthreads = 1)
     mn = fit(LinearTreeRegressorFit, df, y)

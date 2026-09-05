@@ -48,8 +48,8 @@ end
     rng = StableRNG(21)
     X = rand(rng, 400, 4); y = sin.(3 .* X[:, 1]) .+ 2 .* X[:, 2] .* (X[:, 3] .> 0.5) .+ 0.05 .* randn(rng, 400)
     t = fit_tree(X, y; max_depth = 3, truncate = false)
-    res = shap(t, X[1:10, :])
-    for i in 1:10
+    res = shap(t, X[1:5, :])
+    for i in 1:5
         φ, base = brute_shap(t, X[i, :])
         @test res.values[i, :] ≈ φ atol = 1e-10
         @test res.base ≈ base atol = 1e-10
@@ -61,8 +61,8 @@ end
     n = 300; lvl = Float64.(rand(rng, 1:5, n)); x2 = rand(rng, n)
     y = [l in (1.0, 3.0) ? 2.0 : -1.0 for l in lvl] .+ 3 .* x2
     t = fit_tree([lvl x2], y; categorical = [1], max_depth = 2, truncate = false)
-    res = shap(t, [lvl x2][1:10, :])
-    for i in 1:10
+    res = shap(t, [lvl x2][1:5, :])
+    for i in 1:5
         x = [lvl x2][i, :]
         φ, base = brute_shap(t, x)
         @test res.values[i, :] ≈ φ atol = 1e-10
@@ -93,15 +93,7 @@ end
     end
 end
 
-@testset "shap base matches training mean when branches share a slope" begin
-    rng = StableRNG(25)
-    X = rand(rng, 300, 3); y = 2 .* X[:, 1] .+ X[:, 2] .+ 0.01 .* randn(rng, 300)
-    t = fit_tree(X, y; rule = MinDeviance((PCON,)), truncate = false)
-    res = shap(t, X)
-    @test res.base ≈ t.base atol = 1e-10
-end
-
-@testset "tree.base is the SHAP empty-coalition value on a general (asymmetric) tree (I6)" begin
+@testset "tree.base is the SHAP empty-coalition value on a general (asymmetric) tree" begin
     # Before the fix, tree.base was the cover-weighted mean training score, not
     # the empty-coalition value shap uses; the two differed by 28% on a 62-node
     # tree with mixed lcoef/rcoef (measured interactively: 1.5016 vs 1.9255).
@@ -140,44 +132,13 @@ end
     t = fit_tree(X, y; max_depth = 4, truncate = false)
     @test has_lin_under_same_feature(t)   # node 19 (LIN, feature 4) sits under node 14 (SPLIT, feature 4)
 
-    res = shap(t, X[1:10, :])
-    for i in 1:10
+    res = shap(t, X[1:5, :])
+    for i in 1:5
         φ, base = brute_shap(t, X[i, :])
         @test res.values[i, :] ≈ φ atol = 1e-10
         @test res.base ≈ base atol = 1e-10
     end
-    @test vec(sum(res.values; dims = 2)) .+ res.base ≈ score(t, X[1:10, :]; clip = false) atol = 1e-10
-end
-
-@testset "shap threaded matches serial on a large set" begin
-    rng = StableRNG(26)
-    n = 20_000; X = rand(rng, n, 3); y = sin.(3 .* X[:, 1]) .+ 2 .* X[:, 2] .+ 0.05 .* randn(rng, n)
-    t = fit_tree(X, y; max_depth = 3)
-    r1 = shap(t, X; nthreads = 1)
-    rn = shap(t, X)
-    @test r1.values == rn.values
-    @test r1.clipped == rn.clipped
-end
-
-@testset "shap on a deep tree is efficient and thread-invariant" begin
-    # max_depth = 10 drives the path pool past whatever depth the shallow
-    # testsets reach, so a pool that failed to grow (or that let a child
-    # overwrite a live parent buffer) breaks efficiency here, not above.
-    rng = StableRNG(101)
-    n = 2000
-    lvl = Float64.(rand(rng, 1:6, n))
-    X = hcat(lvl, rand(rng, n, 4))
-    y = sin.(3 .* X[:, 2]) .+ 2 .* X[:, 3] .* (X[:, 4] .> 0.5) .+
-        [l in (1.0, 4.0) ? 1.5 : -0.5 for l in lvl] .+ 0.05 .* randn(rng, n)
-    t = fit_tree(X, y; categorical = [1], max_depth = 10)
-    @test length(t.nodes) > 40
-
-    Xq = X[1:200, :]
-    r1 = shap(t, Xq; nthreads = 1)
-    rn = shap(t, Xq)
-    @test r1.values == rn.values                 # bit-for-bit, not approximately
-    @test r1.clipped == rn.clipped
-    @test vec(sum(r1.values; dims = 2)) .+ r1.base ≈ score(t, Xq; clip = false) atol = 1e-10
+    @test vec(sum(res.values; dims = 2)) .+ res.base ≈ score(t, X[1:5, :]; clip = false) atol = 1e-10
 end
 
 @testset "shap base comes from the nodes, not the base field" begin

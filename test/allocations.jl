@@ -11,12 +11,28 @@ using StableRNGs, DataFrames, CategoricalArrays
     end
     @test scan_alloc() == 0
 
-    function score_row_alloc()
-        X = rand(50, 2); t = fit_tree(X, X[:, 1])
-        LinearTrees.score_row(t, X, 1, true)
-        return @allocated LinearTrees.score_row(t, X, 1, true)
+    function predict_alloc()
+        X = rand(50, 2); t = fit_tree(X, X[:, 1]); out = zeros(50)
+        predict!(out, t, X)
+        return @allocated predict!(out, t, X)
     end
-    @test score_row_alloc() == 0
+    @test predict_alloc() == 0
+end
+
+@testset "a MAD fit reuses its IRLS buffers" begin
+    # fails if `irls_refit`'s residual buffer or `median_abs!`'s sort buffers
+    # revert to a fresh per-call allocation: measured 664_576 bytes with the
+    # buffers reused and 975_360 with a fresh residual and permutation per
+    # refit call, both under `--check-bounds=yes` at one thread.
+    function mad_fit_alloc()
+        rng = StableRNG(43)
+        n = 4_000
+        X = rand(rng, n, 3); y = X[:, 1] .+ 0.2 .* randn(rng, n)
+        y[1:20] .+= 5   # outliers, so IRLS solves a non-degenerate residual
+        fit_tree(X, y, MAD(); nthreads = 1, max_depth = 6)
+        return @allocated fit_tree(X, y, MAD(); nthreads = 1, max_depth = 6)
+    end
+    @test mad_fit_alloc() < 800_000
 end
 
 @testset "a serial fit allocates one scratch set" begin

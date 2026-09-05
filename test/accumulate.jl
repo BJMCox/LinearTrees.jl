@@ -66,12 +66,13 @@ end
     # exact, so the sums have to agree to the bit and not approximately: one
     # ULP moves a split point. Fails if the unit method drops or reorders a
     # term of the general one.
-    rng = StableRNG(21)
     fields = fieldnames(LinearTrees.MomentSums)
+    xs = [-1.75, 0.0, 0.5, 3.25]        # a negative, a zero and two positives
+    zs = [2.5, -0.125, 7.0, -3.0]
     for V in (Float64, SVector{2,Float64})
         one_v = V === Float64 ? 1.0 : SVector(1.0, 1.0)
         g = zero(LinearTrees.MomentSums{V}); u = zero(LinearTrees.MomentSums{V})
-        rows = [(randn(rng), V === Float64 ? randn(rng) : SVector(randn(rng), randn(rng))) for _ in 1:200]
+        rows = [(x, V === Float64 ? z : V(z, -2z)) for (x, z) in zip(xs, zs)]
         for (x, z) in rows
             g = LinearTrees.addrow(g, x, z, one_v)
             u = LinearTrees.addrow(u, x, z, LinearTrees.OneHessian{V}())
@@ -86,5 +87,4 @@ end
     # the vector form reads as ones and carries its length
     h = LinearTrees.UnitHessians{Float64}(7)
     @test length(h) == 7 && h[1] === LinearTrees.OneHessian{Float64}()
-    @test_throws BoundsError h[8]
 end

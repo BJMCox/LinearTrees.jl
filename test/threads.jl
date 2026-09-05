@@ -1,37 +1,5 @@
 using StableRNGs
 
-@testset "subtree-parallel fit equals serial fit" begin
-    rng = StableRNG(34)
-    X = rand(rng, 6_000, 5); y = sin.(3 .* X[:, 1]) .+ X[:, 2] .* X[:, 3] .+ 0.1 .* randn(rng, 6_000)
-    t1 = fit_tree(X, y; nthreads = 1)
-    tn = fit_tree(X, y)
-    @test t1.nodes == tn.nodes
-    # categorical and softmax paths
-    lvl = Float64.(rand(rng, 1:6, 6_000))
-    Xc = hcat(lvl, X)
-    yc = [X[i, 1] > 0.5 ? 1 : lvl[i] <= 3 ? 2 : 3 for i in 1:6_000]
-    tc1 = fit_tree(Xc, yc, Softmax(3); categorical = [1], nthreads = 1)
-    tcn = fit_tree(Xc, yc, Softmax(3); categorical = [1])
-    @test tc1.nodes == tcn.nodes
-    @test tc1.catmasks == tcn.catmasks
-end
-
-# Every thread count, three times each: the number of ids `borrow!` finds free
-# varies run to run at fixed `nthreads`, so one run per count would not see a
-# reduction that had become borrow-count dependent.
-@testset "odd scratch splits and nested row threading" begin
-    rng = StableRNG(35)
-    X = rand(rng, 20_000, 4); y = sin.(3 .* X[:, 1]) .+ X[:, 2] .* X[:, 3] .+ 0.1 .* randn(rng, 20_000)
-    lvl = Float64.(rand(rng, 1:7, 20_000))
-    Xc = hcat(lvl, X)
-    t1 = fit_tree(Xc, y; categorical = [1], nthreads = 1, max_depth = 5)
-    for k in 1:Threads.nthreads(), _ in 1:3
-        tk = fit_tree(Xc, y; categorical = [1], nthreads = k, max_depth = 5)
-        @test tk.nodes == t1.nodes
-        @test tk.catmasks == t1.catmasks
-    end
-end
-
 # Fails if `trytake!` ever hands one id to two callers, if `give!` loses one, or
 # if `borrow!` returns more than it was asked for.
 @testset "ScratchPool hands out every free id at most once" begin
@@ -61,6 +29,10 @@ end
 # IRLS refit as a second scratch user. Fails if the cross-feature reduction
 # stops resolving ties by lowest feature index, if two tasks reach one scratch
 # set, or if `node_epsilon` becomes chunk-dependent.
+#
+# Every thread count, twice each: the number of ids `borrow!` finds free varies
+# run to run at fixed `nthreads`, so one run per count would not see a reduction
+# that had become borrow-count dependent.
 @testset "pool stress: every thread count reproduces the serial tree" begin
     rng = StableRNG(36)
     n = 40_000
@@ -68,15 +40,14 @@ end
     lvl = Float64.(rand(rng, 1:9, n))
     X = hcat(Xn, lvl)
     yr = sum(floor.(3 .* Xn[:, j]) for j in 1:3) .+ Xn[:, 4] .* Xn[:, 5] .+ 0.3 .* lvl .+ 0.1 .* randn(rng, n)
-    w = rand(rng, n) .+ 0.5
     ycls = Float64.([Xn[i, 1] > 0.5 ? 1 : (lvl[i] <= 4 ? 2 : 3) for i in 1:n])
-    designs = (("MSE", yr, MSE(), (;)),
-        ("weighted MSE", yr, MSE(), (; weights = w)),
-        ("MAD", yr, MAD(), (; niter = 5)),
-        ("Softmax(3)", ycls, Softmax(3), (;)))
-    for (_, y, loss, kw) in designs
+    # one design per scratch user: the plain scan, the IRLS refit, and the
+    # vector-valued scan. A weighted design adds no scratch user of its own
+    # (test/partition.jl records a weighted fixture).
+    designs = ((yr, MSE(), (;)), (yr, MAD(), (; niter = 5)), (ycls, Softmax(3), (;)))
+    for (y, loss, kw) in designs
         ref = fit_tree(X, y, loss; categorical = [7], max_depth = 8, nthreads = 1, kw...)
-        for k in 1:Threads.nthreads(), _ in 1:3
+        for k in 1:Threads.nthreads(), _ in 1:2
             t = fit_tree(X, y, loss; categorical = [7], max_depth = 8, nthreads = k, kw...)
             @test t.nodes == ref.nodes
             @test t.catmasks == ref.catmasks

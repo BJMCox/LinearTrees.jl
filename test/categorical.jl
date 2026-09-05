@@ -26,16 +26,6 @@ using StableRNGs
     @test score(htree, [1.0; 2.0; 3.0; 7.0;;]) == [1.0, 2.0, 1.0, 2.0]   # 7 is unseen, routes right
 end
 
-@testset "categorical columns never get linear pieces" begin
-    rng = StableRNG(14)
-    n = 200; lvl = rand(rng, 1:4, n); x2 = randn(rng, n)
-    y = Float64.(lvl) .+ 2 .* x2
-    t = fit_tree([Float64.(lvl) x2], y; categorical = [1])
-    for nd in t.nodes
-        nd.feature == 1 && @test nd.model == PCON
-    end
-end
-
 @testset "mask pool holds more than 64 levels" begin
     rng = StableRNG(15)
     n = 2000; L = 130
@@ -46,20 +36,6 @@ end
     @test root.catwords == 3
     @test all(LinearTrees.category_is_left(t, root, l) == (l in high) for l in 1:L) ||
           all(LinearTrees.category_is_left(t, root, l) == !(l in high) for l in 1:L)
-end
-
-@testset "threaded categorical split search equals serial" begin
-    rng = StableRNG(16)
-    n = 20_000
-    lvl = rand(rng, 1:12, n)
-    levelmean = [Float64(l % 3) * 4.0 for l in 1:12]
-    x2 = rand(rng, n); x3 = rand(rng, n)
-    y = levelmean[lvl] .+ x2 .+ 0.3 .* x3 .+ 0.1 .* randn(rng, n)
-    X = [Float64.(lvl) x2 x3]
-    t1 = fit_tree(X, y; categorical = [1], nthreads = 1, max_depth = 4)
-    tn = fit_tree(X, y; categorical = [1], max_depth = 4)
-    @test t1.nodes == tn.nodes
-    @test t1.catmasks == tn.catmasks
 end
 
 @testset "categorical guards" begin

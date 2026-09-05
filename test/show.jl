@@ -24,11 +24,15 @@ end
     @test occursin("−2.5", s)
 end
 
-@testset "show on a Softmax tree does not throw" begin
+@testset "show on a Softmax tree prints its header and vector pieces" begin
+    # a vector-valued tree takes its own `fmtnum`/`piece` branch, which prints
+    # every class's coefficient as a bracketed vector instead of folding a sign
     rng = StableRNG(34)
     X = rand(rng, 200, 3)
     y = [X[i, 1] > 0.5 ? 1 : X[i, 3] > 0.5 ? 2 : 3 for i in 1:200]
     t = fit_tree(X, y, Softmax(3))
     s = sprint(show, MIME("text/plain"), t)
-    @test occursin("$(length(t.nodes)) nodes", s)
+    @test occursin("Softmax} with $(length(t.nodes)) nodes", s)   # the loss name and the node count
+    @test occursin("$(count(LinearTrees.isleaf, t.nodes)) leaves, 3 features", s)
+    @test occursin("leaf  intercept = [", s)   # the SVector intercept, not a scalar
 end

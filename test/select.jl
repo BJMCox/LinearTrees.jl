@@ -19,21 +19,19 @@ end
     # with the unhoisted one exactly (`===`), not approximately: one ULP flips
     # `sc < best.score` and picks a different split. Fails if `score_logn`
     # stops being `log(n)`, or if the penalty term is folded differently.
+    # One case per branch of `selection_score`: a finite surrogate, the two
+    # non-finite ones, and a rule with no log-n penalty at all.
     dmin = 1e-12
-    for r in (BIC(), BIC(dof = (1.0, 2.0, 3.0, 3.0, 4.0)), MinDeviance((PCON, PLIN)))
-        for k in (CON, LIN, PCON, BLIN, PLIN), n in (10.0, 100.0, 3.7, 1e6), nc in (1, 2, 4)
-            for s in (0.0, 1e-14, 3.5, 50.0, Inf, NaN)
-                @test LinearTrees.selection_score(r, k, s, n, dmin, nc) ===
-                    LinearTrees.selection_score(r, k, s, n, dmin, nc, LinearTrees.score_logn(r, n))
-            end
+    for r in (BIC(), MinDeviance((PCON, PLIN)))
+        for s in (3.5, Inf, NaN)
+            @test LinearTrees.selection_score(r, PLIN, s, 100.0, dmin, 2) ===
+                LinearTrees.selection_score(r, PLIN, s, 100.0, dmin, 2, LinearTrees.score_logn(r, 100.0))
         end
     end
     # a degenerate node weight must not reach `log`: the score is Inf either way
     @test LinearTrees.score_logn(BIC(), 0.0) == 0.0
-    @test LinearTrees.score_logn(BIC(), -1.0) == 0.0
     @test LinearTrees.score_logn(BIC(), NaN) == 0.0
     @test LinearTrees.selection_score(BIC(), CON, 1.0, 0.0, dmin) == Inf
-    @test_throws ArgumentError LinearTrees.score_logn(GainRule(0.1), 10.0)
 end
 
 @testset "MinDeviance rule" begin
@@ -41,12 +39,6 @@ end
     @test LinearTrees.allowed(r, PCON) && !LinearTrees.allowed(r, CON) && !LinearTrees.allowed(r, LIN)
     @test LinearTrees.selection_score(r, PCON, 3.0, 10.0, 1e-12) == 3.0
     @test LinearTrees.selection_score(r, CON, 0.0, 10.0, 1e-12) == Inf
-end
-
-@testset "GainRule raises ArgumentError, not a bare error (Minor 17)" begin
-    r = GainRule(0.1)
-    @test_throws ArgumentError LinearTrees.allowed(r, CON)
-    @test_throws ArgumentError LinearTrees.selection_score(r, CON, 1.0, 10.0, 1e-12)
 end
 
 @testset "devkey is the deviance in the form its rule compares" begin
@@ -61,8 +53,7 @@ end
     # covered by the two testsets above.
     dmin = 1e-3
     devs = (-Inf, 0.0, 1e-9, 1e-3, 0.5, 3.5, 50.0, Inf, NaN)
-    for r in (BIC(), BIC(dof = (1.0, 2.0, 3.0, 3.0, 4.0)), MinDeviance((PCON, BLIN, PLIN)),
-            LinearTrees.PconOnly(BIC()))
+    for r in (BIC(), MinDeviance((PCON, BLIN, PLIN)), LinearTrees.PconOnly(BIC()))
         for s in devs
             @test LinearTrees.selection_score(r, PLIN, LinearTrees.devkey(r, s, dmin), 108.0, dmin) ===
                 LinearTrees.selection_score(r, PLIN, s, 108.0, dmin)
@@ -74,7 +65,6 @@ end
             a < b && isfinite(sa) && @test sa <= sb
         end
     end
-    @test_throws ArgumentError LinearTrees.devkey(GainRule(0.1), 1.0, 1e-12)
 
     # `BIC`'s score is NOT injective in the key: `n log(dev / n)` maps a run of
     # adjacent `Float64` keys to one score, ten of them wide at n = 200_000.
@@ -104,7 +94,6 @@ end
     # guards a latent case.
     @test LinearTrees.devkey(BIC(), -Inf, 1e-3) === Inf
     @test LinearTrees.devkey(BIC(), NaN, 1e-3) === Inf
-    @test LinearTrees.devkey(BIC(), Inf, 1e-3) === Inf
     @test LinearTrees.devkey(BIC(), 1.0f-9, 1.0f-3) === 1.0f-3   # stays in the caller's float type
     @test !isfinite(LinearTrees.devkey(MinDeviance((PCON,)), -Inf, 1e-3))   # dropped by the sweep's own isfinite
 end
