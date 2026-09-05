@@ -1,6 +1,9 @@
 using StableRNGs, JSON3
 
-include(joinpath(@__DIR__, "fixtures", "partition", "cases.jl"))
+# guarded: test/loss.jl (Q2's fit-identity check) also includes this file and
+# runs first in runtests.jl, so an unconditional include here would overwrite
+# its `partition_cases` method and print a spurious redefinition warning
+@isdefined(partition_cases) || include(joinpath(@__DIR__, "fixtures", "partition", "cases.jl"))
 
 @testset "partition_column! is a stable partition of the span" begin
     # idx column: rows 1..12 in some sorted order; span covers positions 3:10
