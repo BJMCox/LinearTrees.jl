@@ -63,7 +63,15 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         max_depth = 12, min_fit = 10, min_leaf = 5, min_sum_hessian = 1.0,
         max_lin_chain = 10, truncate = true, truncation_factor = 3,
         nthreads = Threads.nthreads(), niter = 5)
-    niter >= 1 || throw(ArgumentError("niter must be >= 1, got $niter"))
+    # `niter` reaches an `Int` field, so a non-integer would surface as an
+    # `InexactError` from deep inside the fit rather than as a rejected argument
+    isinteger(niter) && niter >= 1 || throw(ArgumentError("niter must be an integer >= 1, got $niter"))
+    max_depth >= 0 || throw(ArgumentError("max_depth must be >= 0, got $max_depth"))
+    min_fit >= 1 || throw(ArgumentError("min_fit must be >= 1, got $min_fit"))
+    min_leaf >= 1 || throw(ArgumentError("min_leaf must be >= 1, got $min_leaf"))
+    # below 1 the padding term goes negative and `(lo, hi)` inverts, after which
+    # `clampscore` silently returns `hi` for every row
+    truncation_factor >= 1 || throw(ArgumentError("truncation_factor must be >= 1, got $truncation_factor"))
     nthreads = clamp(nthreads, 1, Threads.nthreads())
     T = float(promote_type(eltype(X), eltype(y)))
     n, p = size(X)
@@ -73,7 +81,11 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     all(v -> isfinite(v) && v >= 0, w) || throw(ArgumentError("weights must be finite and non-negative"))
     keep = findall(>(0), w)
     isempty(keep) && throw(ArgumentError("total weight must be positive"))
-    Xm = Matrix{T}(X[keep, :]); yv = Vector{T}(y[keep]); w = w[keep]
+    # No row is dropped and the caller already has the working element type, so
+    # the copy would be pure cost. `st.X` is read-only for the whole fit, so the
+    # tree holds a reference to the caller's matrix only until `fit_tree` returns.
+    Xm = length(keep) == n && X isa Matrix{T} ? X : Matrix{T}(X[keep, :])
+    yv = Vector{T}(y[keep]); w = w[keep]
     all(isfinite, Xm) || throw(ArgumentError("X contains NaN or Inf"))
     nlevels = zeros(Int, p)
     iscat = zeros(Bool, p)
@@ -131,15 +143,31 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{T}, w::Vector{T}, loss::L, rule::R,
     return LinearTree{T,V,L}(st.nodes, st.catmasks, loss, lo, hi, base, p, truncate)
 end
 
+"""
+Run `f(cols, t)` over `nthreads` contiguous column blocks of `1:p`, threaded
+only when a column is long enough (`n` rows) to pay for the tasks. `t` is the
+block's index in `1:nthreads`, for callers that keep one buffer per worker.
+The row-shaped analogue is `row_blocks`.
+"""
+function column_blocks(f, p::Integer, n::Integer, nthreads::Integer)
+    nthreads = clamp(nthreads, 1, Threads.nthreads())
+    if nthreads == 1 || n < PARALLEL_MIN_ROWS || p == 1
+        f(1:p, 1)
+    else
+        chunk = cld(p, nthreads)
+        Threads.@threads for t in 1:nthreads
+            lo = (t - 1) * chunk + 1
+            hi = min(t * chunk, p)
+            lo <= hi && f(lo:hi, t)
+        end
+    end
+    return nothing
+end
+
 "Stable per-feature sort orders. Features are independent, so this threads over columns."
 function presort!(idx::Matrix{Int32}, X::Matrix, nthreads)
-    p = size(X, 2)
-    if nthreads == 1 || size(X, 1) < PARALLEL_MIN_ROWS
-        for j in 1:p
-            idx[:, j] .= Int32.(sortperm(view(X, :, j); alg = MergeSort))
-        end
-    else
-        Threads.@threads for j in 1:p
+    column_blocks(size(X, 2), size(X, 1), nthreads) do cols, _
+        for j in cols
             idx[:, j] .= Int32.(sortperm(view(X, :, j); alg = MergeSort))
         end
     end
@@ -244,24 +272,16 @@ function partition!(idx::Matrix{Int32}, span::UnitRange{Int}, leftrows::Abstract
     for i in leftrows
         isleft[i] = true
     end
-    p = size(idx, 2)
+    # every column returns the same left count, so take it here rather than from
+    # whichever task happens to finish last
     nleft = 0
-    if length(span) >= PARALLEL_MIN_ROWS && length(tids) > 1 && p > 1
-        chunks = collect(Iterators.partition(1:p, cld(p, length(tids))))
-        tasks = [Threads.@spawn begin
-                nl = 0
-                for j in ch
-                    nl = partition_column!(view(idx, :, j), span, isleft, scratch[tid].perm)
-                end
-                nl
-            end for (tid, ch) in zip(tids, chunks)]
-        for t in tasks
-            nleft = fetch(t)::Int   # `fetch` infers `Any`; without this the span arithmetic dispatches at run time
-        end
-    else
-        perm = scratch[first(tids)].perm
-        for j in 1:p
-            nleft = partition_column!(view(idx, :, j), span, isleft, perm)
+    for k in span
+        nleft += isleft[idx[k, 1]]
+    end
+    column_blocks(size(idx, 2), length(span), length(tids)) do cols, t
+        perm = scratch[first(tids) + t - 1].perm
+        for j in cols
+            partition_column!(view(idx, :, j), span, isleft, perm)
         end
     end
     for i in leftrows
@@ -480,6 +500,11 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
         xmean = sum(st.w[i] * st.X[i, bestj] for i in rows) / nw
     end
     if best.kind == LIN
+        # A LIN node stores `threshold = NaN`, so `x <= n.threshold` is false for
+        # every row and the routing falls to the right branch. That is harmless
+        # only because both branches are the same fit: `rcoef == lcoef`,
+        # `rintercept == lintercept` and, below, `right == left`. `score_row`
+        # (predict.jl) and `coeftable`'s walk (importance.jl) both rely on it.
         me = Node{T,V}(; feature = bestj, threshold = T(NaN), lcoef = best.lcoef, lintercept = best.lintercept,
             rcoef = best.lcoef, rintercept = best.lintercept, xmin, xmax, cover = nw, xmean, gain, model = LIN)
         me = refit_node(st, me, rows, first(tids))

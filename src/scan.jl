@@ -22,6 +22,13 @@ ncoord(::Type{V}) where {V<:SVector} = length(V)
 nocandidate(::Type{T}, ::Type{V}) where {T,V} =
     Candidate{T,V}(CON, T(NaN), zero(V), zero(V), zero(V), zero(V), zero(V) .+ Inf, Inf)
 
+"""
+PILOT offers a linear piece only where the feature has at least this many
+distinct values on the rows in hand: `lin` and `blin` need it over the node,
+`plin` over each child separately.
+"""
+const MIN_UNIQUE_LIN = 5
+
 "Count of distinct values in a sorted vector."
 function nunique(xs::AbstractVector)
     isempty(xs) && return 0
@@ -57,7 +64,7 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
         sc < best.score && (best = Candidate{T,V}(CON, T(NaN), zero(V), b, zero(V), b, rss, sc))
     end
     # lin
-    if allowed(rule, LIN) && nu >= 5
+    if allowed(rule, LIN) && nu >= MIN_UNIQUE_LIN
         r = fit_lin(total)
         if r !== nothing
             a, b, rss = r
@@ -86,7 +93,7 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
             sc = selection_score(rule, PCON, sum(rss), n, dmin, nc)
             sc < best.score && (best = Candidate{T,V}(PCON, t, zero(V), bl, zero(V), br, rss, sc))
         end
-        if allowed(rule, BLIN) && nu >= 5
+        if allowed(rule, BLIN) && nu >= MIN_UNIQUE_LIN
             r = fit_blin(left, right, t)
             if r !== nothing
                 al, bl, ar, br, rss = r
@@ -94,7 +101,7 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
                 sc < best.score && (best = Candidate{T,V}(BLIN, t, al, bl, ar, br, rss, sc))
             end
         end
-        if allowed(rule, PLIN) && uleft >= 5 && uright >= 5
+        if allowed(rule, PLIN) && uleft >= MIN_UNIQUE_LIN && uright >= MIN_UNIQUE_LIN
             rl = fit_lin(left); rr = fit_lin(right)
             if rl !== nothing && rr !== nothing
                 al, bl, rssl = rl; ar, br, rssr = rr
