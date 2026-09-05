@@ -8,8 +8,12 @@ using LinearAlgebra
     @testset "Code quality (Aqua.jl)" begin
         Aqua.test_all(LinearTrees)
     end
-    @testset "Code linting (JET.jl)" begin
-        JET.test_package(LinearTrees)
+    # JET's verdicts track the compiler: on 1.10 it reports nine false positives inside
+    # Base broadcast and vcat that 1.12 infers cleanly, so the lint gate runs on 1.12+.
+    if VERSION >= v"1.12"
+        @testset "Code linting (JET.jl)" begin
+            JET.test_package(LinearTrees)
+        end
     end
     include("loss.jl")
     include("node.jl")
