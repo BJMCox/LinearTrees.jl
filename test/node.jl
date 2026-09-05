@@ -9,7 +9,7 @@
     @test leaf.feature == 0 && leaf.left == 0 && leaf.right == 0
     @test leaf.model == CON
     @test leaf.xmin == -Inf && leaf.xmax == Inf
-    @test isbits(MomentSums{Float64}(1.0, 2.0, 3.0, 4.0, 5.0, 6.0))
+    @test isbits(LinearTrees.MomentSums{Float64}(1.0, 2.0, 3.0, 4.0, 5.0, 6.0))
     t = LinearTree{Float64,Float64,MSE}([leaf], UInt64[], MSE(), -1.0, 1.0, 0.0, 3, true)
     @test length(t.nodes) == 1 && t.nfeatures == 3
 end

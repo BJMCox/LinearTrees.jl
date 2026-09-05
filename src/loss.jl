@@ -158,17 +158,19 @@ function gradhess!(g::AbstractVector{V}, h::AbstractVector{V}, l::Softmax, y::Ab
 end
 
 """
-    irls_weights!(h, loss, y, f)
+    irls_weights!(h, loss, y, f; ε)
 
 IRLS pseudo-hessian for non-smooth losses: `l1weight(loss, r) / max(|r|, ε)`,
-with a positive scale-aware floor `ε`. Uses `l1weight` rather than `gh`'s
+with a positive scale-aware floor `ε`. `ε` is required: every caller already
+holds the node's residual scale, and recomputing it here would mean a second
+weighted median over `y - f`. Uses `l1weight` rather than `gh`'s
 gradient magnitude: at `r == 0` `gh` reports an exact-zero gradient (the
 boundary of its case split), which would zero out the very row sitting at
 the current fit and bias the step; `l1weight` gives that row its correct
 one-sided weight (`τ` or `1-τ`) instead.
 """
 function irls_weights!(h::AbstractVector{T}, loss::Union{Quantile,MAD}, y::AbstractVector, f::AbstractVector;
-        ε = max(irls_epsilon(y .- f, ones(T, length(y))), sqrt(eps(T)) * max(maximum(abs, y), one(T)))) where {T}
+        ε) where {T}
     for i in eachindex(h, y, f)
         r = y[i] - f[i]
         h[i] = max(l1weight(loss, r) / max(abs(r), ε), T(HMIN))
@@ -232,8 +234,8 @@ end
 `1e-3` times the weighted median of `|r|` by `w`: the residual-scale half of
 the ε floor IRLS uses everywhere it re-solves the pseudo-hessian for a
 non-smooth loss. Written once here rather than copied at each call site
-(`irls_weights!`'s own default, `node_epsilon`, `irls_refit`); each caller
-still adds its own `sqrt(eps(T))` floor scaled by `y`'s own magnitude.
+(`node_epsilon`, `irls_refit`); each caller still adds its own `sqrt(eps(T))`
+floor scaled by `y`'s own magnitude.
 """
 irls_epsilon(r::AbstractVector{T}, w::AbstractVector) where {T} = T(1e-3) * median_abs(r, w)
 irls_epsilon!(buf::Vector{T}, perm::Vector{Int32}, r::AbstractVector{T}, w::AbstractVector) where {T} =
