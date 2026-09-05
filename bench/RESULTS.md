@@ -11,28 +11,31 @@ unreachable branch.
 
 Reproduce with `julia --project=bench -t 1 bench/run.jl` and
 `julia --project=bench -t auto bench/run.jl` (instantiate `bench/` first).
+The headline tables are from `main` at `49ca56f` (2026-09-05), after the
+scratch-pool threading, the radix presort and the row-order slices; the
+sections further down record each change against the code before it.
 
 ## `-t 1` (`Threads.nthreads() == 1`)
 
 | dataset | benchmark | median | min | memory | allocs |
 |---|---|---|---|---|---|
-| linear | `fit_tree` | 966 ms | 928 ms | 73.37 MiB | 901 |
-| linear | `DecisionTree.build_tree` | 636 ms | 632 ms | 5.57 MiB | 2288 |
-| linear | `LinearTrees.predict` | 1.571 ms | 1.466 ms | 784.06 KiB | 3 |
-| piecewise | `fit_tree` | 425 ms | 392 ms | 74.63 MiB | 745 |
-| piecewise | `DecisionTree.build_tree` | 647 ms | 641 ms | 5.57 MiB | 2180 |
-| piecewise | `LinearTrees.predict` | 884 μs | 840 μs | 784.06 KiB | 3 |
+| linear | `fit_tree` | 355 ms | 353 ms | 20.44 MiB | 110 |
+| linear | `DecisionTree.build_tree` | 655 ms | 653 ms | 5.57 MiB | 2288 |
+| linear | `LinearTrees.predict` | 1.573 ms | 1.545 ms | 784.06 KiB | 3 |
+| piecewise | `fit_tree` | 132 ms | 129 ms | 20.83 MiB | 105 |
+| piecewise | `DecisionTree.build_tree` | 654 ms | 653 ms | 5.57 MiB | 2180 |
+| piecewise | `LinearTrees.predict` | 887 μs | 867 μs | 784.06 KiB | 3 |
 
 ## `-t auto` (`Threads.nthreads() == 10`)
 
 | dataset | benchmark | median | min | memory | allocs |
 |---|---|---|---|---|---|
-| linear | `fit_tree` | 130 ms | 117 ms | 101.12 MiB | 3912 |
-| linear | `DecisionTree.build_tree` | 653 ms | 651 ms | 5.57 MiB | 2288 |
-| linear | `LinearTrees.predict` | 227 μs | 194 μs | 788.58 KiB | 55 |
-| piecewise | `fit_tree` | 66.2 ms | 59.2 ms | 102.26 MiB | 1875 |
-| piecewise | `DecisionTree.build_tree` | 654 ms | 654 ms | 5.57 MiB | 2180 |
-| piecewise | `LinearTrees.predict` | 149 μs | 117 μs | 788.58 KiB | 55 |
+| linear | `fit_tree` | 59.9 ms | 49.6 ms | 67.35 MiB | 2203 |
+| linear | `DecisionTree.build_tree` | 655 ms | 654 ms | 5.57 MiB | 2288 |
+| linear | `LinearTrees.predict` | 236 μs | 192 μs | 788.58 KiB | 55 |
+| piecewise | `fit_tree` | 28.1 ms | 19.6 ms | 79.30 MiB | 1482 |
+| piecewise | `DecisionTree.build_tree` | 655 ms | 651 ms | 5.57 MiB | 2180 |
+| piecewise | `LinearTrees.predict` | 159 μs | 117 μs | 788.58 KiB | 55 |
 
 `DecisionTree.build_tree` does not thread, so its numbers are flat across both
 runs (the small drift is noise).
@@ -40,16 +43,20 @@ runs (the small drift is noise).
 ## Threaded vs. serial
 
 On this 10-thread machine, threaded `fit_tree` on the `100_000 × 20` set is
-**faster** than serial, not slower: 7.4x on linear (966 ms → 130 ms median)
-and 6.4x on piecewise (425 ms → 66.2 ms median). This is the opposite of the
+**faster** than serial, not slower: 5.9x on linear (355 ms → 59.9 ms median)
+and 4.7x on piecewise (132 ms → 28.1 ms median). This is the opposite of the
 regression the task brief asked to watch for; there is no threaded-slower-
 than-serial finding to report here. Threaded `fit_tree` does allocate more
-(3912 vs. 901 allocations on linear) from the per-task scratch buffers and
-`Threads.@spawn` overhead, but the wall-clock win dominates.
+(67 MiB and 2203 allocations vs. 20 MiB and 110 on linear) from the
+`2 * nthreads` scratch sets and the spawned subtree tasks, but the wall-clock
+win dominates. The ratios are below the 7x of the deep cases further down
+because these trees are small (11 and 9 nodes at `max_depth = 8`), so there
+are few sibling subtrees to spawn and most of the fit is the presort and the
+feature-chunked scans of the first nodes.
 
 `LinearTrees.predict`'s median beats `DecisionTree.build_tree`'s median by
-405x (serial linear, 636 ms / 1.571 ms) up to about 4,390x (threaded
-piecewise, 654 ms / 149 μs) — roughly 2.6 to 3.6 orders of magnitude, not a
+about 420x (serial linear, 655 ms / 1.573 ms) up to about 4,100x (threaded
+piecewise, 655 ms / 159 μs) — roughly 2.6 to 3.6 orders of magnitude, not a
 flat three. This is expected, since it is prediction, not tree growth; it is
 included for scale, not as a fair apples-to-apples comparison with
 `build_tree`.
@@ -80,6 +87,24 @@ Memory fell as well (322 → 253 MiB threaded on the BIC case) because the
 per-node `BitVector` mask is gone. The remaining gap to a CART fit is the
 per-node `leftrows`/`rightrows` vectors and the subtree splice copies.
 `bench/run.jl` now includes both the BIC step case and the forced-growth case.
+
+### The same deep cases at `49ca56f`
+
+From `bench/run.jl` after the scratch-pool threading, the radix presort and
+the row-order slices (sections below). The forced-growth row is the same
+design as the table above; the BIC step row in `bench/run.jl` is the
+`100_000 × 20` set and so is not the 3638-node case.
+
+| case | nodes | threads | median | min | memory | allocs |
+|---|---|---|---|---|---|---|
+| BIC step target, n = 100_000 | 1948 | 10 | 97.9 ms | 85.6 ms | 91.04 MiB | 5084 |
+| BIC step target, n = 100_000 | 1948 | 1 | 541 ms | 535 ms | 21.45 MiB | 1348 |
+| forced growth | 2449 | 10 | 180 ms | 168 ms | 180.59 MiB | 8125 |
+| forced growth | 2449 | 1 | 973 ms | 965 ms | 42.17 MiB | 1334 |
+
+Forced growth went from 0.56 s to 0.180 s threaded and from 1.44 s to
+0.973 s serial since the table above (3.1x and 1.5x), with the threaded
+speedup over serial at 5.4x on both deep cases.
 
 ## SHAP: pooled path buffers
 
