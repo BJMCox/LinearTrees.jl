@@ -1,4 +1,4 @@
-using StableRNGs
+using StableRNGs, InteractiveUtils
 import Distributions
 using Statistics
 
@@ -78,4 +78,38 @@ end
         @test length(t.nodes) == 1
         @test predict(t, X)[1] ≈ mean(y)
     end
+end
+
+# Every exported loss is a public contract, so each gets one fit through
+# `fit_tree` and one prediction on its response scale. The last assertion
+# fails when a `Loss` subtype is added without a row here, so pruning or
+# extension cannot leave a loss unexercised again.
+@testset "every exported loss fits and predicts on its response scale" begin
+    rng = StableRNG(13)
+    n = 300
+    X = rand(rng, n, 3)
+    yreal = X[:, 1] .- 2 .* X[:, 2] .+ 0.05 .* randn(rng, n)
+    ypos = exp.(yreal)
+    ycount = Float64.(rand(rng, 0:5, n))
+    ybin = Float64.(X[:, 1] .> 0.5)
+    yclass = [X[i, 1] > 0.5 ? 1 : X[i, 2] > 0.5 ? 2 : 3 for i in 1:n]
+    unbounded = (-Inf, Inf)
+    cases = [
+        (MSE(), yreal, unbounded), (Huber(0.5), yreal, unbounded),
+        (Quantile(0.3), yreal, unbounded), (MAD(), yreal, unbounded),
+        (Logistic(), ybin, (0.0, 1.0)),
+        (Poisson(), ycount, (0.0, Inf)), (NegBin(2.0), ycount, (0.0, Inf)),
+        (Gamma(), ypos, (0.0, Inf)), (Tweedie(1.5), ypos, (0.0, Inf)),
+    ]
+    for (loss, y, (lo, hi)) in cases
+        pr = predict(fit_tree(X, y, loss), X)
+        @test all(isfinite, pr)
+        @test all(p -> lo <= p <= hi, pr)
+    end
+    P = predict(fit_tree(X, yclass, Softmax(3)), X)
+    @test all(isfinite, P)
+    @test all(isapprox.(sum(P; dims = 2), 1.0; atol = 1e-12))
+    # `AdaptedLoss` wraps LossFunctions losses and is fitted in lossfunctions.jl
+    fitted = Set(nameof(typeof(c[1])) for c in cases) ∪ Set([:Softmax, :AdaptedLoss])
+    @test Set(nameof.(InteractiveUtils.subtypes(LinearTrees.Loss))) == fitted
 end
