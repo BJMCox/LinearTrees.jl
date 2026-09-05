@@ -59,9 +59,10 @@ end
 end
 
 @testset "gh is type-stable at Float32 (deferred item 4)" begin
-    # Huber's `copysign(l.δ, r)` and Quantile's `1 - l.τ`/`-l.τ` used to promote a
-    # Float32 `f` to Float64 on one branch, giving a non-concrete Union return type.
-    for loss in (Huber(1.0), Quantile(0.3))
+    # Two widening paths: Huber's `copysign(l.δ, r)` and Quantile's `1 - l.τ` promoted
+    # one branch to Float64 (a Union return); Tweedie's `μ^(2 - ρ)` with a Float64
+    # exponent and NegBin's Float64 `θ` promoted every branch (a plain Float64 return).
+    for loss in (Huber(1.0), Quantile(0.3), Tweedie(1.5), NegBin(2.0))
         @test only(Base.return_types(LinearTrees.gh, Tuple{typeof(loss),Float32,Float32})) == Tuple{Float32,Float32}
         @test @inferred(LinearTrees.gh(loss, 1.0f0, 0.3f0)) isa Tuple{Float32,Float32}
     end

@@ -308,7 +308,7 @@ candidate order per coordinate `k`; each is scanned in turn and the
 lowest-scoring candidate wins. A scalar `V` has exactly one coordinate, so
 this reduces to the original single-order scan.
 """
-function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin, tid) where {T,V}
+function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin) where {T,V}
     L = st.nlevels[j]
     # `counts` is offset by one so it doubles as the counting sort's histogram
     sz = zeros(V, L); sw = zeros(V, L); counts = zeros(Int, L + 1)
@@ -382,7 +382,7 @@ function best_split_serial(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, 
     best = nocandidate(T, V); bestj = 0; bestleft = Int[]
     for j in features
         if st.iscat[j]
-            c, leftcodes = scan_categorical(st, sc, rows, j, dmin, tid)
+            c, leftcodes = scan_categorical(st, sc, rows, j, dmin)
         else
             m = gather!(st, sc, span, j)
             c = scan_feature(view(sc.xs, 1:m), view(sc.zs, 1:m), view(sc.hs, 1:m), view(sc.ws, 1:m),
