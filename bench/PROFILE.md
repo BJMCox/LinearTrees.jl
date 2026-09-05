@@ -585,3 +585,37 @@ three measured reasons.
 Worth revisiting only together with the conditioning: solving the blin system
 on centred sums (`x - x̄`) would cut both the cancellation and the operation
 count, but it changes what the moment sums are, so it is its own item.
+
+### 4. `@inbounds` on the two hottest loops: measured, not committed
+
+The project bans `@inbounds` without a cited measurement, and the measurement
+does not support one. Apple M4 Pro, Julia 1.12.7, `-t 1`, `@benchmark`
+medians, `n = 200_000` sorted rows, three runs of each variant with the source
+toggled between them.
+
+| Loop | plain | `@inbounds` | gain |
+|---|---|---|---|
+| `scan_feature` sweep, `Vector{Float64}` hs | 2.20 ms | 2.36 ms | **-7%** |
+| `scan_feature` sweep, `UnitHessians` hs | 2.18 ms | 2.35 ms | **-8%** |
+| `gather!`, unit-hessian path (three stores) | 0.524 ms | 0.521 ms | +0.6% |
+| `gather!`, general path (four stores) | 0.917 ms | 0.814 ms | +11.2% |
+
+`scan_feature` is consistently **slower** with the bounds checks removed: the
+loop is arithmetic-bound, and dropping the checks changes LLVM's scheduling
+for the worse. `gather!`'s unit path -- the one an unweighted `MSE` fit takes
+-- gains 0.6%, far under the 5% bar. Only `gather!`'s general path clears the
+bar, and it is worth about 1-2% of a weighted or non-`MSE` fit end to end.
+
+Case 1 end to end, `-t 1`, eleven samples, the two variants run alternately to
+control for drift: plain medians 1463 / 1443 ms against 1398 / 1352 ms with
+`@inbounds` in `gather!`, and best-of-eleven 1333 ms against 1298 ms -- a 2.6%
+to 5.4% spread that straddles the bar and sits inside this machine's
+run-to-run noise (other work was resident during the pass). `@inbounds` in
+`scan_feature` alone measured 1362 / 1375 ms, no better than plain.
+
+So: nothing committed. If the general `gather!` path is ever revisited, the
+bound argument is available -- `span ⊆ 1:n`, `st.idx` is `n x p` with
+`j ∈ 1:p`, every `i = st.idx[k, j]` is a row index in `1:n` because `presort!`
+fills the column with a `sortperm` and `partition!` only permutes within a
+span, and `m` runs from 1 to `length(span) ≤ n` over scratch buffers of length
+`n` -- but the gain does not pay for the loss of the check.
