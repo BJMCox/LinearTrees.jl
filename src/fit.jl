@@ -586,7 +586,11 @@ function best_split(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, ids::Ab
             failed === nothing && (failed = e)
         end
     end
-    failed === nothing || rethrow(failed)   # `rethrow`, so the failing chunk's own frames stay in the trace
+    # `throw`, not `rethrow`: the catch block above has exited by here, and
+    # `rethrow` outside one raises an `ErrorException` of its own instead. Nothing
+    # is lost -- `wait` already wrapped the chunk's exception in a
+    # `TaskFailedException`, whose backtrace is the chunk's own.
+    failed === nothing || throw(failed)
     best = nocandidate(T, V); bestj = 0; bestleft = Int[]
     for t in tasks
         # `fetch` infers `Any`; without this the winning candidate stays boxed and

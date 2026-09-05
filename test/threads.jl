@@ -156,6 +156,14 @@ LinearTrees.allowed(r::BlockOthers, k::LinearTrees.ModelKind) = LinearTrees.allo
 LinearTrees.score_logn(r::BlockOthers, n) = LinearTrees.score_logn(r.inner, n)
 LinearTrees.devkey(r::BlockOthers, surrogate, dmin) = LinearTrees.devkey(r.inner, surrogate, dmin)
 
+"The exception actually thrown, following the chain of `TaskFailedException`s each `wait` wrapped it in."
+function innermost(e)
+    while e isa TaskFailedException
+        e = e.task.result
+    end
+    return e
+end
+
 "20_000 x 4, a step target so BIC keeps splitting down to nodes of a few hundred rows."
 function stepdata()
     rng = StableRNG(37)
@@ -231,7 +239,18 @@ end
         wait(rule.thrown)
         @test timedwait(() -> istaskdone(t), 1.0; pollint = 0.02) === :timed_out
         notify(rule.release)
-        @test_throws TaskFailedException wait(t)
+        err = try
+            wait(t)
+            nothing
+        catch e
+            e
+        end
+        @test err isa TaskFailedException
+        # the chunk's own failure has to reach the caller. `rethrow` after its
+        # catch block has exited raises `ErrorException("rethrow(exc) not allowed
+        # outside a catch block")` instead, which the type check above cannot see
+        # because `wait` on the outer task wraps whatever failed it.
+        @test occursin("BlockOthers", sprint(showerror, innermost(err)))
         @test sort(st.pool.free) == collect(2:nsets)
     end
 end
