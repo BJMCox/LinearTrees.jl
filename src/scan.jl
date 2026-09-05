@@ -48,14 +48,26 @@ them is exactly one, as `UnitHessians{V}`, which accumulates without the
 multiply and gives the same sums to the bit.
 
 `selection_score` runs once per kind, not once per split point: the sweep
-carries the lowest `devkey` reached by each of `pcon`, `blin` and
-`plin`, and scores those three at the end. Ties resolve as follows.
+carries the lowest `devkey` reached by each of `pcon`, `blin` and `plin`, and
+scores those three at the end. The candidate that wins is therefore chosen by
 
-* Within a kind, the earliest split point (lowest `t`) reaching that kind's
-  lowest key wins.
-* Across kinds, an exact score tie goes to the kind that comes first in
-  `(con, lin, pcon, blin, plin)`, which is the kind with no more parameters
-  than the other.
+1. the lowest score, then
+2. the fixed kind order `(con, lin, pcon, blin, plin)` on an exact score tie
+   -- a fixed order, not an ordering by parameter count, which it only
+   coincides with for `BIC`'s default `dof`, then
+3. the lowest feature index on a tie between features, which `best_split`
+   applies (`src/fit.jl`), unchanged;
+
+and within one kind, by
+
+4. the lowest surrogate deviance (`devkey`), then the earliest split point
+   (lowest `t`) on an exact tie between keys.
+
+Rule 4 is where this differs from scoring inside the sweep, and it differs on
+more than exact ties: `selection_score` is monotone but not injective in the
+key (see `devkey`), so where several split points share one score the lowest
+key wins here while the earliest split point won before. Both reach the same
+score.
 
 The `nu >= MIN_UNIQUE_LIN`, `uleft`/`uright` and `min_leaf` restrictions still
 apply per split point, exactly as they would with the score inside the loop.

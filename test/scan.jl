@@ -160,7 +160,7 @@ end
     @test c2.kind == PCON && c2.threshold == 200.0
 end
 
-@testset "within a kind the earliest split point with the lowest devkey wins" begin
+@testset "within a kind the lowest devkey wins, earliest split point on a tie" begin
     # `dmin` is the BIC log floor (normally `eps · Σ h z²`); a large one makes
     # several split points score identically, which is what pins the rule.
     # blin's deviance on this design is 0.959 at t = 6, 0.918 at t = 7 and

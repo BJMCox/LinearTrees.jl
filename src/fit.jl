@@ -236,7 +236,7 @@ end
 """
 Gather the node rows, `st.idx[span, j]` in feature-`j` order, into one
 worker's scratch. `O(length(span))`. On the unit-hessian path `sc.hs` is not
-written: `scan_hessians` hands the scan a `UnitHessians` instead, and the
+written: `scan_gathered` hands the scan a `UnitHessians` instead, and the
 branch is hoisted out of the row loop so neither loop tests it per row.
 """
 function gather!(st::FitState, sc::Scratch, span::UnitRange{Int}, j)

@@ -40,19 +40,26 @@ expansion of the deviance around the node's current score, which keeps each
 candidate `O(1)` to score. `dof` is a field of the `BIC` instance, so a
 custom tuple can be passed: `BIC(dof = (1.0, 2.0, 5.0, 5.0, 7.0))`.
 
-Within one kind the score is strictly increasing in the surrogate deviance, so
-the scan carries the lowest deviance each kind reaches and scores the kind once
-per feature rather than once per split point. Two ties can arise:
+Within one kind the score is monotone non-decreasing in the surrogate
+deviance, so the scan carries the lowest deviance each kind reaches and scores
+the kind once per feature rather than once per split point. The winning
+candidate is the one with the lowest score; ties resolve in this order:
 
-- within a kind, the earliest split point (lowest threshold) reaching that
-  kind's lowest deviance wins;
-- across kinds, an exact score tie goes to the kind that comes first in
-  `(con, lin, pcon, blin, plin)`, which never has more parameters than the
-  other.
+- **within a kind**, the split point with the lowest surrogate deviance wins,
+  and the earliest split point (lowest threshold) on an exact tie between
+  deviances. Because `n log(dev / n)` is monotone but not injective in
+  `Float64`, several split points of one kind can share one score; the lowest
+  deviance among them is the one kept;
+- **across kinds**, an exact score tie goes to the kind that comes first in
+  the fixed order `(con, lin, pcon, blin, plin)`. That is a fixed order, not
+  an ordering by parameter count: with a custom `dof` the winning kind may
+  carry more parameters than the kind it beat;
+- **across features**, a tie goes to the lowest feature index.
 
-Both are degenerate for continuous data: a cross-kind tie needs two kinds to
-reach the same deviance to the last bit, or two deviances that both fall under
-the score's `eps`-scaled log floor.
+A cross-kind tie is degenerate for continuous data: it needs two kinds to
+reach the same score to the last bit, which in practice means the same
+deviance or two deviances that both fall under the score's `eps`-scaled log
+floor.
 
 A node stops splitting (becomes a leaf) when `CON` wins, when its total weight
 falls below `min_fit`, when it reaches `max_depth`, when its summed Hessian
