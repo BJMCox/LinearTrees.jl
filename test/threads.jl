@@ -229,14 +229,18 @@ end
 # still scanning on. The window is opened by an `Event`, not by a sleep, and
 # closed by `notify`, so the only bound in the test is on the negative check --
 # with the join, `t` can never finish while chunk 2 and up are blocked, and
-# without it `t` unwinds in microseconds.
+# without it `t` unwinds in microseconds. Chunk 1 throws and every later chunk
+# blocks, so a join that skips one of the blocked chunks but waits on another
+# stays green here: the test locks a join over all chunks against none, not
+# against every partial one.
 @testset "the threaded split search does not return before its own chunks" begin
     nt = min(4, Threads.nthreads())
     if nt > 1
         rule = BlockOthers()
         st, rows, nsets = poolstate(MSE(), rule, nt; data = linedata())
         t = Threads.@spawn LinearTrees.grow_subtree(st, rows, 1:20_000, 0, 0, 1, st.nodes, st.catmasks)
-        wait(rule.thrown)
+        # the fixture must fire before the negative check means anything
+        @test timedwait(() -> rule.thrown.set, 30.0; pollint = 0.02) === :ok
         @test timedwait(() -> istaskdone(t), 1.0; pollint = 0.02) === :timed_out
         notify(rule.release)
         err = try
