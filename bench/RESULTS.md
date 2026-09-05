@@ -116,11 +116,24 @@ case 3). `median_abs!`, `median_abs`, and `wquantile` now share
 partitions the node's index buffer instead of sorting it. Zero-weight rows
 are moved out of the active range before selection starts, which is also what
 keeps the exact-boundary tie rule (`cum == target` averages the two adjacent
-order statistics) well-defined: 20,000 randomized cases mixing integer and
+order statistics) well-defined: randomized cases mixing integer and
 fractional weights, zero weights, and heavy duplicates agree with a
 sort-then-walk oracle that drops zero-weight rows the same way, and MAD and
 Quantile(0.3) fits on the four `test/fixtures/partition/cases.jl` designs are
 bit-identical before and after (same node count, same `predict` bit pattern).
+
+This is a genuine behavior change against `main`'s exact code in one common
+corner, not just a speed-up: `main` walks the *unfiltered* order, so an exact
+weight boundary immediately followed, in ascending order, by a zero-weight
+row lets that row's value get averaged into the boundary tie regardless of
+whether the two rows share a value -- e.g. `y = [1, 2, 3]`, `w = [1, 0, 1]`,
+`τ = 0.5` returns `1.5` on `main` and `2.0` here (`Statistics.median` of the
+duplicated sample `[1, 3]`). With integer weights that trigger fires whenever
+the node's total weight is even, measured at 26% of `irls_epsilon!` calls with
+`{0, 1}` weights on fully distinct, continuous residuals -- common, not a
+corner case requiring duplicate values. No `fit_tree` output changed in
+testing (see `test/loss.jl`'s golden-hash fixture fits), because `ε`'s floor
+rarely binds and the two candidate order statistics are adjacent when it does.
 
 Same machine as above, `-t 1`.
 

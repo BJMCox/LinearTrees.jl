@@ -194,9 +194,10 @@ end
     # so `sortperm`'s unspecified tie order among that run's rows can no
     # longer change which row the walk returns on. The unpatched sort-based
     # code this replaced (`wquantile_sorted`, walking the *unfiltered* `o`)
-    # does not have that guarantee: a value shared by a zero- and a
-    # positive-weight row lets whatever tie order `sortperm`/`sort!` happens
-    # to produce decide the exact-boundary answer -- a preexisting
+    # does not have that guarantee: an exact weight boundary immediately
+    # followed, in ascending order, by a zero-weight row -- the two rows need
+    # not share a value -- lets whatever tie order `sortperm`/`sort!` happens
+    # to produce decide the exact-boundary answer. That is a preexisting
     # inconsistency with its own documented invariant ("tie order among equal
     # values never changes the median"), not a target this replacement
     # reproduces.
@@ -216,10 +217,15 @@ end
     end
     oracle_median_abs(r, w) = oracle_wquantile(abs.(r), w, 0.5)
 
+    # n mostly small (1:64): the exact-boundary and zero-weight branches are
+    # driven by ties, which small n hits far more often per draw than large n
+    # does, so this covers the same branches as a much bigger loop over
+    # n in 1:3000 in a fraction of the time; a handful of large-n draws stay
+    # in the mix so the O(m) behavior at bigger sizes still gets exercised
     rng = StableRNG(202609)
     ncases = 0
-    for _ in 1:20_000
-        n = rand(rng, 1:3000)
+    for trial in 1:3_000
+        n = trial <= 2_950 ? rand(rng, 1:64) : rand(rng, 65:3000)
         y = rand(rng, Bool) ? Float64.(rand(rng, -5:5, n)) : round.(randn(rng, n); digits = 1)
         w = rand(rng, Bool) ? Float64.(rand(rng, 0:3, n)) : rand(rng, n) .* 2
         sum(w) > 0 || continue
@@ -231,10 +237,14 @@ end
         @test got_q == oracle_wquantile(y, w, τ)
         @test got_m == oracle_median_abs(y, w)
     end
-    @test ncases > 15_000   # sanity: the loop actually ran on most of the 20,000 draws
+    @test ncases > 2_200   # sanity: the loop actually ran on most of the 3,000 draws
 
-    # zero-weight rows and duplicate values, direct: `wquantile_select!` must
-    # ignore the former and treat a run of the latter as one order statistic
+    # zero-weight rows, direct: `wquantile_select!` must ignore them, and the
+    # skipped row need not share a value with its neighbors (rev-Q2 finding --
+    # `main` returns 1.5 here, averaging the exact boundary at row 1 into row
+    # 2's value even though row 2's weight is zero)
+    @test LinearTrees.wquantile_select!([1.0, 2.0, 3.0], [1.0, 0.0, 1.0], [1, 2, 3], 0.5) == 2.0
+    # duplicate values, direct: a run of equal values counts as one order statistic
     @test LinearTrees.wquantile_select!([1.0, 2.0, 3.0], [0.0, 5.0, 0.0], [1, 2, 3], 0.5) == 2.0
     @test LinearTrees.wquantile_select!(fill(3.0, 10), Float64.([0, 1, 0, 2, 0, 3, 0, 4, 0, 5]), collect(1:10), 0.5) == 3.0
     @test_throws ArgumentError LinearTrees.wquantile_select!([1.0, 2.0], [0.0, 0.0], [1, 2], 0.5)
@@ -255,7 +265,11 @@ end
     # the sort it replaced on any node of these trees: `nodes` and `predict`
     # are recorded from a fit against the pre-rewrite (sort-based)
     # `median_abs!`/`wquantile_sorted`, compared here bit for bit
-    include(joinpath(@__DIR__, "fixtures", "partition", "cases.jl"))
+    #
+    # guarded: test/partition.jl also includes this file (and runs after
+    # loss.jl in runtests.jl), so an unconditional include here would make
+    # its own unconditional include overwrite the method a second time
+    @isdefined(partition_cases) || include(joinpath(@__DIR__, "fixtures", "partition", "cases.jl"))
     # the hash is `reduce(xor, reinterpret(UInt64, predict(t, X)))`: exactly
     # associative and commutative, so it does not depend (unlike a floating
     # sum) on thread count or reduction order, only on predict's bit pattern

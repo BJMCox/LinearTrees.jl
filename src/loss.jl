@@ -193,14 +193,16 @@ end
 """
     wquantile(y, w, τ) -> eltype(y)
 
-Weighted `τ`-quantile of `y` by frequency weights `w`: the value the
-cumulative weight would cross `τ · Σw` at, in ascending order. When it lands
-exactly on that target, return the mean of the two adjacent order statistics,
-the tie a plain `quantile` takes on `y` duplicated `w[i]` times per row.
-Integer weights therefore equal row duplication, and `τ = 0.5` matches
-`Statistics.median` of the duplicated sample. Throws `ArgumentError` when `Σw`
-is not positive. Computed by `wquantile_select!` in expected `O(length(y))`
-time, not by a full sort.
+Weighted `τ`-quantile of `y` by frequency weights `w`, ignoring rows with
+`w[i] == 0`: the value the cumulative weight would cross `τ · Σw` at, in
+ascending order. When it lands exactly on that target, return the mean of the
+two adjacent order statistics, the tie a plain `quantile` takes on `y`
+duplicated `w[i]` times per row. Integer weights therefore equal row
+duplication, and `τ = 0.5` matches `Statistics.median` of the duplicated
+sample -- which has zero copies of a zero-weight row's value, hence excluding
+it rather than walking past it at zero weight. Throws `ArgumentError` when
+`Σw` is not positive. Computed by `wquantile_select!` in expected
+`O(length(y))` time, not by a full sort.
 """
 wquantile(y, w, τ) = wquantile_select!(y, w, collect(eachindex(y)), τ)
 
@@ -218,15 +220,23 @@ these buffers are per-task scratch reused while sibling subtrees grow
 concurrently, and a shared RNG would race across them.
 
 A zero-weight row contributes no copies to the duplicated sample `wquantile`
-means to match, so it is moved out of `o`'s active range up front: this is
-also what keeps the exact-boundary rule well-defined. A weighted run that
-mixes a zero- and a positive-weight row at the same value would otherwise let
-the *order* those two rows happen to land in decide whether the boundary
-average uses this run's own value (trivial) or the next run's -- ambiguous,
-since nothing here promises an order for equal values. Once zero-weight rows
-are excluded, every remaining run has positive total weight, so the run
-being summed to completion is the only way its total can land exactly on
-target: the boundary is between *runs*, never inside one.
+means to match, so it is moved out of `o`'s active range up front. This is
+not a rare correction: on the sort-based code this replaced (`wquantile_sorted`
+on `main`, walking the *unfiltered* order), whenever the cumulative weight
+lands exactly on target, the boundary average uses whatever row sorts next --
+including a zero-weight row, and the two rows need *not* share a value. E.g.
+`y = [1, 2, 3]`, `w = [1, 0, 1]`, `τ = 0.5`: the cumulative weight after row 1
+already equals half the total, so `main` averages it with row 2's value
+regardless of row 2's zero weight, returning `1.5`; this function excludes row
+2 and returns `2.0`, `Statistics.median` of the duplicated sample `[1, 3]`.
+That trigger -- an exact weight boundary immediately followed, in ascending
+order, by a zero-weight row -- is common, not a corner case: with integer
+weights it fires whenever the node's total weight is even, measured at 26% of
+`irls_epsilon!` calls with `{0, 1}` weights on fully distinct, continuous
+residuals. Once zero-weight rows are excluded up front, every remaining run
+has positive total weight, so a run's total landing exactly on target is the
+only way it can happen: the boundary is between *runs*, never inside one, and
+no row's exclusion depends on where in `o` it happens to sit.
 """
 function wquantile_select!(y::AbstractVector, w::AbstractVector, o::AbstractVector{<:Integer}, τ)
     n = length(o)
@@ -284,6 +294,9 @@ function wquantile_select!(y::AbstractVector, w::AbstractVector, o::AbstractVect
             hasbound = true
             bound = pv
         elseif base + WL == target
+            # seeding with o[lo], a `== pv` element, is only reached when `lt == lo`
+            # (the `< pv` group is empty), which needs base == target == 0, i.e. τ = 0;
+            # there pv is the range minimum, so (pv + pv) / 2 == pv is still correct
             mx = y[o[lo]]
             for k in (lo + 1):(lt - 1)
                 mx = max(mx, y[o[k]])
