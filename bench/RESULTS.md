@@ -177,3 +177,41 @@ Same machine as above, `-t 1`.
 gain narrows for the full case 3 fit (1.42x) since `sort!` was 41% of that fit,
 not all of it, and `niter = 5` IRLS passes still pay for everything else the
 profile found (partitioning, gradient/Hessian, the MomentSums reduction).
+
+## SHAP: branch constants attributed once per leaf
+
+`visit!` used to credit a split node's two branch constants and a LIN node's
+constant against paths built at the node, so a row's recursion ran
+`attribute_constant!` three times per split node, twice per LIN node and once
+per leaf. A constant credited against a node's path equals the same constant
+credited against both of its child paths, so the branch constants now ride
+down the recursion in a running sum and are attributed once per leaf, with the
+leaf intercept. Only the own-feature linear term stays at the node: its path
+is not either child's path, so it does not telescope. `bench/PROFILE.md`
+section 3 has the proof sketch and why the gain is 1.3x rather than the 2-3x
+the call count suggests -- the calls that disappear sat at shallow nodes and
+the ones that absorb them sit at the leaves, where `attribute_constant!`'s
+`O(depth^2)` is largest.
+
+Same machine as above, one process at `-t 10`. Case 6 of `bench/cases.jl`
+(`case56_data()`: a 3674-node `max_depth = 12` tree with one categorical
+column, `shap` over 10,000 query rows and 10 features), `@benchmark ...
+samples = 5 evals = 1`, minimum of the five, `main` (`02a691d`) and the branch
+measured alternately in two rounds.
+
+| build | serial | 10 threads |
+|---|---|---|
+| `main`, round 1 | 3827 ms | 444 ms |
+| `main`, round 2 | 3856 ms | 460 ms |
+| branch, round 1 | **2850 ms** | **340 ms** |
+| branch, round 2 | 2879 ms | 355 ms |
+
+That is 1.34x serial and 1.31x on ten threads, well outside the +-5% this
+machine drifts between processes.
+
+The reformulation reassociates the sums rather than reproducing them bit for
+bit: on case 6's 100,000 values 6,016 are unchanged, the largest absolute
+difference against `main` is 3.09e-14 and the largest relative difference
+8.50e-11, on values up to 2.215. The efficiency identity still holds to
+4.80e-14 absolute and 1.54e-14 relative over scores in 0.324 .. 14.41, and
+serial and ten-thread results remain identical to each other.

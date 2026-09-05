@@ -410,7 +410,7 @@ the `quantile_weighted` fixture plus new unit tests.
 
 ### 3. SHAP: parallel path arrays, then attribution at leaves
 
-**Where** `src/shap.jl:63-129` and `:160-233`. Fix 3 below made SHAP scale
+**Where** `src/shap.jl:68-130` and `:185-260`. Fix 3 below made SHAP scale
 across threads; this is the per-thread cost, which it did not touch.
 
 **Share** `unwound_sum` is 42% of case 6; loading `PathElem`s and the two float
@@ -437,15 +437,33 @@ here) and another `resize!`/`copyto!` in `copyinto!`, which runs three times
 per split node per row. The 39% self time was the loop's one bounds-checked
 load. Hoisting the loop-invariant `onefrac != 0` guard out of `unwind!` and
 `unwound_sum` landed and is worth 2.5-2.7% on a paired run.
-(b) works but pays 1.28x, not 2-3x: 2.97 s serial and 428 ms on 10 threads.
-It halves the number of `attribute_constant!` calls, but the calls it removes
-sat at shallow nodes and the ones that absorb them sit at the leaves, where
-`O(depth^2)` is largest. It is also not byte-identical -- 6% of case 6's
-values are unchanged, max absolute difference 3.1e-14 on values up to 2.2 --
-so it did not land; see
-`.superpowers/sdd/2026-09-05-tree-followups/Q3-shap-report.md`. The own-feature
-terms are what is left, and 659 of case 6's 2062 internal nodes carry an own
-term that is exactly zero.
+(b) landed, and pays 1.3x rather than 2-3x: minimum of five on case 6 goes
+from 3827 ms to 2850 ms serial and from 444 ms to 340 ms on ten threads
+(`bench/RESULTS.md` has both rounds). It halves the number of
+`attribute_constant!` calls, but the calls it removes sat at shallow nodes and
+the ones that absorb them sit at the leaves, where `O(depth^2)` is largest.
+
+The change rests on this identity: a constant credited against a split node's
+path equals the same constant credited against both of its child paths, so the
+branch constants can ride down the recursion in a running sum and be
+attributed once per leaf. `visit!`'s docstring names it and
+`.superpowers/sdd/2026-09-05-tree-followups/Q3-shap-report.md` proves it from
+`extend!`'s weight recurrence; `test/shap.jl` pins it on a two-level
+construction with and without an ancestor split on the child's own feature.
+Only the own-feature linear term stays at the node -- its `zerofrac` for the
+split feature is 0, not `cov * izero`, so it is not either child's path and
+pushing it down would cost each leaf one extra path per ancestor split
+feature.
+
+It is not byte-identical: it reassociates, so 6% of case 6's values are
+unchanged and the largest absolute difference against the previous code is
+3.09e-14 on values up to 2.215, with the efficiency identity holding to
+4.80e-14. That was accepted rather than gated on, since the package is
+unreleased and last-bit differences carry no contract. Serial and threaded
+results are still identical to each other.
+
+The own-feature terms are what is left, and 659 of case 6's 2062 internal
+nodes carry an own term that is exactly zero.
 
 Byte identity was checked throughout with `bench/ab.jl`'s dumps, which is the
 only sound way to check it here: SHAP's last mantissa bits depend on the target
