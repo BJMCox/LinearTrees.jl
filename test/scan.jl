@@ -37,7 +37,7 @@ using StableRNGs
     @test c2.threshold == 15.0
 end
 
-@testset "duplicate xs values are never split between equal values (C3b)" begin
+@testset "duplicate xs values are never split between equal values" begin
     # a wrong tie-skip (comparing the wrong index, or dropping the `xs[i] <
     # xs[i + 1]` guard) would let a threshold fall strictly inside a block of
     # equal xs, splitting rows that share a feature value between children.
@@ -51,7 +51,7 @@ end
     @test c.rintercept ≈ 5.0 atol = 1e-12
 end
 
-@testset "nocandidate when the rule allows nothing or min_leaf is too big (C3c)" begin
+@testset "nocandidate when the rule allows nothing or min_leaf is too big" begin
     x = collect(1.0:10.0); z = randn(StableRNG(5), 10)
 
     # allowed(rule, ::ModelKind) is false for every kind, including con

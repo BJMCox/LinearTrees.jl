@@ -118,7 +118,7 @@ end
     @test maximum(abs.(Float64.(p32) .- p64) ./ abs.(p64)) < 1e-4
 end
 
-@testset "Float32 Logistic fits with truncate = true (C1 regression)" begin
+@testset "Float32 Logistic fits with truncate = true" begin
     rng = StableRNG(302)
     X = Float32.(rand(rng, 100, 2)); y = Float32.(rand(rng, Bool, 100))
     t = fit_tree(X, y, Logistic(); truncate = true)

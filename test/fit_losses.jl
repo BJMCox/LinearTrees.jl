@@ -59,8 +59,6 @@ end
 end
 
 @testset "count losses return positive means" begin
-    # one loss per `initscore`/`scorebound` method: `Poisson` for the floored
-    # union it shares with `NegBin` and `Tweedie`, `Gamma` for its own.
     rng = StableRNG(12)
     X = rand(rng, 200, 1); μ = exp.(1 .+ X[:, 1])
     y = Float64.(rand.(rng, Distributions.Poisson.(μ)))
@@ -69,4 +67,15 @@ end
     @test cor(pr, μ) > 0.8
     yg = rand.(rng, Distributions.Gamma.(2.0, μ ./ 2))
     @test all(>(0), predict(fit_tree(X, yg, Gamma()), X))
+
+    # A con root predicts `linkinv(loss, initscore(loss, y, w))`, which for a
+    # log-link loss is the mean of y, and the truncation band has to be wide
+    # enough to leave it alone. One fit per remaining count loss: both are
+    # exported, so their init score and clamp band are public behaviour even
+    # while they share a method with `Poisson`.
+    for loss in (Tweedie(1.5), NegBin(3.0))
+        t = fit_tree(X, y, loss; min_fit = 10_000)   # min_fit above n: a con root
+        @test length(t.nodes) == 1
+        @test predict(t, X)[1] ≈ mean(y)
+    end
 end

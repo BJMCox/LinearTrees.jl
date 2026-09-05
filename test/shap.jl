@@ -93,7 +93,7 @@ end
     end
 end
 
-@testset "tree.base is the SHAP empty-coalition value on a general (asymmetric) tree (I6)" begin
+@testset "tree.base is the SHAP empty-coalition value on a general (asymmetric) tree" begin
     # Before the fix, tree.base was the cover-weighted mean training score, not
     # the empty-coalition value shap uses; the two differed by 28% on a 62-node
     # tree with mixed lcoef/rcoef (measured interactively: 1.5016 vs 1.9255).

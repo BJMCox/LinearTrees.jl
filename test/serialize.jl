@@ -24,7 +24,7 @@ end
     for (_, t, X) in trees
         t2 = from_dict(to_dict(t))
         @test t2.nodes == t.nodes && t2.catmasks == t.catmasks && t2.loss == t.loss
-        @test t2.base == t.base   # I6: tree.base is the SHAP empty-coalition value, round-trips exactly
+        @test t2.base == t.base   # tree.base is the SHAP empty-coalition value, and round-trips exactly
         @test LinearTrees.predict(t2, X) == LinearTrees.predict(t, X)
 
         # through real JSON text, where a non-finite field has to survive as a string

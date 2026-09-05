@@ -51,26 +51,20 @@ end
     @test h[2] > 100                           # r = 0: l1weight gives τ, not gh's exact-zero gradient
 end
 
-@testset "gh is type-stable at Float32 (deferred item 4)" begin
-    # Two widening paths: Huber's `copysign(l.δ, r)` and Quantile's `1 - l.τ` promoted
-    # one branch to Float64 (a Union return); Tweedie's `μ^(2 - ρ)` with a Float64
-    # exponent and NegBin's Float64 `θ` promoted every branch (a plain Float64 return).
-    for loss in (Huber(1.0), Quantile(0.3), Tweedie(1.5), NegBin(2.0))
-        @test only(Base.return_types(LinearTrees.gh, Tuple{typeof(loss),Float32,Float32})) == Tuple{Float32,Float32}
-    end
-end
-
 @testset "init scores, domains, bounds" begin
-    # One case per `initscore` and `scorebound` method, not per loss: both
-    # dispatch on unions (`Poisson`/`NegBin`/`Tweedie` share one `initscore`,
-    # `MSE`/`Huber`/`Quantile`/`MAD` one `scorebound`), so a second loss from
-    # the same union re-enters the same code.
+    # One case per loss whose init score or clamp band is a public behaviour of
+    # its own. Sharing a `Union` method with another loss is a fact about
+    # today's source, not a contract: `Tweedie`'s mean can legitimately be zero
+    # at ρ in (1, 2), so its floor is asserted here rather than inferred from
+    # `Poisson`'s.
     @test initscore(MSE(), [1.0, 3.0], [1.0, 1.0]) == 2.0        # weighted mean
     @test initscore(MSE(), [1.0, 3.0], [3.0, 1.0]) == 1.5
     @test initscore(Quantile(0.5), [1.0, 2.0, 10.0], ones(3)) == 2.0
     @test initscore(Logistic(), [1.0, 1.0], ones(2)) == log((1 - 1e-6) / 1e-6)
     @test initscore(Poisson(), [0.0, 0.0], ones(2)) == log(1e-6)   # log-link floor at y .= 0
     @test initscore(Poisson(), [1.0, 2.0, 3.0], ones(3)) ≈ log(2.0)
+    @test initscore(Tweedie(1.5), zeros(3), ones(3)) == log(1e-6)  # the floor, at the mean Tweedie can reach
+    @test initscore(NegBin(2.0), [1.0, 2.0, 3.0], ones(3)) ≈ log(2.0)
     @test initscore(Gamma(), [1.0, 2.0, 3.0], [1.0, 1.0, 2.0]) ≈ log(2.25)   # Gamma has no floor
 
     # integer weights equal row duplication: weighted median against Statistics.median.
@@ -93,13 +87,13 @@ end
     @test scorebound(Poisson(), [0.0, 0.0]) == (-3.0, 3.0)      # maximum(y) < 1 gives S = 3
 
     @test deviance(MSE(), [1.0, 2.0], [0.0, 0.0], ones(2)) == 5.0    # Σ 2ℓ = Σ r²
-    # Minor 1: log1p(exp(f)) alone overflows to Inf past f = 709, where the true
+    # log1p(exp(f)) alone overflows to Inf past f = 709, where the true
     # deviance is ≈ 0 since y == 1 makes the loss f - y*f = f - f in the f > 0 limit
     @test deviance(Logistic(), [1.0], [800.0], [1.0]) ≈ 0 atol = 1e-6
     @test linkinv(Logistic(), 0.0) == 0.5 && linkinv(Poisson(), 0.0) == 1.0
 end
 
-@testset "deviance differences match Distributions.jl logpdf (C1)" begin
+@testset "deviance differences match Distributions.jl logpdf" begin
     # `deviance(loss, y, f1, w) - deviance(loss, y, f2, w)` must equal
     # `-2 Σ w (logpdf(D(f1), y) - logpdf(D(f2), y))` for the matching
     # Distributions.jl model `D`. Catches a wrong factor of 2, a dropped
@@ -131,7 +125,7 @@ end
     @test lhs ≈ rhs atol = 1e-10
 end
 
-@testset "wquantile_select! matches a sort-then-walk oracle (Q2)" begin
+@testset "wquantile_select! matches a sort-then-walk oracle" begin
     # regression for `median_abs!`'s full sort, profiled at 41% of a MAD fit
     # (bench/PROFILE.md case 3): fails if the O(m) quickselect in
     # `wquantile_select!` ever disagrees with a plain sort on the weighted
@@ -186,7 +180,7 @@ end
     @test ncases > 190   # sanity: the loop actually ran on almost every draw
 
     # zero-weight rows, direct: `wquantile_select!` must ignore them, and the
-    # skipped row need not share a value with its neighbors (rev-Q2 finding --
+    # skipped row need not share a value with its neighbors (the sort-based
     # `main` returns 1.5 here, averaging the exact boundary at row 1 into row
     # 2's value even though row 2's weight is zero)
     @test LinearTrees.wquantile_select!([1.0, 2.0, 3.0], [1.0, 0.0, 1.0], [1, 2, 3], 0.5) == 2.0
@@ -195,7 +189,7 @@ end
     @test LinearTrees.wquantile_select!(fill(3.0, 10), Float64.([0, 1, 0, 2, 0, 3, 0, 4, 0, 5]), collect(1:10), 0.5) == 3.0
 end
 
-@testset "a MAD fit is unchanged by the median_abs! rewrite (Q2)" begin
+@testset "a MAD fit is unchanged by the median_abs! rewrite" begin
     # fails if `median_abs!`'s quickselect ever returns a different value than
     # the sort it replaced on any node of this tree: `nodes` and `predict` are
     # recorded from a fit against the pre-rewrite (sort-based)

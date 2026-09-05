@@ -48,7 +48,6 @@ default_kw(name) = get(FIXTURE_KW, name, (max_depth = 6, categorical = Int[]))
         @test length(ours) == length(theirs)
         # Coefficients ride along in the sort key so that equal (kind, feature,
         # sortkey) entries pair deterministically rather than by emission order
-        # (D-review.md finding 1).
         by = x -> (x.kind, x.feature, x.sortkey, x.lcoef, x.lintercept, x.rcoef, x.rintercept)
         sorted_ours, sorted_theirs = sort(ours; by), sort(theirs; by)
         for (o, r) in zip(sorted_ours, sorted_theirs)
