@@ -77,3 +77,14 @@ end
     # BIC penalty scales with the number of coordinates
     @test LinearTrees.selection_score(BIC(), PLIN, 10.0, 100.0, 1e-12, 2) ≈ 100 * log(10 / 100) + 14 * log(100)
 end
+
+@testset "Softmax fits without the score clamp" begin
+    rng = StableRNG(11)
+    X = rand(rng, 300, 3)
+    y = [X[i, 1] > 0.5 ? 1 : X[i, 2] > 0.5 ? 2 : 3 for i in 1:300]
+    t = fit_tree(X, y, Softmax(3); truncate = false)
+    P = predict(t, X)
+    @test all(isapprox.(sum(P; dims = 2), 1.0; atol = 1e-12))
+    # an unclipped fit's bounds are infinite in the score type, so the clamp is a no-op
+    @test score(t, X; clip = true) == score(t, X; clip = false)
+end

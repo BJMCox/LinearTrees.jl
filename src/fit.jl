@@ -252,6 +252,15 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
 end
 
 """
+Unbounded score interval in `V`. `V(-Inf)` is not a constructor for an
+`SVector` score, so the interval is built from `zero(V)` for every score type.
+"""
+function infbounds(::Type{V}) where {V}
+    z = zero(V)
+    return (oftype(z, z .- Inf), oftype(z, z .+ Inf))
+end
+
+"""
 The body of `fit_tree` once every argument is concrete: `Xm::Matrix{T}`,
 `yv`/`w::Vector{T}`, a concrete loss and rule, and the coefficient type `V`.
 A function barrier, so growth specializes on those types instead of
@@ -266,7 +275,7 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{T}, w::Vector{T}, loss::L, rule::R,
     f0 = V(initscore(loss, yv, w))
     # every `scorebound` method returns bounds in its own working type (often
     # `Float64`, regardless of `V`), so convert here rather than trust each method
-    lo, hi = truncate ? map(V, scorebound(loss, yv; truncation_factor)) : (V(-Inf), V(Inf))
+    lo, hi = truncate ? map(V, scorebound(loss, yv; truncation_factor)) : infbounds(V)
     f = fill(clampscore(f0, lo, hi), n)
     idx = Matrix{Int32}(undef, n, p)
     presort!(idx, Xm, nthreads)
