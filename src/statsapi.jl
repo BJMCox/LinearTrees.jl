@@ -84,28 +84,46 @@ function encode(enc::TableEncoder, table; nthreads = Threads.nthreads())
     return out
 end
 
+"""
+`Tables.getcolumn` is typed `AbstractVector`, so the per-row work goes into
+`encode_levels!` and `encode_numeric!`: one dynamic call per column, and a
+body that specialises on the column's concrete type. Inline, every element
+read, conversion and store dispatched at run time and boxed its result, one
+allocation per row per column.
+"""
 function encode_column!(out::Matrix{Float64}, enc::TableEncoder, cols, j)
     nm = enc.names[j]
     col = Tables.getcolumn(cols, nm)
     any(ismissing, col) && throw(ArgumentError("column $nm has missing values"))
     if j in enc.categorical
         lv = enc.levels[j]
-        code = Dict(v => i for (i, v) in enumerate(lv))
-        for i in eachindex(col)
-            v = col[i]
-            c = get(code, v, 0)
-            if c == 0
-                enc.unseen == :right || throw(ArgumentError("unseen level $v in column $nm"))
-                c = length(lv) + 1   # beyond every node's mask, so it routes right like an unseen level at predict time
-            end
-            out[i, j] = c
-        end
+        encode_levels!(out, col, j, Dict(v => i for (i, v) in enumerate(lv)), length(lv), enc.unseen, nm)
     else
-        for i in eachindex(col)
-            v = Float64(col[i])
-            isfinite(v) || throw(ArgumentError("column $nm contains NaN or Inf"))
-            out[i, j] = v
+        encode_numeric!(out, col, j, nm)
+    end
+    return out
+end
+
+"Level codes for one categorical column. `nlevels + 1` is beyond every node's mask, so an unseen level routes right, as it does at predict time."
+function encode_levels!(out::Matrix{Float64}, col::AbstractVector, j, code::AbstractDict, nlevels, unseen::Symbol, nm)
+    for i in eachindex(col)
+        v = col[i]
+        c = get(code, v, 0)
+        if c == 0
+            unseen == :right || throw(ArgumentError("unseen level $v in column $nm"))
+            c = nlevels + 1
         end
+        out[i, j] = c
+    end
+    return out
+end
+
+"One numeric column, converted to `Float64`."
+function encode_numeric!(out::Matrix{Float64}, col::AbstractVector, j, nm)
+    for i in eachindex(col)
+        v = Float64(col[i])
+        isfinite(v) || throw(ArgumentError("column $nm contains NaN or Inf"))
+        out[i, j] = v
     end
     return out
 end

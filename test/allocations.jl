@@ -1,4 +1,4 @@
-using StableRNGs
+using StableRNGs, DataFrames, CategoricalArrays
 
 @testset "hot paths do not allocate" begin
     # @allocated on a non-const global can allocate for reasons unrelated to
@@ -36,4 +36,24 @@ end
         return @allocated LinearTrees.shap_recurse!(φ, t, x2, 2, 1, pool, 1.0, 1.0, 0)
     end
     @test shap_recurse_alloc() == 0
+end
+
+@testset "table encoding does not allocate per row" begin
+    # `Tables.getcolumn` is typed `AbstractVector`, so without a function
+    # barrier every element read, conversion and store inside `encode_column!`
+    # dispatches at run time and boxes its result: one allocation per row per
+    # column. Fails the moment the per-row loops move back into the function
+    # that fetched the column.
+    function encode_alloc()
+        rng = StableRNG(41)
+        n = 5_000
+        df = DataFrame(a = rand(rng, n), b = rand(rng, n),
+            c = categorical(rand(rng, ["x", "y", "z"], n)))
+        enc = LinearTrees.TableEncoder(df, :error)
+        LinearTrees.encode(enc, df; nthreads = 1)
+        return @allocated LinearTrees.encode(enc, df; nthreads = 1)
+    end
+    # the output matrix, the column fetches and the level map are a fixed cost;
+    # anything per row would be 5_000 allocations and megabytes on top
+    @test encode_alloc() < 200_000
 end
