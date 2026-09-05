@@ -35,7 +35,8 @@ print_tree(TreeView(tree))
 
 `fit_tree` allocates one scratch set per worker, each of size `n` (four
 vectors plus an `Int32` buffer), so memory is about `nthreads × 5 × 8n` bytes
-plus the `n × p` `Int32` presort.
+plus the `n × p` `Int32` presort. For `Softmax(K)` two of the four vectors
+hold `K-1` coordinates per row, so their share grows by that factor.
 
 ## Index
 
