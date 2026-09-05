@@ -19,8 +19,6 @@ Base.:+(a::MomentSums{V}, b::MomentSums{V}) where {V} =
     MomentSums{V}(a.sw + b.sw, a.sx + b.sx, a.sxx + b.sxx, a.sz + b.sz, a.sxz + b.sxz, a.szz + b.szz)
 Base.:-(a::MomentSums{V}, b::MomentSums{V}) where {V} =
     MomentSums{V}(a.sw - b.sw, a.sx - b.sx, a.sxx - b.sxx, a.sz - b.sz, a.sxz - b.sxz, a.szz - b.szz)
-Base.isapprox(a::MomentSums, b::MomentSums; kw...) =
-    all(isapprox(getfield(a, k), getfield(b, k); kw...) for k in fieldnames(MomentSums))
 
 """
 Add one row. `h` and `z` have type `V`, `x` has the feature type. `h * x` and
@@ -86,29 +84,22 @@ surrogate deviance, or `nothing` when the `3×3` system is singular.
     return a, b, a + c, b - c * t, rss
 end
 
+"Coordinate `k` of a vector `MomentSums`, as a scalar one."
+@inline coordsums(s::MomentSums{V}, k) where {T,V<:SVector{<:Any,T}} =
+    MomentSums{T}(s.sw[k], s.sx[k], s.sxx[k], s.sz[k], s.sxz[k], s.szz[k])
+
 """
-`fit_blin` for `SVector` coefficients: solves one independent `3×3` system
-per coordinate `k`, with the same scale-invariant singular guard as the
-scalar method, and returns `nothing` if any coordinate is singular.
+`fit_blin` for `SVector` coefficients. The softmax coordinates are fitted
+independently, so this is the scalar method once per coordinate, singular
+guard included; `nothing` if any coordinate is singular.
 """
 @inline function fit_blin(sl::MomentSums{V}, sr::MomentSums{V}, t; tol = SINGULAR_TOL) where {Km1,T,V<:SVector{Km1,T}}
-    s = sl + sr
-    su  = sr.sx .- t .* sr.sw
-    suu = sr.sxx .- 2t .* sr.sx .+ t * t .* sr.sw
-    suz = sr.sxz .- t .* sr.sz
-    sxu = sr.sxx .- t .* sr.sx
-    a = zero(MVector{Km1,T}); b = zero(MVector{Km1,T}); c = zero(MVector{Km1,T})
+    al = zero(MVector{Km1,T}); bl = zero(MVector{Km1,T})
+    ar = zero(MVector{Km1,T}); br = zero(MVector{Km1,T}); rss = zero(MVector{Km1,T})
     for k in 1:Km1
-        G = @SMatrix [s.sxx[k]  s.sx[k]  sxu[k];
-                      s.sx[k]   s.sw[k]  su[k];
-                      sxu[k]    su[k]    suu[k]]
-        m = @SVector [s.sxz[k], s.sz[k], suz[k]]
-        d = det(G)
-        abs(d) <= tol * s.sxx[k] * s.sw[k] * max(suu[k], eps(T) * s.sxx[k]) && return nothing
-        β = G \ m
-        a[k], b[k], c[k] = β[1], β[2], β[3]
+        r = fit_blin(coordsums(sl, k), coordsums(sr, k), t; tol)
+        r === nothing && return nothing
+        al[k], bl[k], ar[k], br[k], rss[k] = r
     end
-    av, bv, cv = SVector(a), SVector(b), SVector(c)
-    rss = s.szz .- av .* s.sxz .- bv .* s.sz .- cv .* suz
-    return av, bv, av .+ cv, bv .- cv .* t, rss
+    return SVector(al), SVector(bl), SVector(ar), SVector(br), SVector(rss)
 end

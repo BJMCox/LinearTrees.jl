@@ -257,7 +257,7 @@ each recomputes the pseudo-hessian at the current node prediction and
 re-solves the chosen model kind. Smooth losses return `n` unchanged. Takes and
 returns a `Node` value rather than a tree index, so it works the same on a
 node still local to a growing subtree. `tid` selects the caller's own worker
-scratch (`st.scratch[tid]`, `st.perms[tid]`), reused as refit buffer storage.
+scratch (`st.scratch[tid]`), reused as refit buffer storage.
 """
 refit_node(st, n, rows, tid, masks = UInt64[]) = issmooth(st.loss) ? n : irls_refit(st, n, rows, tid, st.niter, masks)
 
