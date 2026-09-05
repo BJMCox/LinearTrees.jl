@@ -191,14 +191,14 @@ function poolstate(loss, rule, nt; data = stepdata())
     idx = Matrix{Int32}(undef, n, p)
     LinearTrees.presort!(idx, X, nt)
     st = LinearTrees.FitState{Float64,Float64,typeof(loss),typeof(rule)}(; X, y, w = ones(n),
-        f = zeros(n), g = zeros(n), h = zeros(n), z = zeros(n), idx, isleft = zeros(Bool, n),
+        f = zeros(n), g = zeros(n), h = zeros(n), z = zeros(n), idx, roworder = collect(Int32(1):Int32(n)), isleft = zeros(Bool, n),
         scratch = [LinearTrees.Scratch{Float64,Float64}() for _ in 1:nsets],
         pool = LinearTrees.ScratchPool(nsets:-1:2),
         nodes = LinearTrees.Node{Float64,Float64}[], catmasks = UInt64[],
         iscat = zeros(Bool, p), nlevels = zeros(Int, p), loss, rule, lo = -Inf, hi = Inf,
         max_depth = 12, min_fit = 10.0, min_leaf = 5.0, min_sum_hessian = 1.0, max_lin_chain = 10,
         truncate = false, nthreads = nt, niter = 5, unith = false)
-    rows = collect(Int32(1):Int32(n))
+    rows = view(st.roworder, 1:n)
     LinearTrees.refresh!(st, rows, 1)   # 20_000 rows in chunks of 5_000, all above any throw below
     return st, rows, nsets
 end

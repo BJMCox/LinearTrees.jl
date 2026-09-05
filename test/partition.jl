@@ -51,16 +51,24 @@ end
     for j in 1:p
         idx[span, j] = base[span][sortperm(rand(rng, length(span)))]
     end
+    roworder = Int32.(1:n)                   # the natural order a root node starts from
     leftrows = idx[span[1:3:end][1:10], 1]   # 10 of the span's rows, picked by position in column 1
     isleft = zeros(Bool, n)
+    for i in leftrows
+        isleft[i] = true                     # `grow_subtree` owns the marks; `partition!` only reads them
+    end
     scratch = [LinearTrees.Scratch{Float64,Float64}() for _ in 1:2]
     expected = [vcat(filter(i -> i in leftrows, idx[span, j]), filter(i -> !(i in leftrows), idx[span, j])) for j in 1:p]
-    nleft = LinearTrees.partition!(idx, span, leftrows, isleft, scratch, 1:2)
+    nleft = LinearTrees.partition!(idx, roworder, span, isleft, scratch, 1:2)
     @test nleft == 10
     for j in 1:p
         @test idx[span, j] == expected[j]
     end
-    @test !any(isleft[idx[span, 1]])   # marker cleared for reuse by the next node
+    # `roworder` gets the same stable split, which is what lets each child take a
+    # view of it instead of a fresh row vector: the order the parent's sums ran
+    # over is preserved on both sides
+    @test roworder[span] == vcat(filter(i -> i in leftrows, Int32.(span)), filter(i -> !(i in leftrows), Int32.(span)))
+    @test roworder[1:(first(span) - 1)] == Int32.(1:(first(span) - 1))   # outside the span untouched
 end
 
 # Structure (kinds, features, thresholds, links, covers) must match exactly; the

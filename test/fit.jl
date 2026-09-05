@@ -175,13 +175,13 @@ end
         idx = Matrix{Int32}(undef, n, 1)
         LinearTrees.presort!(idx, X, 1)
         st = LinearTrees.FitState{Float64,Float64,typeof(loss),BIC}(; X, y, w, f,
-            g = zeros(n), h = zeros(n), z = zeros(n), idx, isleft = zeros(Bool, n),
+            g = zeros(n), h = zeros(n), z = zeros(n), idx, roworder = collect(Int32(1):Int32(n)), isleft = zeros(Bool, n),
             scratch = [LinearTrees.Scratch{Float64,Float64}()],
             nodes = LinearTrees.Node{Float64,Float64}[], catmasks = UInt64[],
             iscat = zeros(Bool, 1), nlevels = zeros(Int, 1), loss, rule = BIC(), lo = -Inf, hi = Inf,
             max_depth = 12, min_fit = 10.0, min_leaf = 5.0, min_sum_hessian = 1.0, max_lin_chain = 10,
             truncate = false, nthreads = 1, niter = 5, unith = false)   # MAD, so h is never one
-        rows = collect(Int32(1):Int32(n))
+        rows = view(st.roworder, 1:n)
         LinearTrees.refresh!(st, rows, 1)
         b = LinearTrees.fit_con(LinearTrees.node_sums(st, rows))[1]
         node = LinearTrees.Node{Float64,Float64}(; lintercept = b, cover = Float64(n))

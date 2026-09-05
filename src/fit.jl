@@ -123,6 +123,13 @@ const SCRATCH_PER_THREAD = 2
 const SUBTREE_MIN_ROWS = 256
 
 """
+A node's rows: the slice of `st.roworder` that `partition!` left it. Spelled out
+rather than left as an `AbstractVector`, because every node in every fit has
+exactly this type and an abstract one costs `grow_subtree` its concrete inference.
+"""
+const RowView = SubArray{Int32,1,Vector{Int32},Tuple{UnitRange{Int}},true}
+
+"""
 Everything one `fit_tree` call carries through growth. Built by keyword
 (`Base.@kwdef`) because the positional form is twenty arguments wide and a
 field reorder in it would corrupt a fit silently.
@@ -136,6 +143,7 @@ Base.@kwdef mutable struct FitState{T,V,L<:Loss,R<:SelectionRule}
     h::Vector{V}
     z::Vector{V}
     idx::Matrix{Int32}          # n × p, column j = row order sorted by feature j, partitioned node by node
+    roworder::Vector{Int32}     # n, the same rows in the order every node's sums run over, partitioned alongside `idx`
     isleft::Vector{Bool}        # n, per-row left marker used by `partition!`; each node touches only its own rows
     scratch::Vector{Scratch{T,V}}   # SCRATCH_PER_THREAD per worker, one when nthreads == 1
     pool::ScratchPool = ScratchPool(Int[])   # the ids of `scratch` no task owns, so the two are built and live together
@@ -236,14 +244,15 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{T}, w::Vector{T}, loss::L, rule::R,
     # 0, and the fit allocates no more scratch than a single-worker fit needs
     nsets = nthreads == 1 ? 1 : SCRATCH_PER_THREAD * nthreads
     st = FitState{T,V,L,R}(; X = Xm, y = yv, w, f, g = zeros(V, n), h = zeros(V, n), z = zeros(V, n),
-        idx, isleft = zeros(Bool, n), scratch = [Scratch{T,V}() for _ in 1:nsets],
+        idx, roworder = collect(Int32(1):Int32(n)), isleft = zeros(Bool, n),
+        scratch = [Scratch{T,V}() for _ in 1:nsets],
         pool = ScratchPool(nsets:-1:2),   # id 1 is the root task's own and never enters the pool
         nodes = Node{T,V}[], catmasks = UInt64[], iscat, nlevels, loss, rule, lo, hi,
         max_depth = Int(max_depth), min_fit = T(min_fit), min_leaf = T(min_leaf),
         min_sum_hessian = T(min_sum_hessian), max_lin_chain = Int(max_lin_chain),
         truncate = Bool(truncate), nthreads = Int(nthreads), niter = Int(niter),
         unith = unit_hessian(loss) && all(isone, w))
-    rows = collect(Int32(1):Int32(n))
+    rows = view(st.roworder, 1:n)
     refresh!(st, rows, 1)
     grow_subtree(st, rows, 1:n, 0, 0, 1, st.nodes, st.catmasks)
     # Fold the clamped start score into the root node: training accumulates it in
@@ -530,19 +539,18 @@ function partition_column!(idx::AbstractVector{Int32}, span::UnitRange{Int}, isl
 end
 
 """
-Partition every column of `idx` over `span` so that `leftrows` come first, in
-place and stable, so each child's rows stay sorted by every feature. Columns
-are independent: with at least `PARALLEL_MIN_ROWS` rows they split across the
-scratch ids in `ids`, each task using its own `scratch[id].perm` buffer.
-`isleft` is marked for `leftrows` on entry and cleared on exit, so concurrent
-sibling subtrees, which own disjoint rows, never see each other's marks.
-Returns the left count.
+Partition every column of `idx`, and `roworder` with them, over `span` so that
+the rows marked in `isleft` come first, in place and stable. Each child's rows
+then stay sorted by every feature, and `roworder[span]` keeps them in the order
+the parent's sums ran over. Columns are independent: with at least
+`PARALLEL_MIN_ROWS` rows they split across the scratch ids in `ids`, each task
+using its own `scratch[id].perm` buffer. The caller owns the marks -- it sets
+them for this node's rows and clears them afterwards, so concurrent sibling
+subtrees, which own disjoint rows, never see each other's. Returns the left
+count.
 """
-function partition!(idx::Matrix{Int32}, span::UnitRange{Int}, leftrows::AbstractVector{Int32}, isleft::Vector{Bool},
+function partition!(idx::Matrix{Int32}, roworder::Vector{Int32}, span::UnitRange{Int}, isleft::Vector{Bool},
         scratch, ids::AbstractVector{Int})
-    for i in leftrows
-        isleft[i] = true
-    end
     # every column returns the same left count, so take it here rather than from
     # whichever task happens to finish last
     nleft = 0
@@ -555,9 +563,9 @@ function partition!(idx::Matrix{Int32}, span::UnitRange{Int}, leftrows::Abstract
             partition_column!(view(idx, :, j), span, isleft, perm)
         end
     end
-    for i in leftrows
-        isleft[i] = false
-    end
+    # `roworder` is not a feature column, so it goes outside the threaded block,
+    # on the calling task's own buffer
+    partition_column!(roworder, span, isleft, ensure_len!(scratch[first(ids)].perm, length(span)))
     return nleft
 end
 
@@ -766,7 +774,7 @@ Only the calling task appends to `nodes` and `masks`. A spawned sibling grows
 into its own pair and is shifted and appended once when it returns, so that
 subtree is the one and only case where a node is copied.
 """
-function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{Int}, depth::Int, linchain::Int,
+function grow_subtree(st::FitState{T,V}, rows::RowView, span::UnitRange{Int}, depth::Int, linchain::Int,
         tid::Int, nodes::Vector{Node{T,V}}, masks::Vector{UInt64}) where {T,V}
     mine = length(nodes) + 1
     nw = sum(view(st.w, rows))
@@ -833,25 +841,26 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
     me = refit_node(st, me, rows, tid, masks)
     update_score!(st, rows, me, masks)
     refresh!(st, rows, tid)
-    # count first so both sides are sized exactly: growing them from empty costs
-    # about 2·log2(|rows|) reallocations per split node. The push order is the
-    # parent's row order, which every downstream sum depends on, so it stays.
-    nleftrows = 0
+    # one `goes_left` pass, straight into the markers `partition!` reads
     for i in rows
-        nleftrows += goes_left(st, me, i, masks)
-    end
-    leftrows = Int32[]; rightrows = Int32[]
-    sizehint!(leftrows, nleftrows); sizehint!(rightrows, length(rows) - nleftrows)
-    for i in rows
-        (goes_left(st, me, i, masks) ? push!(leftrows, i) : push!(rightrows, i))
+        st.isleft[i] = goes_left(st, me, i, masks)
     end
     ids = worker_ids!(sc, st.pool, tid, nborrow)
     nl = try
-        partition!(st.idx, span, leftrows, st.isleft, st.scratch, ids)
+        partition!(st.idx, st.roworder, span, st.isleft, st.scratch, ids)
     finally
         giveback!(st.pool, ids)
     end
     lspan = first(span):(first(span) + nl - 1); rspan = (first(span) + nl):last(span)
+    for k in lspan
+        st.isleft[st.roworder[k]] = false   # after the partition these are exactly the rows marked above
+    end
+    # `roworder[span]` held this node's rows in the order its own sums ran over,
+    # and the partition was stable, so the two halves are the child row sets in
+    # that same order -- what the two fresh `Vector{Int32}`s used to hold. Each
+    # child owns its half alone: the sibling task writes only the other one, and
+    # a child reads `rows` only before its own `partition!` reorders it.
+    leftrows = view(st.roworder, lspan); rightrows = view(st.roworder, rspan)
     push!(nodes, me)   # placeholder: the child indices are only known once both children have grown
     # a spare set means a spare worker: run the right subtree as its own task and
     # grow the left one inline. An empty pool is not a reason to wait, so both
