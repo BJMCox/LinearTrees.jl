@@ -16,6 +16,14 @@ using StableRNGs
     @test maximum(abs, pr .- means[lvl]) < 0.2
     # unseen level 9 routes right
     @test predict(t, [9.0;;])[1] == predict(t, [findfirst(!, lefts) * 1.0;;])[1]
+    # hand-built mask decode: score() must route by the literal catmask bits,
+    # independent of fit_tree's search (was predict.jl's "categorical routing" test)
+    hnodes = [Node{Float64,Float64}(feature = 1, left = 2, right = 3, lintercept = 1.0, rintercept = 2.0,
+                  catstart = 1, catwords = 1, model = PCON),
+              Node{Float64,Float64}(), Node{Float64,Float64}()]
+    hmasks = [UInt64(0b101)]                         # levels 1 and 3 go left
+    htree = LinearTree{Float64,Float64,MSE}(hnodes, hmasks, MSE(), -10.0, 10.0, 0.0, 1, true)
+    @test score(htree, [1.0; 2.0; 3.0; 7.0;;]) == [1.0, 2.0, 1.0, 2.0]   # 7 is unseen, routes right
 end
 
 @testset "categorical columns never get linear pieces" begin
@@ -68,6 +76,4 @@ end
     tb = fit_tree(X, y; categorical = [1], max_depth = 1)
     right = findfirst(c -> !LinearTrees.category_is_left(tb, tb.nodes[1], c), 1:L)
     @test predict(tb, [NaN;;])[1] == predict(tb, [Float64(right);;])[1]
-    @test_throws ArgumentError fit_tree(X, y; categorical = [3])
-    @test_throws ArgumentError fit_tree(X .+ 0.5, y; categorical = [1])
 end

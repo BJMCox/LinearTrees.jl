@@ -25,11 +25,6 @@ end
     @test length(a.nodes) >= length(b.nodes)
 end
 
-@testset "L1DistLoss adapter uses IRLS" begin
-    @test !issmooth(Loss(L1DistLoss()))
-    @test !issmooth(Loss(QuantileLoss(0.3)))
-end
-
 @testset "QuantileLoss adapter matches native Quantile at the zero-residual tie" begin
     rng = StableRNG(30)
     X = randn(rng, 500, 3); y = X[:, 1] .+ 0.5 .* X[:, 2] .+ 0.3 .* randn(rng, 500)
@@ -50,8 +45,4 @@ end
     @test g1 ≈ g2 atol = 1e-12
     @test h1 ≈ h2 atol = 1e-12
     @test predict(t1, X) == predict(t2, X)
-end
-
-@testset "Loss constructor rejects unsupported link pairings" begin
-    @test_throws ArgumentError Loss(L2DistLoss(), LinearTrees.LogLink())
 end

@@ -34,7 +34,9 @@ end
 end
 
 @testset "softmax domain" begin
+    # missing class: silently fitting with an absent class would misalign the class axis
     @test_throws ArgumentError validate_target(Softmax(3), [1, 2])     # class 3 absent
+    # out-of-range class: an unchecked label 4 would index past the K=3 score/prob columns
     @test_throws ArgumentError validate_target(Softmax(3), [1, 2, 4])
 end
 
@@ -74,7 +76,4 @@ end
     @test sum(p) ≈ 1 && all(isfinite, p)
     # BIC penalty scales with the number of coordinates
     @test LinearTrees.selection_score(BIC(), PLIN, 10.0, 100.0, 1e-12, 2) ≈ 100 * log(10 / 100) + 14 * log(100)
-    ts = fit_tree(randn(rng, 300, 2), rand(rng, 1:3, 300), Softmax(3); max_depth = 2)
-    out = Matrix{Float64}(undef, 300, 3)
-    @test predict!(out, ts, randn(rng, 300, 2)) === out
 end

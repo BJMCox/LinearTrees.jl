@@ -51,14 +51,3 @@ end
     root = LinearTree{T,T,MSE}([N(lintercept = 7.0)], UInt64[], MSE(), -1.0, 1.0, 0.0, 1, true)
     @test score(root, zeros(1, 1)) == [1.0]        # con root is clamped too
 end
-
-@testset "categorical routing" begin
-    T = Float64
-    N(; kw...) = Node{T,T}(; kw...)
-    nodes = [N(feature = 1, left = 2, right = 3, lintercept = 1.0, rintercept = 2.0,
-               catstart = 1, catwords = 1, model = PCON),
-             N(), N()]
-    masks = [UInt64(0b101)]                         # levels 1 and 3 go left
-    tree = LinearTree{T,T,MSE}(nodes, masks, MSE(), -10.0, 10.0, 0.0, 1, true)
-    @test score(tree, [1.0; 2.0; 3.0; 7.0;;]) == [1.0, 2.0, 1.0, 2.0]   # 7 is unseen, routes right
-end

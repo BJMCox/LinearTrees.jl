@@ -40,3 +40,18 @@ println("== step (", n, " x ", p, "), max_depth = 12, ", length(t.nodes), " node
 println("fit_tree:")
 display(@benchmark fit_tree($X, $ystep; max_depth = 12))
 println()
+
+# Forced growth: MinDeviance((LIN, PCON, BLIN, PLIN)) with a loose min_leaf/min_fit
+# keeps BIC from stopping early, so growth runs to the depth cap. Same target
+# shape as the step case above, on its own RNG/size so the "forced growth" row
+# in RESULTS.md is reproducible from this script.
+rngf = StableRNG(7)
+nf, pf = 200_000, 20
+Xf = rand(rngf, nf, pf)
+yforced = sum(floor.(5 .* Xf[:, j]) for j in 1:6) .+ Xf[:, 7] .* Xf[:, 8] .+ 0.1 .* randn(rngf, nf)
+forced_rule = MinDeviance((LIN, PCON, BLIN, PLIN))
+tf = fit_tree(Xf, yforced; max_depth = 12, rule = forced_rule, min_leaf = 50, min_fit = 100)
+println("== forced growth (", nf, " x ", pf, "), max_depth = 12, ", length(tf.nodes), " nodes ==")
+println("fit_tree:")
+display(@benchmark fit_tree($Xf, $yforced; max_depth = 12, rule = $forced_rule, min_leaf = 50, min_fit = 100))
+println()

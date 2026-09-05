@@ -79,7 +79,7 @@ Median of 3 fits.
 Memory fell as well (322 → 253 MiB threaded on the BIC case) because the
 per-node `BitVector` mask is gone. The remaining gap to a CART fit is the
 per-node `leftrows`/`rightrows` vectors and the subtree splice copies.
-`bench/run.jl` now includes the BIC step case.
+`bench/run.jl` now includes both the BIC step case and the forced-growth case.
 
 ## SHAP: pooled path buffers
 

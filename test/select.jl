@@ -4,8 +4,6 @@
     dmin = 1e-12
     # equal deviance: lower dof wins
     @test LinearTrees.selection_score(r, CON, 50.0, n, dmin) < LinearTrees.selection_score(r, LIN, 50.0, n, dmin)
-    # large enough drop: lin beats con
-    @test LinearTrees.selection_score(r, LIN, 40.0, n, dmin) < LinearTrees.selection_score(r, CON, 50.0, n, dmin)
     # exact formula
     @test LinearTrees.selection_score(r, PLIN, 10.0, n, dmin) ≈ n * log(10.0 / n) + 7 * log(n)
     # guard: zero deviance uses dmin

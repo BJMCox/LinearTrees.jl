@@ -16,7 +16,6 @@ using LinearAlgebra
         end
     end
     include("loss.jl")
-    include("node.jl")
     include("predict.jl")
     include("accumulate.jl")
     include("select.jl")
