@@ -22,9 +22,10 @@ Base.:-(a::MomentSums{V}, b::MomentSums{V}) where {V} =
 
 """
 Stands in for a row hessian that is exactly one. `addrow` and `subrow` have
-methods for it that drop the multiplication by one; the value it stands for is
-`one(eltype(V))` in every coordinate. Multiplying by exactly one is exact, so a scan over these sums is
-bit-identical to the same scan over a `Vector{V}` of ones.
+methods for it that drop the multiplication by one; the value it stands for
+is `one(eltype(V))` in every coordinate. Multiplying by exactly one is exact,
+so a scan over these sums is bit-identical to the same scan over a
+`Vector{V}` of ones.
 """
 struct OneHessian{V} end
 
@@ -96,6 +97,9 @@ end
 Broken linear fit with knot `t`: basis `[x, 1, max(x - t, 0)]`. Hinge sums
 come from the right-child sums. Returns left and right pieces and the
 surrogate deviance, or `nothing` when the `3×3` system is singular.
+
+The `2×2`-plus-Schur-update form of this solve was measured and rejected: see
+`bench/PROFILE.md`, "not worth changing".
 """
 @inline function fit_blin(sl::MomentSums{T}, sr::MomentSums{T}, t; tol = SINGULAR_TOL) where {T<:Real}
     s = sl + sr

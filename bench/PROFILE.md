@@ -547,3 +547,41 @@ against the score-once commit: **serial 1504 -> 1402 ms (-6.8%)** and
 multiply dropped is by exactly one, so the trees are bit-identical, checked on
 the same thirteen designs and on the case-1 tree itself (3808 nodes, every node
 field compared as a bit pattern).
+
+### 3. The blin 3x3 solve as a Schur complement: measured, not committed
+
+`fit_blin` builds a `3x3` `SMatrix`, takes `det` and solves with `\` at every
+split point. The system is the `lin` `2x2` Gram matrix bordered by one hinge
+column, so it can be solved as the `2x2` solve plus a rank-one Schur update:
+with `p = [sxu, su]`, `adj2` the adjugate of the `2x2` and `d2` its
+determinant, `det(G3) = suu*d2 - p' adj2 p` (the guard's own quantity),
+`c = (suz*d2 - p' adj2 m2) / det(G3)` and `[a; b] = (adj2 m2 - c*adj2 p) / d2`,
+which is three divisions and about twenty multiplications against the dense
+solve's one division and about forty. Isolated, that form **is** faster: over a
+2000-point sweep, `14.29 us -> 11.96 us` per sweep (-16%), or `11.54 us`
+(-19%) with the reciprocal of `d2` taken once. It is **not committed**, for
+three measured reasons.
+
+1. **The brief's exactness gate fails.** Against the dense solve on 3 x 10^5
+   random node sums (rows accumulated through `addrow`, so the sums are
+   reachable ones), the coefficients agree to a median of `8e-15` relative but
+   only to `1.5e-11` at the 99th percentile and `4.8e-7` at worst, with the
+   knot restricted to the middle 5-95% of rows as `min_leaf` restricts it. The
+   gate was `1e-12` relative. The singular guard is unaffected: it fires on
+   exactly the same inputs in all 3 x 10^5 cases, zero flips.
+2. **Neither form is the accurate one.** Against a `BigFloat` solve of the same
+   normal equations, the Schur form's worst error over the 5-95% band is
+   `5.4e-9` and the dense solve's is `1.2e-8`; the Schur form is closer to
+   exact in 56% of random cases. The disagreement in (1) is the conditioning of
+   the blin normal equations at `Float64`, not a defect of either ordering --
+   which is also why it cannot be tuned away.
+3. **No end-to-end serial win, and the trees move.** Case 1 serial goes
+   `1402 -> 1469 ms` (worse; the tree changes, so the work changes) and
+   ten-thread `552 -> 525 ms`. The fitted trees differ on 135 of case 1's 3808
+   nodes, on all 28 nodes of the `mse_bic` fixture, and the `softmax_cat`
+   fixture grows from 36 to 54 nodes. Blessing that would mean regenerating
+   every partition fixture to buy a threaded-only gain.
+
+Worth revisiting only together with the conditioning: solving the blin system
+on centred sums (`x - x̄`) would cut both the cancellation and the operation
+count, but it changes what the moment sums are, so it is its own item.
