@@ -44,7 +44,7 @@ Returns zero where `selection_score` returns `Inf` without reaching the
 penalty (`n <= 0`, or a non-finite `n`), which also keeps `log` off a negative
 argument.
 """
-score_logn(::BIC, n) = (isfinite(n) && n > 0) ? log(n) : zero(float(n))
+score_logn(::SelectionRule, n) = (isfinite(n) && n > 0) ? log(n) : zero(float(n))   # BIC and any rule with a log-n penalty
 score_logn(::MinDeviance, n) = zero(float(n))
 score_logn(::GainRule, n) = throw(ArgumentError("GainRule is reserved for boosting"))
 
