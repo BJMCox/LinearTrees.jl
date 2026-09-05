@@ -1,6 +1,24 @@
 # Tree growth: node splitting and stopping rules.
 
 """
+One worker's per-level buffers for `scan_categorical`, one entry per level of
+the categorical column in hand. They sit inside the worker's `Scratch`, so the
+task that owns that set is their only writer, and they grow to the widest
+categorical column that worker meets.
+"""
+struct LevelSums{V}
+    sz::Vector{V}           # Σ h·z per level
+    sw::Vector{V}           # Σ h per level
+    counts::Vector{Int}     # rows per level, offset by one so it doubles as the counting sort's histogram
+    cumoffset::Vector{Int}  # where each level's bucket starts
+    cursor::Vector{Int}     # the bucket write positions, as the counting sort fills them
+    rank::Vector{Int32}     # each level's place in the current order
+    order::Vector{Int}      # the present levels, sorted by mean working response
+    present::Vector{Int}    # the levels the node's rows actually use
+end
+LevelSums{V}() where {V} = LevelSums{V}(V[], V[], Int[], Int[], Int[], Int32[], Int[], Int[])
+
+"""
 One worker's buffers. A worker index (`tid`) picks the set a task owns, and no
 two concurrent tasks are ever given the same one, so nothing here needs a
 lock. Each buffer is reused for several unrelated purposes over a node's life;
@@ -20,8 +38,9 @@ struct Scratch{T,V}
     ws::Vector{T}
     perm::Vector{Int32}
     ids::Vector{Int}
+    levels::LevelSums{V}
 end
-Scratch{T,V}() where {T,V} = Scratch{T,V}(T[], V[], V[], T[], Int32[], Int[])
+Scratch{T,V}() where {T,V} = Scratch{T,V}(T[], V[], V[], T[], Int32[], Int[], LevelSums{V}())
 
 """
 Scratch buffers are sized on demand, never shrunk, and only ever by the one
@@ -32,6 +51,17 @@ Returns `v`, which `partition!` uses to size and name a buffer in one step.
     length(v) < m && resize!(v, m)
     return v
 end
+
+"Grow one worker's level buffers to `L` levels. `counts` and the two offsets derived from it are indexed `1:L+1`."
+function ensure_levels!(lv::LevelSums, L::Integer)
+    ensure_len!(lv.sz, L); ensure_len!(lv.sw, L); ensure_len!(lv.rank, L)
+    ensure_len!(lv.order, L); ensure_len!(lv.present, L)
+    ensure_len!(lv.counts, L + 1); ensure_len!(lv.cumoffset, L + 1); ensure_len!(lv.cursor, L + 1)
+    return lv
+end
+
+"The empty left-level list every non-categorical and non-`pcon` scan returns. Shared, because no caller writes to it."
+const NO_LEVELS = Int[]
 
 """
 The scratch ids no task owns, guarded by a lock. `trytake!` never blocks: a
@@ -595,26 +625,38 @@ function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin) wh
     nr = length(rows)
     ensure_len!(sc.xs, nr); ensure_len!(sc.zs, nr); ensure_len!(sc.hs, nr)
     ensure_len!(sc.ws, nr); ensure_len!(sc.perm, nr)
+    lv = ensure_levels!(sc.levels, L)
+    sz = lv.sz; sw = lv.sw; counts = lv.counts
     # `counts` is offset by one so it doubles as the counting sort's histogram
-    sz = zeros(V, L); sw = zeros(V, L); counts = zeros(Int, L + 1)
+    for c in 1:L
+        sz[c] = zero(V); sw[c] = zero(V); counts[c + 1] = 0
+    end
     for i in rows
         c = Int(st.X[i, j])
         sz[c] += st.h[i] .* st.z[i]
         sw[c] += st.h[i]
         counts[c + 1] += 1
     end
-    present = [c for c in 1:L if counts[c + 1] > 0]
-    length(present) < 2 && return nocandidate(T, V), Int[]
+    present = lv.present
+    np = 0
+    for c in 1:L
+        if counts[c + 1] > 0
+            np += 1
+            present[np] = c
+        end
+    end
+    np < 2 && return nocandidate(T, V), NO_LEVELS
     # Bucket rows by level in one O(L + |rows|) counting-sort pass, then walk
     # the buckets in rank order to fill the scratch. No O(L · |rows|) rescans.
     # The bucketing itself doesn't depend on level order, so it is built once
     # and reused for every coordinate's ordering below. `sc.perm` is free until
     # `partition!` runs, well after the scan.
-    cumoffset = zeros(Int, L + 1)
+    cumoffset = lv.cumoffset; cursor = lv.cursor
+    cumoffset[1] = 0
     for c in 1:L
         cumoffset[c + 1] = cumoffset[c] + counts[c + 1]
+        cursor[c] = cumoffset[c]
     end
-    cursor = copy(cumoffset)
     bucketed = sc.perm
     for i in rows
         c = Int(st.X[i, j])
@@ -623,10 +665,14 @@ function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin) wh
     end
     rule = PconOnly(st.rule)      # a categorical column never carries a linear piece, whatever the rule allows
     Km = length(zero(V))
-    best = nocandidate(T, V); bestleft = Int[]
+    rank = lv.rank
+    order = view(lv.order, 1:np)
+    best = nocandidate(T, V); bestleft = NO_LEVELS
     for k in 1:Km
-        order = sort(present; by = c -> sz[c][k] / sw[c][k])
-        rank = zeros(Int32, L)
+        copyto!(order, 1, present, 1, np)
+        # stable, so levels whose mean working response ties keep ascending code
+        sort!(order; by = c -> sz[c][k] / sw[c][k])
+        # every present level is ranked here, and no other level is ever read back
         for (r, lc) in enumerate(order)
             rank[lc] = r
         end
@@ -641,7 +687,8 @@ function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin) wh
         cand = scan_gathered(st, sc, m, rule, dmin)
         if cand.score < best.score
             best = cand
-            bestleft = cand.kind == PCON ? [lc for lc in order if rank[lc] <= cand.threshold] : Int[]
+            # the winner's codes outlive the scratch set, so this one stays a fresh vector
+            bestleft = cand.kind == PCON ? [lc for lc in order if rank[lc] <= cand.threshold] : NO_LEVELS
         end
     end
     return best, bestleft
@@ -664,14 +711,14 @@ end
 "Serial search over `features` using scratch set `tid`. Returns the best candidate, its feature, and (for a categorical winner) its left level codes."
 function best_split_serial(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, features, tid) where {T,V}
     sc = st.scratch[tid]
-    best = nocandidate(T, V); bestj = 0; bestleft = Int[]
+    best = nocandidate(T, V); bestj = 0; bestleft = NO_LEVELS
     for j in features
         if st.iscat[j]
             c, leftcodes = scan_categorical(st, sc, rows, j, dmin)
         else
             m = gather!(st, sc, span, j)
             c = scan_gathered(st, sc, m, st.rule, dmin)
-            leftcodes = Int[]
+            leftcodes = NO_LEVELS
         end
         if c.score < best.score
             best = c; bestj = j; bestleft = leftcodes
@@ -720,7 +767,7 @@ function best_split(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, ids::Ab
     # is lost -- `wait` already wrapped the chunk's exception in a
     # `TaskFailedException`, whose backtrace is the chunk's own.
     failed === nothing || throw(failed)
-    best = nocandidate(T, V); bestj = 0; bestleft = Int[]
+    best = nocandidate(T, V); bestj = 0; bestleft = NO_LEVELS
     for t in tasks
         # `fetch` infers `Any`; without this the winning candidate stays boxed and
         # `grow_subtree`'s whole body dispatches on it once per node
