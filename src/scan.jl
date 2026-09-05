@@ -81,13 +81,13 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
 
     # con
     if allowed(rule, CON)
-        b, rss = fit_con(total)
+        b, rss = fit_con(total, rule)
         sc = selection_score(rule, CON, sum(rss), n, dmin, nc)
         sc < best.score && (best = Candidate{T,V}(CON, T(NaN), zero(V), b, zero(V), b, rss, sc))
     end
     # lin
     if allowed(rule, LIN) && nu >= MIN_UNIQUE_LIN
-        r = fit_lin(total)
+        r = fit_lin(total, rule)
         if r !== nothing
             a, b, rss = r
             sc = selection_score(rule, LIN, sum(rss), n, dmin, nc)
@@ -117,7 +117,7 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
         uright = nu - uleft
 
         if dopcon
-            bl, rl = fit_con(left); br, rr = fit_con(right)
+            bl, rl = fit_con(left, rule); br, rr = fit_con(right, rule)
             rss = rl + rr
             dk = devkey(rule, sum(rss), dmin)
             dk < pcon.score && (pcon = Candidate{T,V}(PCON, t, zero(V), bl, zero(V), br, rss, dk))
@@ -131,7 +131,7 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
             end
         end
         if doplin && uleft >= MIN_UNIQUE_LIN && uright >= MIN_UNIQUE_LIN
-            rl = fit_lin(left); rr = fit_lin(right)
+            rl = fit_lin(left, rule); rr = fit_lin(right, rule)
             if rl !== nothing && rr !== nothing
                 al, bl, rssl = rl; ar, br, rssr = rr
                 rss = rssl + rssr

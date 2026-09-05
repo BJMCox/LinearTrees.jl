@@ -94,6 +94,37 @@ fits).
 end
 
 """
+Constant fit with intercept ridge `λb`: `b = sz / (sw + λb)`, regularised
+deviance `szz − b·sz`. Dotted so `V` may be a scalar or an `SVector`. `λb` is
+converted to the coordinate type so `Float32` sums stay `Float32`.
+"""
+@inline function fit_con(s::MomentSums, λb::Real)
+    sww = s.sw .+ convert(eltype(s.sw), λb)
+    b = s.sz ./ sww
+    return b, s.szz .- s.sz .* b
+end
+
+"""
+Simple linear fit `a x + b` with slope ridge `λw` and intercept ridge `λb`
+(Guryanov 2019, eq. 10). Returns `nothing` when the ridged Gram determinant
+is below `tol · (sw + λb)(sxx + λw)` for any coordinate, which covers a
+constant feature at zero ridge. The returned deviance is the minimum of
+`Σ h (z − a x − b)² + λw a² + λb b²`, which at the optimum equals
+`szz − a·sxz − b·sz` exactly as in the unregularised case.
+"""
+@inline function fit_lin(s::MomentSums, λw::Real, λb::Real; tol = SINGULAR_TOL)
+    E = eltype(s.sw)
+    sww = s.sw .+ convert(E, λb)
+    sxxw = s.sxx .+ convert(E, λw)
+    d = sww .* sxxw .- s.sx .* s.sx
+    any(d .<= tol .* sww .* sxxw) && return nothing
+    a = (sww .* s.sxz .- s.sx .* s.sz) ./ d
+    b = (s.sz .- a .* s.sx) ./ sww
+    rss = s.szz .- a .* s.sxz .- b .* s.sz
+    return a, b, rss
+end
+
+"""
 Broken linear fit with knot `t`: basis `[x, 1, max(x - t, 0)]`. Hinge sums
 come from the right-child sums. Returns left and right pieces and the
 surrogate deviance, or `nothing` when the `3×3` system is singular.
