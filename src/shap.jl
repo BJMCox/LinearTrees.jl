@@ -22,14 +22,17 @@ struct PathElem
 end
 
 """
-    PathPool(depth)
+    PathPool()
 
 Per-row scratch for the SHAP recursion, indexed by recursion depth. A split
 node at depth `d` builds a hot and a cold path that both stay live across the
 two child recursions, so each depth owns its own pair; the own-path is dead
 once `attribute_constant!` returns, so one scratch per depth is enough. The
 root's path sits outside the depth arrays because `visit!` at depth 1 already
-claims `hot[1]`/`cold[1]`.
+claims `hot[1]`/`cold[1]`. Grows lazily: `visit!` calls `ensure_depth!` on
+entry, and the first row of a `row_blocks` block already recurses into both
+children at every split, so it drives the pool to the tree's full depth
+before any later row needs it.
 
 One pool per `row_blocks` block: it is mutated for every row, so it must never
 be shared across tasks.
@@ -41,8 +44,7 @@ struct PathPool
     root::Vector{PathElem}
 end
 
-PathPool(depth::Integer = 0) = ensure_depth!(
-    PathPool(Vector{PathElem}[], Vector{PathElem}[], Vector{PathElem}[], PathElem[]), depth)
+PathPool() = PathPool(Vector{PathElem}[], Vector{PathElem}[], Vector{PathElem}[], PathElem[])
 
 function ensure_depth!(pool::PathPool, depth::Integer)
     while length(pool.hot) < depth
@@ -51,20 +53,6 @@ function ensure_depth!(pool::PathPool, depth::Integer)
         push!(pool.cold, PathElem[])
     end
     return pool
-end
-
-"""
-    shap_depth(tree, k = 1)
-
-Deepest `visit!` recursion the tree can drive, so `PathPool` can be sized once
-per `shap!` call. A LIN node counts a level like any other node, because its
-single child is visited one level down.
-"""
-function shap_depth(tree::LinearTree, k::Integer = 1)
-    n = tree.nodes[k]
-    isleaf(n) && return 1
-    (!iscategorical(n) && n.left == n.right) && return 1 + shap_depth(tree, n.left)
-    return 1 + max(shap_depth(tree, n.left), shap_depth(tree, n.right))
 end
 
 "Refill `dst` with `src`, keeping `dst`'s allocation. Replaces `copy(src)`."
@@ -177,7 +165,7 @@ function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem},
         attribute_constant!(φ, path, n.lintercept, row)
         return nothing
     end
-    ensure_depth!(pool, depth)   # shap_depth presizes; this covers a pool built by hand
+    ensure_depth!(pool, depth)   # lazy growth: extends the pool the first time recursion reaches this depth
     j = n.feature
     xraw = T(x[j])
     if !iscategorical(n) && n.left == n.right
@@ -245,6 +233,26 @@ function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem},
     return nothing
 end
 
+"Recursion for `expected_score`, indexed by node `k`."
+function _expected_score(tree::LinearTree{T,V}, k::Integer) where {T,V}
+    n = tree.nodes[k]
+    isleaf(n) && return n.lintercept
+    if !iscategorical(n) && n.left == n.right
+        # LIN node: single child, covr == 0 -- skip the right term entirely
+        # rather than recurse into n.right (== n.left) and multiply by 0
+        lval = n.lcoef * n.xmean + n.lintercept
+        return lval + _expected_score(tree, n.left)
+    end
+    if iscategorical(n)
+        lval = n.lintercept; rval = n.rintercept
+    else
+        lval = n.lcoef * n.xmean + n.lintercept
+        rval = n.rcoef * n.xmean + n.rintercept
+    end
+    covl = tree.nodes[n.left].cover / n.cover; covr = 1 - covl
+    return covl * (lval + _expected_score(tree, n.left)) + covr * (rval + _expected_score(tree, n.right))
+end
+
 """
     expected_score(tree) -> V
 
@@ -255,24 +263,7 @@ children, weighted by `cover(child) / cover(parent)`. Independent of `x`.
 nodes (`O(nodes)`) so a hand-built tree whose `base` field is stale still
 satisfies the efficiency identity.
 """
-function expected_score(tree::LinearTree{T,V}, k::Integer = 1) where {T,V}
-    n = tree.nodes[k]
-    isleaf(n) && return n.lintercept
-    if !iscategorical(n) && n.left == n.right
-        # LIN node: single child, covr == 0 -- skip the right term entirely
-        # rather than recurse into n.right (== n.left) and multiply by 0
-        lval = n.lcoef * n.xmean + n.lintercept
-        return lval + expected_score(tree, n.left)
-    end
-    if iscategorical(n)
-        lval = n.lintercept; rval = n.rintercept
-    else
-        lval = n.lcoef * n.xmean + n.lintercept
-        rval = n.rcoef * n.xmean + n.rintercept
-    end
-    covl = tree.nodes[n.left].cover / n.cover; covr = 1 - covl
-    return covl * (lval + expected_score(tree, n.left)) + covr * (rval + expected_score(tree, n.right))
-end
+expected_score(tree::LinearTree) = _expected_score(tree, 1)
 
 """
     shap!(values, clipped, tree, X; nthreads=Threads.nthreads())
@@ -285,9 +276,8 @@ function shap!(values, clipped::Vector{Bool}, tree::LinearTree{T,V}, X::Abstract
         nthreads = Threads.nthreads()) where {T,V}
     n = size(X, 1)
     fill!(values, 0)
-    depth = shap_depth(tree)
     row_blocks(n, nthreads) do rs
-        pool = PathPool(depth)   # one per block: never shared between tasks
+        pool = PathPool()   # one per block: never shared between tasks; grows lazily, see PathPool
         for i in rs
             shap_recurse!(values, tree, view(X, i, :), i, 1, pool, 1.0, 1.0, 0)
             clipped[i] = score_row(tree, X, i, true) != score_row(tree, X, i, false)

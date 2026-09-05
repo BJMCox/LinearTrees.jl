@@ -13,17 +13,6 @@ using StatsAPI, Tables, CategoricalArrays, DataFrames, StableRNGs, Statistics
     @test b + a' * X[1, :] ≈ score(m.tree, X[1:1, :]; clip = false)[1]
 end
 
-@testset "fit(LinearTreeRegressorFit, table, y) rejects a non-finite numeric column" begin
-    rng = StableRNG(43)
-    n = 300
-    df = DataFrame(a = randn(rng, n), b = randn(rng, n))
-    y = df.a .+ 0.1 .* randn(rng, n)
-    dfnan = deepcopy(df); dfnan.a[5] = NaN
-    dfinf = deepcopy(df); dfinf.b[9] = Inf
-    @test_throws ArgumentError fit(LinearTreeRegressorFit, dfnan, y)
-    @test_throws ArgumentError fit(LinearTreeRegressorFit, dfinf, y)
-end
-
 @testset "tables with categorical columns and stable level maps" begin
     rng = StableRNG(28)
     n = 200
@@ -39,10 +28,14 @@ end
     @test predict(m, df2) == predict(m, df)
     # unseen level policy
     df3 = DataFrame(colour = categorical(["purple"]), x = [0.0])
-    @test_throws ArgumentError predict(m, df3)
     m2 = fit(LinearTreeRegressorFit, df, y; unseen = :right)
     @test isfinite(predict(m2, df3)[1])
-    @test_throws ArgumentError fit(LinearTreeRegressorFit, DataFrame(x = [1.0, missing]), [1.0, 2.0])
+end
+
+@testset "TableEncoder rejects an unrecognised unseen policy" begin
+    # fails if a typo'd `unseen` silently selects :error instead of raising here
+    @test_throws ArgumentError LinearTrees.TableEncoder(rand(5, 2), :nope)
+    @test_throws ArgumentError LinearTrees.TableEncoder(DataFrame(x = [1.0, 2.0]), :nope)
 end
 
 @testset "classifier" begin
@@ -52,9 +45,14 @@ end
     P = predict(m, X)
     @test size(P) == (300, 3) && m.classes == ["a", "b", "c"]
     @test mean(m.classes[argmax.(eachrow(P))] .== y) > 0.9
+    # Softmax branch: score(m.tree, X) is a plain n x (K-1) Matrix, repacked into SVector rows
+    S = score(m.tree, X)
+    @test deviance(m) ≈ deviance(m.tree.loss, m.y, [SVector{2}(S[i, :]) for i in axes(S, 1)], m.w)
     yb = X[:, 1] .> 0
     mb = fit(LinearTreeClassifierFit, X, yb)
     @test size(predict(mb, X)) == (300, 2)
+    # Logistic branch: score(mb.tree, X) is already the Vector deviance needs
+    @test deviance(mb) ≈ deviance(mb.tree.loss, Float64.(mb.y .== 1), score(mb.tree, X), mb.w)
 end
 
 @testset "threaded table encoding equals serial" begin

@@ -12,12 +12,16 @@ using AbstractTrees, StableRNGs
     @test occursin("leaf", s)
 end
 
-@testset "show summarises" begin
-    rng = StableRNG(32); X = rand(rng, 50, 2); y = X[:, 1]
-    t = fit_tree(X, y)
-    s = sprint(show, MIME("text/plain"), t)
-    @test startswith(s, "LinearTree{Float64, Float64, MSE}")
-    @test occursin("nodes", s)
+@testset "fmtnum keeps an exponent's sign ASCII, only the leading sign turns into a minus" begin
+    # fails if fmtnum replaces every "-", turning "1.0e-5" into the unreadable "1.0e−5"
+    T = Float64; N(; kw...) = LinearTrees.Node{T,T}(; kw...)
+    nodes = [N(feature = 1, threshold = 0.0, left = 2, right = 3, model = PCON),
+             N(lintercept = 1.0e-5), N(lintercept = -2.5)]
+    tree = LinearTree{T,T,MSE}(nodes, UInt64[], MSE(), -100.0, 100.0, 0.0, 1, true)
+    io = IOBuffer(); print_tree(io, TreeView(tree, [:age]))
+    s = String(take!(io))
+    @test occursin("1.0e-5", s)
+    @test occursin("−2.5", s)
 end
 
 @testset "show on a Softmax tree does not throw" begin

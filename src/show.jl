@@ -24,7 +24,11 @@ AbstractTrees.nodevalue(h::NodeHandle) = h.view.tree.nodes[h.index]
 AbstractTrees.children(v::TreeView) = (NodeHandle(v, Int32(1), :root),)
 AbstractTrees.nodevalue(v::TreeView) = v.tree
 
-fmtnum(x::Real) = replace(string(round(x; sigdigits = 3)), "-" => "−")
+"Unicode minus for a leading sign only -- an exponent's own `-` (e.g. `1.0e-5`) stays ASCII, so the printed number is still readable and copyable as Julia."
+function fmtnum(x::Real)
+    s = string(round(x; sigdigits = 3))
+    startswith(s, "-") ? string("−", s[2:end]) : s
+end
 fmtnum(x::SVector) = string("[", join(map(fmtnum, x), ", "), "]")
 
 "Coefficient · feature name + intercept, folding the intercept's sign into the operator."

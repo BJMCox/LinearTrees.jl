@@ -39,6 +39,8 @@ function coeftable(tree::LinearTree{T,V}, x::AbstractVector) where {T,V}
             intercept += goleft ? n.lintercept : n.rintercept
         else
             xc = tree.truncate ? min(max(xraw, n.xmin), n.xmax) : xraw
+            # a LIN node stores threshold = NaN, so this is always false and the
+            # right branch runs -- see the same invariant at src/predict.jl:score_row
             goleft = xc <= n.threshold
             a = goleft ? n.lcoef : n.rcoef
             b = goleft ? n.lintercept : n.rintercept

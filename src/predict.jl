@@ -27,6 +27,9 @@ clamp and drops the score clamp, which is what SHAP explains.
             x = zero(T)      # categorical pieces are constants
         else
             x = tree.truncate ? min(max(xraw, n.xmin), n.xmax) : xraw
+            # a LIN node stores threshold = NaN, so this is always false and the
+            # right branch runs -- correct only because grow_subtree gives a LIN
+            # node matching left/right coefficients, intercepts, and node index
             goleft = x <= n.threshold
         end
         if goleft

@@ -42,9 +42,13 @@ end
     @test LinearTrees.predict(t4, Xlin) == LinearTrees.predict(tlin, Xlin)
 end
 
-@testset "from_dict rejects an unknown loss" begin
-    d = Dict{String,Any}("name" => "NotALoss", "params" => Dict{String,Any}())
-    @test_throws ArgumentError LinearTrees.lossfromdict(d)
+@testset "from_dict rejects an unrecognised element type" begin
+    # fails if T falls back to Float64 instead of throwing on a bad "T" string
+    rng = StableRNG(44)
+    X = rand(rng, 60, 2); y = X[:, 1]
+    d = to_dict(fit_tree(X, y))
+    d["T"] = "Int8"
+    @test_throws ArgumentError from_dict(d)
 end
 
 @testset "to_dict survives a real JSON3 round trip" begin

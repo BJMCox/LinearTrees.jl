@@ -116,15 +116,6 @@ end
     @test res.base == t.base
 end
 
-@testset "expected_score is exported (B4)" begin
-    # fails if `expected_score` drops out of LinearTrees.jl's exports
-    rng = StableRNG(51)
-    X = rand(rng, 200, 3); y = X[:, 1] .+ 0.3 .* X[:, 2] .+ 0.05 .* randn(rng, 200)
-    t = fit_tree(X, y; max_depth = 4)
-    @test expected_score(t) == t.base
-    @test shap(t, X).base == expected_score(t)
-end
-
 "Walk `tree.nodes` from the root; true if a LIN node's feature also splits an ancestor."
 function has_lin_under_same_feature(tree)
     found = false

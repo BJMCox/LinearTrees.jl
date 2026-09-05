@@ -22,6 +22,10 @@ struct TableEncoder
     categorical::Vector{Int}
     levels::Vector{Vector{Any}}
     unseen::Symbol
+    function TableEncoder(names, categorical, levels, unseen)
+        unseen in (:error, :right) || throw(ArgumentError("unseen must be :error or :right, got :$unseen"))
+        return new(names, categorical, levels, unseen)
+    end
 end
 
 "Pass-through encoder for a plain matrix: no categorical columns, names `x1, x2, ...`."
@@ -53,7 +57,7 @@ function TableEncoder(table, unseen)
 end
 
 function encode(::TableEncoder, X::AbstractMatrix; nthreads = Threads.nthreads())
-    any(ismissing, X) && throw(ArgumentError("missing values are not supported"))
+    Missing <: eltype(X) && any(ismissing, X) && throw(ArgumentError("missing values are not supported"))
     return Matrix{Float64}(X)
 end
 
@@ -221,5 +225,24 @@ StatsAPI.dof(m::AnyFit) = sum(ncoef(n) for n in m.tree.nodes)
 "Training residuals `y - predict(tree, X)`, on the response scale."
 StatsAPI.residuals(m::LinearTreeRegressorFit) = m.y .- predict(m.tree, m.X)
 StatsAPI.deviance(m::LinearTreeRegressorFit) = deviance(m.tree.loss, m.y, score(m.tree, m.X), m.w)
+
+"""
+    deviance(m::LinearTreeClassifierFit)
+
+Training deviance against `m`'s stored coded target: `0/1` (positive class
+`classes[1]`) for a two-class `Logistic` fit, the 1-based sorted-class index
+for a `Softmax` fit. `score(m.tree, m.X)` returns a plain `Matrix` for
+`Softmax`, so each row is repacked into the `SVector` `pointloss` needs.
+"""
+function StatsAPI.deviance(m::LinearTreeClassifierFit)
+    loss = m.tree.loss
+    if loss isa Logistic
+        return deviance(loss, Float64.(m.y .== 1), score(m.tree, m.X), m.w)
+    end
+    s = score(m.tree, m.X)
+    f = [SVector{loss.K - 1}(view(s, i, :)) for i in axes(s, 1)]
+    return deviance(loss, m.y, f, m.w)
+end
+
 StatsAPI.coeftable(m::AnyFit, x) = coeftable(m.tree, vec(encode(m.encoder, reshape_row(m.encoder, x))))
 feature_importance(m::AnyFit) = feature_importance(m.tree)
