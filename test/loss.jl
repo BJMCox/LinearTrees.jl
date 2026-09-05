@@ -1,4 +1,5 @@
-using StableRNGs
+using StableRNGs, StaticArrays
+import Distributions   # not `using`: Distributions exports its own `Logistic`, colliding with LinearTrees's
 
 pointloss(::MSE, y, f) = (y - f)^2 / 2
 pointloss(l::Huber, y, f) = (r = y - f; abs(r) <= l.δ ? r^2 / 2 : l.δ * (abs(r) - l.δ / 2))
@@ -100,4 +101,56 @@ end
     @test isfinite(deviance(Logistic(), [1.0], [800.0], [1.0]))
     @test deviance(Logistic(), [1.0], [800.0], [1.0]) ≈ 0 atol = 1e-6
     @test linkinv(Logistic(), 0.0) == 0.5 && linkinv(Poisson(), 0.0) == 1.0
+end
+
+@testset "deviance differences match Distributions.jl logpdf (C1)" begin
+    # `deviance(loss, y, f1, w) - deviance(loss, y, f2, w)` must equal
+    # `-2 Σ w (logpdf(D(f1), y) - logpdf(D(f2), y))` for the matching
+    # Distributions.jl model `D`. Catches a wrong factor of 2, a dropped
+    # weight, or a wrong sign in `pointloss`.
+    function devdiff(loss, D, y, f1, f2, w)
+        lhs = deviance(loss, y, f1, w) - deviance(loss, y, f2, w)
+        rhs = -2 * sum(w[i] * (Distributions.logpdf(D(f1[i]), y[i]) - Distributions.logpdf(D(f2[i]), y[i])) for i in eachindex(y))
+        return lhs, rhs
+    end
+
+    w = [1.0, 2.5, 0.3, 4.0]
+    f1 = [0.1, -0.3, 0.5, 1.2]
+    f2 = [0.4, 0.2, -0.1, 0.9]
+
+    @testset "Poisson" begin
+        y = [0.0, 1.0, 3.0, 5.0]
+        lhs, rhs = devdiff(Poisson(), f -> Distributions.Poisson(exp(f)), y, f1, f2, w)
+        @test lhs ≈ rhs atol = 1e-10
+    end
+    @testset "Gamma" begin
+        y = [0.5, 2.0, 1.3, 3.7]
+        lhs, rhs = devdiff(Gamma(), f -> Distributions.Gamma(1.0, exp(f)), y, f1, f2, w)
+        @test lhs ≈ rhs atol = 1e-10
+    end
+    @testset "NegBin" begin
+        θ = 2.0
+        y = [0.0, 1.0, 4.0, 2.0]
+        lhs, rhs = devdiff(NegBin(θ), f -> Distributions.NegativeBinomial(θ, θ / (exp(f) + θ)), y, f1, f2, w)
+        @test lhs ≈ rhs atol = 1e-10
+    end
+    @testset "Logistic" begin
+        y = [0.0, 1.0, 1.0, 0.0]
+        lhs, rhs = devdiff(Logistic(), f -> Distributions.Bernoulli(1 / (1 + exp(-f))), y, f1, f2, w)
+        @test lhs ≈ rhs atol = 1e-10
+    end
+    @testset "Softmax(3)" begin
+        loss = Softmax(3)
+        y = [1, 2, 3, 1]
+        sf1 = [SVector(0.2, -0.1), SVector(-0.3, 0.4), SVector(0.1, 0.1), SVector(0.5, -0.5)]
+        sf2 = [SVector(-0.1, 0.3), SVector(0.2, -0.2), SVector(-0.4, 0.6), SVector(0.0, 0.0)]
+        D(f) = Distributions.Categorical(collect(LinearTrees.probs(loss, f)))
+        lhs, rhs = devdiff(loss, D, y, sf1, sf2, w)
+        @test lhs ≈ rhs atol = 1e-10
+    end
+    @testset "MSE" begin
+        y = [0.5, -1.2, 3.3, 0.0]
+        lhs, rhs = devdiff(MSE(), f -> Distributions.Normal(f, 1.0), y, f1, f2, w)
+        @test lhs ≈ rhs atol = 1e-10
+    end
 end
