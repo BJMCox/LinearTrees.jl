@@ -72,6 +72,7 @@ coeftable
 shap
 shap!
 ShapResult
+expected_score
 ```
 
 ## StatsAPI and Tables.jl
