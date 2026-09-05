@@ -43,7 +43,9 @@ end
 Evaluate all five model kinds on one presorted feature and return the best
 candidate under `rule`. Rows arrive sorted by `xs`. `ws` are frequency
 weights. `min_leaf` is the least `Σ w` per child. `dmin` is the BIC log
-floor.
+floor. `hs` holds the row hessians as a `Vector{V}` or, when every one of
+them is exactly one, as `UnitHessians{V}`, which accumulates without the
+multiply and gives the same sums to the bit.
 
 `selection_score` runs once per kind, not once per split point: the sweep
 carries the lowest `devkey` reached by each of `pcon`, `blin` and
@@ -58,7 +60,7 @@ carries the lowest `devkey` reached by each of `pcon`, `blin` and
 The `nu >= MIN_UNIQUE_LIN`, `uleft`/`uright` and `min_leaf` restrictions still
 apply per split point, exactly as they would with the score inside the loop.
 """
-function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::AbstractVector{V},
+function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::AbstractVector,
         ws::AbstractVector{T}, rule::SelectionRule, min_leaf, dmin) where {T<:Real,V}
     m = length(xs)
     n = sum(ws)

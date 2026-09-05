@@ -192,3 +192,37 @@ end
     c = LinearTrees.scan_feature(x, z, ones(20), ones(20), BIC(), 2, 1.0)
     @test c.kind == PCON && c.threshold == 10.0
 end
+
+@testset "a UnitHessians scan equals a scan over ones, to the bit" begin
+    # `fit_tree` hands `scan_feature` a `UnitHessians` instead of the gathered
+    # `hs` when the loss is `MSE` and every weight is one, which drops the
+    # multiply from `addrow`/`subrow`. The candidate must be identical, field
+    # by field: it is the same arithmetic with a factor of exactly one taken
+    # out. Fails if the unit path changes any sum.
+    rng = StableRNG(31)
+    fields = fieldnames(LinearTrees.Candidate)
+    designs = (collect(1.0:60.0), sort(randn(rng, 60)), repeat(collect(1.0:12.0), inner = 5))
+    for x in designs
+        m = length(x)
+        for z in (Float64[xi <= x[m ÷ 2] ? 0.0 : 3.0 for xi in x], 2 .* x .+ randn(rng, m),
+                max.(x .- x[m ÷ 3], 0.0))
+            for rule in (BIC(), MinDeviance((PCON, BLIN, PLIN)))
+                a = LinearTrees.scan_feature(x, z, ones(m), ones(m), rule, 5, 1e-12)
+                b = LinearTrees.scan_feature(x, z, LinearTrees.UnitHessians{Float64}(m), ones(m), rule, 5, 1e-12)
+                @test all(isequal(getfield(a, f), getfield(b, f)) for f in fields)
+            end
+        end
+    end
+end
+
+@testset "unit_hessian is true only where h is exactly one" begin
+    # the fast path above is taken when `unit_hessian(loss)` holds and every
+    # weight is one. `MSE`'s row hessian is `one(f)` and the `HMIN` floor
+    # leaves it; every other loss has a hessian that varies with the fit, so a
+    # `true` here would silently replace it with ones.
+    @test LinearTrees.unit_hessian(MSE())
+    for l in (Huber(1.0), Quantile(0.3), MAD(), Logistic(), Poisson(), NegBin(2.0), Gamma(),
+            Tweedie(1.5), Softmax(3))
+        @test !LinearTrees.unit_hessian(l)
+    end
+end

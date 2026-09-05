@@ -1,4 +1,4 @@
-using LinearAlgebra, StableRNGs
+using LinearAlgebra, StableRNGs, StaticArrays
 
 function wls(D, z, h)
     W = Diagonal(h)
@@ -58,4 +58,33 @@ end
     @test all(isapprox.(r1[1:4], r30[1:4]; rtol = 1e-6))
     # empty right child is singular
     @test LinearTrees.fit_blin(sums(1.0)[1], zero(LinearTrees.MomentSums{Float64}), t) === nothing
+end
+
+@testset "the unit-hessian row methods equal a hessian of exactly one" begin
+    # `addrow`/`subrow` take a `OneHessian` path that drops the multiply by
+    # one, so the whole MSE scan can run without it. Multiplying by one is
+    # exact, so the sums have to agree to the bit and not approximately: one
+    # ULP moves a split point. Fails if the unit method drops or reorders a
+    # term of the general one.
+    rng = StableRNG(21)
+    fields = fieldnames(LinearTrees.MomentSums)
+    for V in (Float64, SVector{2,Float64})
+        one_v = V === Float64 ? 1.0 : SVector(1.0, 1.0)
+        g = zero(LinearTrees.MomentSums{V}); u = zero(LinearTrees.MomentSums{V})
+        rows = [(randn(rng), V === Float64 ? randn(rng) : SVector(randn(rng), randn(rng))) for _ in 1:200]
+        for (x, z) in rows
+            g = LinearTrees.addrow(g, x, z, one_v)
+            u = LinearTrees.addrow(u, x, z, LinearTrees.OneHessian{V}())
+            @test all(getfield(g, f) === getfield(u, f) for f in fields)
+        end
+        for (x, z) in rows
+            g = LinearTrees.subrow(g, x, z, one_v)
+            u = LinearTrees.subrow(u, x, z, LinearTrees.OneHessian{V}())
+            @test all(getfield(g, f) === getfield(u, f) for f in fields)
+        end
+    end
+    # the vector form reads as ones and carries its length
+    h = LinearTrees.UnitHessians{Float64}(7)
+    @test length(h) == 7 && h[1] === LinearTrees.OneHessian{Float64}()
+    @test_throws BoundsError h[8]
 end

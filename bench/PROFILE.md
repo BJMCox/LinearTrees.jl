@@ -533,3 +533,17 @@ fitted trees are bit-identical on all thirteen designs checked: the four
 `test/fixtures/partition` cases, the eight PILOT reference fixtures and a
 `Softmax(3)` design with a categorical column. The fixtures were therefore not
 regenerated.
+
+### 2. The MSE unit-hessian path (committed, above the 3% bar)
+
+With `MSE` and no frequency weights every row hessian is exactly one, and the
+sweep still multiplied every row sum by it. `unit_hessian(loss)` plus a
+`all(isone, w)` check at the start of the fit sets `FitState.unith`; the split
+scan then gets `UnitHessians{V}`, an `hs` vector of `OneHessian` markers whose
+`addrow`/`subrow` methods are the general ones with every `h *` dropped, and
+`gather!` stops writing `sc.hs` at all. Case 1, same machine and protocol,
+against the score-once commit: **serial 1504 -> 1402 ms (-6.8%)** and
+**ten threads 621 -> 552 ms (-11%)**, over the 3% bar the brief set. The
+multiply dropped is by exactly one, so the trees are bit-identical, checked on
+the same thirteen designs and on the case-1 tree itself (3808 nodes, every node
+field compared as a bit pattern).
