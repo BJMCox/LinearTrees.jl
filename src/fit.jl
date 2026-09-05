@@ -96,7 +96,7 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{T}, w::Vector{T}, loss::L, rule::R,
         T(min_sum_hessian), max_lin_chain, truncate, nthreads, niter)
     rows = collect(Int32(1):Int32(n))
     refresh!(st, rows, 1)
-    st.nodes, st.catmasks = grow_subtree(st, rows, 1:n, 0, 0, 1:nthreads)
+    grow_subtree(st, rows, 1:n, 0, 0, 1:nthreads, st.nodes, st.catmasks)
     # Fold the clamped start score into the root node: training accumulates it in
     # st.f before any node is fit, but prediction starts score_row at zero, so the
     # root's own intercepts must carry it. Exact for every loss, clamped or not.
@@ -322,10 +322,8 @@ function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin, ti
 end
 
 """
-Append a packed left-level mask to a subtree-local mask pool `masks`.
-Returns its `(catstart, catwords)`, local to `masks`. The parent splice
-offsets `catstart` by the number of mask words already placed ahead of it,
-exactly like it offsets node indices.
+Append a packed left-level mask to the mask pool `masks` the growing subtree
+writes into, and return its `(catstart, catwords)` in that pool.
 """
 function push_mask!(masks::Vector{UInt64}, leftcodes, L)
     words = (L + 63) >> 6
@@ -400,17 +398,9 @@ leafnode(st::FitState{T,V}, rows, b) where {T,V} =
 const SUBTREE_PARALLEL_DEPTH = 3
 
 """
-What `grow_subtree` returns: the subtree's own node vector and mask pool.
-Named so the recursive calls can assert it -- inference gives up on a
-self-recursive function that early-returns, and without the assertion every
-splice, `vcat` and `shift_subtree` dispatches at run time, once per node.
-"""
-const Subtree{T,V} = Tuple{Vector{Node{T,V}},Vector{UInt64}}
-
-"""
 Add `idxoff` to every non-zero child index and `maskoff` to every non-zero
-`catstart` in `nodes`. Used by the splice step to relocate a subtree's local
-node vector and mask words into the parent's growing ones.
+`catstart` in `nodes`. Used once per spawned sibling subtree, to relocate the
+local node vector and mask words it grew concurrently into the parent's.
 """
 function shift_subtree(nodes::Vector{Node{T,V}}, idxoff::Int32, maskoff::Int32) where {T,V}
     return [Node{T,V}(n; left = n.left == 0 ? Int32(0) : n.left + idxoff,
@@ -419,21 +409,26 @@ function shift_subtree(nodes::Vector{Node{T,V}}, idxoff::Int32, maskoff::Int32) 
 end
 
 """
-Grow the subtree for `rows` into a fresh local node vector and mask pool.
+Grow the subtree for `rows`, appending its nodes to `nodes` in preorder and
+its level masks to `masks`. The subtree root lands at `length(nodes) + 1` and
+child indices and `catstart` values are absolute in those two vectors, so the
+caller has nothing to splice: a node is written once and moved never.
+
 `span` is the range of `st.idx` this node owns: `st.idx[span, j]` holds
 exactly `rows`, sorted by feature `j`, for every `j`. A split partitions the
-span in place, so children own disjoint sub-ranges and no other node reads
-or writes them.
-Returns `(nodes, masks)` with the subtree root at local index 1. `linchain`
-counts consecutive `lin` fits in this node position. `tids` is the range of
-`st.scratch` sets this subtree, and only this subtree, may use; a spawned
-sibling gets a disjoint sub-range, so no two concurrent subtrees ever touch
-the same scratch set. `st.nodes` and `st.catmasks` are written only once, by
-the splice at the root call in `fit_tree`, so the recursion itself never
-touches them.
+span in place, so children own disjoint sub-ranges and no other node reads or
+writes them. `linchain` counts consecutive `lin` fits in this node position.
+`tids` is the range of `st.scratch` sets this subtree, and only this subtree,
+may use; a spawned sibling gets a disjoint sub-range, so no two concurrent
+subtrees ever touch the same scratch set.
+
+Only the calling task appends to `nodes` and `masks`. A spawned sibling grows
+into its own pair and is shifted and appended once when it returns, so that
+subtree is the one and only case where a node is copied.
 """
 function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{Int}, depth::Int, linchain::Int,
-        tids::UnitRange{Int}) where {T,V}
+        tids::UnitRange{Int}, nodes::Vector{Node{T,V}}, masks::Vector{UInt64}) where {T,V}
+    mine = length(nodes) + 1
     nw = sum(view(st.w, rows))
     sumh = sum(sum(h) for h in view(st.h, rows))   # sum over coordinates too, for vector V
     if nw < st.min_fit || depth >= st.max_depth || sumh < st.min_sum_hessian || linchain >= st.max_lin_chain
@@ -441,7 +436,8 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
         me = leafnode(st, rows, b)
         me = refit_node(st, me, rows, first(tids))
         update_score!(st, rows, me)
-        return Node{T,V}[me], UInt64[]
+        push!(nodes, me)
+        return nothing
     end
     dmin = dmin_for(st, rows, nw)
     best, bestj, leftcodes = best_split(st, rows, span, dmin, tids)
@@ -451,7 +447,8 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
         me = leafnode(st, rows, best.kind == CON ? best.lintercept : con_intercept)
         me = refit_node(st, me, rows, first(tids))
         update_score!(st, rows, me)
-        return Node{T,V}[me], UInt64[]
+        push!(nodes, me)
+        return nothing
     end
     iscat = st.iscat[bestj]
     if iscat
@@ -466,12 +463,10 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
             rcoef = best.lcoef, rintercept = best.lintercept, xmin, xmax, cover = nw, xmean, gain, model = LIN)
         me = refit_node(st, me, rows, first(tids))
         update_score!(st, rows, me); refresh!(st, rows, first(tids))
-        cnodes, cmasks = grow_subtree(st, rows, span, depth, linchain + 1, tids)::Subtree{T,V}
-        me = Node{T,V}(me; left = Int32(2), right = Int32(2))
-        nodes = vcat(Node{T,V}[me], shift_subtree(cnodes, Int32(1), Int32(0)))
-        return nodes, cmasks
+        push!(nodes, Node{T,V}(me; left = Int32(mine + 1), right = Int32(mine + 1)))
+        grow_subtree(st, rows, span, depth, linchain + 1, tids, nodes, masks)
+        return nothing
     end
-    masks = UInt64[]
     catstart = Int32(0); catwords = Int32(0); threshold = best.threshold
     if iscat
         catstart, catwords = push_mask!(masks, leftcodes, st.nlevels[bestj])
@@ -497,30 +492,32 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
     end
     nl = partition!(st.idx, span, leftrows, st.isleft, st.perms, tids)
     lspan = first(span):(first(span) + nl - 1); rspan = (first(span) + nl):last(span)
+    push!(nodes, me)   # placeholder: the child indices are only known once both children have grown
     if st.nthreads > 1 && depth < SUBTREE_PARALLEL_DEPTH && length(tids) >= 2
         mid = first(tids) + length(tids) ÷ 2 - 1
-        task = Threads.@spawn grow_subtree(st, rightrows, rspan, depth + 1, 0, (mid + 1):last(tids))
-        lnodes, lmasks = grow_subtree(st, leftrows, lspan, depth + 1, 0, first(tids):mid)::Subtree{T,V}
-        rnodes, rmasks = fetch(task)::Subtree{T,V}
+        rnodes = Node{T,V}[]; rmasks = UInt64[]
+        task = Threads.@spawn grow_subtree(st, rightrows, rspan, depth + 1, 0, (mid + 1):last(tids), rnodes, rmasks)
+        grow_subtree(st, leftrows, lspan, depth + 1, 0, first(tids):mid, nodes, masks)
+        wait(task)
+        # the sibling grew local indices from 1, so shift by what now precedes it
+        rightidx = length(nodes) + 1
+        append!(nodes, shift_subtree(rnodes, Int32(length(nodes)), Int32(length(masks))))
+        append!(masks, rmasks)
     else
-        lnodes, lmasks = grow_subtree(st, leftrows, lspan, depth + 1, 0, tids)::Subtree{T,V}
-        rnodes, rmasks = grow_subtree(st, rightrows, rspan, depth + 1, 0, tids)::Subtree{T,V}
+        grow_subtree(st, leftrows, lspan, depth + 1, 0, tids, nodes, masks)
+        rightidx = length(nodes) + 1
+        grow_subtree(st, rightrows, rspan, depth + 1, 0, tids, nodes, masks)
     end
-    nleft = Int32(length(lnodes)); nmine = Int32(length(masks)); nlmasks = Int32(length(lmasks))
-    me = Node{T,V}(me; left = Int32(2), right = Int32(2) + nleft)
-    # `masks` (this node's own mask, if any) lands first in `allmasks`, so lnodes'
-    # and rnodes' catstart values shift by however many mask words precede them.
-    nodes = vcat(Node{T,V}[me], shift_subtree(lnodes, Int32(1), nmine), shift_subtree(rnodes, Int32(1) + nleft, nmine + nlmasks))
-    allmasks = vcat(masks, lmasks, rmasks)
-    return nodes, allmasks
+    nodes[mine] = Node{T,V}(me; left = Int32(mine + 1), right = Int32(rightidx))
+    return nothing
 end
 
 """
 True when row `i` is routed left by node `n`. Categorical nodes route by
 mask; others by threshold. `masks` must be the mask pool `n.catstart`
-indexes into: during growth that is the growing subtree's own local mask
-vector, since `st.catmasks` is not assembled until the root splice; after
-fitting it is `tree.catmasks`. Non-categorical nodes never touch `masks`,
+indexes into: during growth that is the pool the subtree is appending to
+(`st.catmasks` on the main chain, a local vector inside a spawned sibling);
+after fitting it is `tree.catmasks`. Non-categorical nodes never touch `masks`,
 so the empty default is safe wherever the node cannot be categorical.
 """
 function goes_left(st::FitState, n::Node, i, masks::Vector{UInt64} = UInt64[])
