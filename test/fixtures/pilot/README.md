@@ -1,6 +1,6 @@
 # PILOT reference fixtures
 
-Five pinned datasets fit against the reference PILOT implementation, used by
+Eight pinned datasets fit against the reference PILOT implementation, used by
 `test/pilot_reference.jl` to check `fit_tree` against it. Python is
 provenance only: it is not a runtime or test dependency of LinearTrees.jl.
 The JSON files here are committed; the test suite reads only those.
@@ -145,10 +145,12 @@ entirely (see "CON nodes are leaves" below).
 
 ## Scope of the parity claim
 
-The five fixtures establish parity for continuous, non-categorical
-splits, away from a few boundaries that the reference and LinearTrees.jl
-handle differently. None of these bind on the five fixtures; they would
-need to be accounted for before extending the parity claim to other data.
+The eight fixtures establish parity for continuous splits (plus, for
+`categorical`, one categorical split), away from a few boundaries that
+the reference and LinearTrees.jl handle differently. None of these bind
+on any of the eight fixtures (smallest node size across all of them is
+31 rows, `deep`'s, well clear of `min_fit = 10`); they would need to be
+accounted for before extending the parity claim to other data.
 
 - **A node with exactly `min_fit` rows.** Ours splits it: `src/fit.jl:322`
   stops only when `nw < st.min_fit` (strict). The reference stops it:
@@ -162,8 +164,9 @@ need to be accounted for before extending the parity claim to other data.
   feature with under 5 unique values never becomes eligible, so its row
   keeps stale values from whichever feature was scored just before it and
   can still be scored (and win) against the current feature's moments.
-  Exact parity is not defined on such a feature. All five fixtures use
-  continuous `Uniform(-2, 2)` columns, so this never triggers.
+  Exact parity is not defined on such a feature. Every non-categorical
+  column across all eight fixtures is continuous `Uniform`, so this
+  never triggers.
 - **Singularity guards and RSS floors differ in kind.** The reference
   rejects a `blin` fit on an absolute `det(XtX) > 0.001`; ours uses a
   scale-invariant guard (`1e-12 * sxx * sw * suu`, `fit_blin`, `src/accumulate.jl`). The
@@ -189,7 +192,7 @@ from the split-node comparison list.
 
 ## Datasets
 
-All five: `n = 300`, `p = 3`, `X ~ Uniform(-2, 2)` via
+The first five: `n = 300`, `p = 3`, `X ~ Uniform(-2, 2)` via
 `numpy.random.default_rng(seed)`, rounded to 6 decimals, `seed` = the
 dataset's position in the list below (1-5). Fit with `max_depth = 6`,
 `min_sample_split = 10`, `min_sample_leaf = 5`, `truncation_factor = 3`.
@@ -201,6 +204,67 @@ dataset's position in the list below (1-5). Fit with `max_depth = 6`,
 | hinge | 3 | `max(X0-0.5, 0)*3 + N(0, 0.02)` | blin, con, con |
 | interaction | 4 | `1.2*X0 + 0.8*X1 + 0.6*X0*X1 + N(0, 0.05)` | lin, lin, lin, con |
 | step | 5 | `where(X0<0, -1, 1) + N(0, 0.02)` | pcon, con, con |
+
+Three more fixtures, added to exercise a `plin` root, a binding
+`max_depth`, and a categorical column -- none of which the first five
+touch. Each has its own shape/seed, listed with it; all still use
+`min_sample_split = 10`, `min_sample_leaf = 5`, `truncation_factor = 3`,
+and `max_depth = 6` unless noted.
+
+| name | seed | n, p | y | fit override | true split kinds |
+|---|---|---|---|---|---|
+| twoslope | 6 | 400, 3 | `where(X0<0.5, 3*X0, 4-2*X0) + N(0, 0.05)`, X0 ~ U(0,1), X1,X2 ~ U(-2,2) noise | -- | plin, lin, con, con |
+| deep | 7 | 600, 2 | a 9-level step in X0 (cuts at -1.6..1.6 by 0.4) plus a 2-level step in X1, X ~ U(-2,2), + N(0, 0.05) | `max_depth = 3` | lin, pcon, plin, plin, con, con, plin, con, plin |
+| categorical | 8 | 400, 2 | level means `[-2, 1, -2, 3]` for X0 in `{1,2,3,4}`, `+ 0.3*X1 + N(0, 0.05)`, X1 ~ U(-2,2) | `categorical = [1]` | pconc, lin, con, pconc, lin, con, lin, con |
+
+**twoslope**: the discontinuity at `X0 = 0.5` (left slope 3, right slope
+-2, a jump of 1.5) is steep enough on its own that the reference already
+picks `plin` at the root with no extra steepening needed -- the brief's
+fallback ("steepen until `plin` wins") never triggered.
+
+**deep**: fit twice while designing this fixture, once with `max_depth =
+12` (reaches `tree_depth = 9`) and once with `max_depth = 3` (stops at
+exactly `tree_depth = 3`, the committed fixture) -- confirming the cap
+actually changes the tree (30 nodes down to 9), not just failing to
+matter. `lin` and `con` never count toward `tree_depth` on either side
+(`Pilot.py:690-691`'s `best_node in ["con", "lin"]` decrement; likewise
+`src/fit.jl`'s `LIN` branch does not increment `depth`), so the root
+`lin` here is depth 0 and the cap only starts counting at its child.
+
+**categorical**: PILOT's reference supports a categorical split (node
+kind `"pconc"`, `Pilot.py`'s categorical branch of `best_split`, guarded
+by a `categorical` array of 0-based column indices passed to `.fit`).
+LinearTrees.jl has no separate `PCONC` kind: a categorical split is a
+`PCON` node with `catwords > 0` (`src/node.jl`), so the fixture's
+reference `"pconc"` kind maps to our `PCON` plus `iscategorical(node)`.
+Column 0 (reference) / column 1 (ours, 1-based) is declared categorical
+with codes `1..4`, chosen to match `fit_tree`'s codes convention
+directly -- no remapping needed on that axis, only the kind-name mapping
+above.
+
+*Left-set direction is not ambiguous here.* Both sides sort the column's
+levels by ascending mean response and cut the sorted order at the
+lowest-scoring point, keeping the low-rank prefix on the left
+(`Pilot.py:446,477`'s `mean_idx = argsort(mean_vec)` then
+`pivot_c = possible_p[:i+1]`; `src/fit.jl`'s `scan_categorical` sorts
+`present` the same way and takes `rank[lc] <= cand.threshold`). Given
+that agreement, `test/pilot_reference.jl` compares the reference's
+`pivot_c` (as a `Set` of 1-based codes) directly against ours, no `||`
+fallback for the complementary partition (contrast
+`test/categorical.jl`'s `lefts == ... || lefts == ...`, needed there only
+because that test has no external oracle fixing a canonical direction).
+
+`node.pivot` for a `"pconc"` node carries a meaningless second element
+(`best_pivot` never updated in the categorical branch of `best_split`,
+so it keeps its `-1.0` initializer, like `"lin"`'s placeholder pivot) --
+the real split lives in `pivot_c` alone. Its `range`/`interval` is worse
+than meaningless: `best_split` never assigns `interval` in that branch
+either, so it keeps the function's own `[-inf, inf]` initializer, and
+`json.dump`'s default `allow_nan=True` writes that as bare `Infinity` /
+`-Infinity` tokens -- not valid strict JSON, which broke JSON3.jl's
+parser (`ArgumentError: invalid JSON ... InvalidChar`) the first time
+this fixture was generated. `make_fixtures.py`'s `walk` now records
+`range: null` for any `"pconc"` node instead of trusting `node.interval`.
 
 Each JSON file also records the `sha256` of its own `X.tobytes()` /
 `y.tobytes()` (post-rounding) internally, for provenance; regenerating
@@ -217,11 +281,18 @@ internal `X`/`y` hash would not move.
 | `hinge.json` | `8db93f143ba483cd785d50ee7a0e6e0060076255d6af65c6ceeceb2d37e73cb8` |
 | `interaction.json` | `392e87bbfb06c9c18839bfe74a32138a66b47eb98f6d39dd7e3f85a2411cbc97` |
 | `step.json` | `126c5e0b779cadf694dfd601294df46d9e76a44072e61ce36fa97f41cdb64053` |
+| `twoslope.json` | `4dec319e96871e749d45c4d7261e2ae6cdc3d6a88eb947e678b4b19406393b30` |
+| `deep.json` | `967f42b6551df8f7649d8f4c16a4171da2e4b217d7537c8b168f104c704546d1` |
+| `categorical.json` | `2959f4910e72eea835828d42dcf2dfd0b83e398c8b5ef09970ddc33971f8a09d` |
 
 ## Test outcome
 
-All five fixtures pass exact structural and prediction parity
-(`fit_tree(...; max_depth = 6, min_leaf = 5, min_fit = 10,
-truncation_factor = 3)` against `predict` at `1e-8`, and every non-leaf
-node's kind, 1-based feature, threshold, and `(coef, intercept)` on each
-side at `1e-8`, within the "Scope of the parity claim" above).
+All eight fixtures pass exact structural and prediction parity
+(`predict` at `1e-8`, and every non-leaf node's kind, 1-based feature,
+threshold, and `(coef, intercept)` on each side at `1e-8`, within the
+"Scope of the parity claim" above, plus an exact left-level-set check
+for `categorical`'s two `pconc`/`PCON` nodes). `linear` through `step`
+fit with `max_depth = 6, min_leaf = 5, min_fit = 10, truncation_factor =
+3`; `deep` overrides `max_depth = 3`; `categorical` adds `categorical =
+[1]`. `test/pilot_reference.jl` holds these per-fixture overrides in
+`FIXTURE_KW`.
