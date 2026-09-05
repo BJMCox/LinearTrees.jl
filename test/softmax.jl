@@ -40,15 +40,6 @@ end
     @test_throws ArgumentError validate_target(Softmax(3), [1, 2, 4])
 end
 
-@testset "threaded softmax split search equals serial" begin
-    rng = StableRNG(19)
-    n = 20_000; X = randn(rng, n, 3)
-    y = [X[i, 1] > 0.5 ? 1 : X[i, 2] > 0 ? 2 : 3 for i in 1:n]
-    t1 = fit_tree(X, y, Softmax(3); nthreads = 1)
-    tn = fit_tree(X, y, Softmax(3))
-    @test t1.nodes == tn.nodes
-end
-
 @testset "vector closed forms equal scalar per coordinate" begin
     rng = StableRNG(19)
     V = SVector{2,Float64}

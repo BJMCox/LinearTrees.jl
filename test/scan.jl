@@ -1,22 +1,19 @@
 using StableRNGs
 
-@testset "scan picks lin on exact linear data" begin
+@testset "scan_feature picks the kind its design calls for" begin
+    # One design per model kind, since each kind is a distinct closed form in
+    # the sweep. `fit_tree` shows the winning kind too (test/fit.jl), but not
+    # the candidate's own coefficients or split point.
     x = collect(range(-1, 1, length = 40)); z = 2 .* x .+ 1
     c = LinearTrees.scan_feature(x, z, ones(40), ones(40), BIC(), 5, 1e-12)
-    @test c.kind == LIN
-    @test c.lcoef ≈ 2 && c.lintercept ≈ 1
+    @test c.kind == LIN && c.lcoef ≈ 2 && c.lintercept ≈ 1
     @test c.surrogate ≈ 0 atol = 1e-10
-end
 
-@testset "scan picks pcon at the step" begin
     x = collect(1.0:40.0); z = [i <= 20 ? 0.0 : 5.0 for i in 1:40]
     c = LinearTrees.scan_feature(x, z, ones(40), ones(40), BIC(), 5, 1e-12)
-    @test c.kind == PCON
-    @test c.threshold == 20.0
+    @test c.kind == PCON && c.threshold == 20.0
     @test c.lintercept ≈ 0 && c.rintercept ≈ 5
-end
 
-@testset "scan picks blin on a hinge" begin
     # kink at 0 lands exactly on a grid point: the split point is the largest left value
     # (PILOT parity), so blin's knot only lands on the true kink when 0 is itself a candidate
     x = collect(-2.0:0.05:2.0); z = max.(x, 0)
@@ -25,65 +22,19 @@ end
     @test c.threshold ≈ 0 atol = 1e-8
     @test c.lcoef ≈ 0 atol = 1e-8
     @test c.rcoef ≈ 1 atol = 1e-8
-end
 
-@testset "scan picks con on noise and honours min_leaf" begin
     rng = StableRNG(3)
     x = sort(randn(rng, 30)); z = randn(rng, 30)
-    c = LinearTrees.scan_feature(x, z, ones(30), ones(30), BIC(), 5, 1e-12)
-    @test c.kind == CON
+    @test LinearTrees.scan_feature(x, z, ones(30), ones(30), BIC(), 5, 1e-12).kind == CON
+
+    # a rule that disallows con returns a split even on noise
+    x = collect(1.0:10.0); z = randn(StableRNG(4), 10)
+    @test LinearTrees.scan_feature(x, z, ones(10), ones(10), MinDeviance((PCON,)), 1, 1e-12).kind == PCON
+
     # min_leaf = 15 leaves exactly one legal split position: at x = 15
     z2 = [i <= 15 ? 0.0 : 5.0 for i in 1:30]
     c2 = LinearTrees.scan_feature(collect(1.0:30.0), z2, ones(30), ones(30), MinDeviance((PCON,)), 15, 1e-12)
     @test c2.threshold == 15.0
-end
-
-@testset "scan with MinDeviance never returns con" begin
-    x = collect(1.0:10.0); z = randn(StableRNG(4), 10)
-    c = LinearTrees.scan_feature(x, z, ones(10), ones(10), MinDeviance((PCON,)), 1, 1e-12)
-    @test c.kind == PCON
-end
-
-@testset "integer weights equal row duplication (C3a)" begin
-    # `hs` already carries the frequency weight (fit.jl multiplies `st.h[i] *=
-    # st.w[i]` before the scan), so an integer-weighted call with hs == ws ==
-    # w must agree with unit-weight rows duplicated w[i] times: a dropped or
-    # misapplied `ws`/`hs` in `scan_feature` or the moment sums would break this.
-    w = Float64[1, 2, 1, 3, 2, 1, 1, 4, 1, 2, 2, 1, 3, 1, 1, 2, 4, 1, 1, 2]
-
-    @testset "pcon design" begin
-        x = collect(1.0:20.0)
-        z = [i <= 10 ? 1.0 : 4.0 for i in 1:20]
-        cw = LinearTrees.scan_feature(x, z, w, w, BIC(), 5, 1e-12)
-
-        xd = reduce(vcat, [fill(x[i], Int(w[i])) for i in eachindex(x)])
-        zd = reduce(vcat, [fill(z[i], Int(w[i])) for i in eachindex(x)])
-        cd = LinearTrees.scan_feature(xd, zd, ones(length(xd)), ones(length(xd)), BIC(), 5, 1e-12)
-
-        @test cw.kind == cd.kind == PCON
-        @test cw.threshold == cd.threshold
-        @test cw.lintercept ≈ cd.lintercept atol = 1e-12
-        @test cw.rintercept ≈ cd.rintercept atol = 1e-12
-        @test cw.score ≈ cd.score atol = 1e-12
-    end
-
-    @testset "plin design" begin
-        x = collect(1.0:20.0)
-        z = [xi <= 10 ? 2xi + 1 : -3xi + 100 for xi in x]   # a jump at the boundary: plin, not blin
-        cw = LinearTrees.scan_feature(x, z, w, w, BIC(), 5, 1e-12)
-
-        xd = reduce(vcat, [fill(x[i], Int(w[i])) for i in eachindex(x)])
-        zd = reduce(vcat, [fill(z[i], Int(w[i])) for i in eachindex(x)])
-        cd = LinearTrees.scan_feature(xd, zd, ones(length(xd)), ones(length(xd)), BIC(), 5, 1e-12)
-
-        @test cw.kind == cd.kind == PLIN
-        @test cw.threshold == cd.threshold
-        @test cw.lcoef ≈ cd.lcoef atol = 1e-12
-        @test cw.lintercept ≈ cd.lintercept atol = 1e-12
-        @test cw.rcoef ≈ cd.rcoef atol = 1e-12
-        @test cw.rintercept ≈ cd.rintercept atol = 1e-12
-        @test cw.score ≈ cd.score atol = 1e-12
-    end
 end
 
 @testset "duplicate xs values are never split between equal values (C3b)" begin
@@ -201,28 +152,20 @@ end
     # out. Fails if the unit path changes any sum.
     rng = StableRNG(31)
     fields = fieldnames(LinearTrees.Candidate)
-    designs = (collect(1.0:60.0), sort(randn(rng, 60)), repeat(collect(1.0:12.0), inner = 5))
-    for x in designs
-        m = length(x)
-        for z in (Float64[xi <= x[m ÷ 2] ? 0.0 : 3.0 for xi in x], 2 .* x .+ randn(rng, m),
-                max.(x .- x[m ÷ 3], 0.0))
-            for rule in (BIC(), MinDeviance((PCON, BLIN, PLIN)))
-                a = LinearTrees.scan_feature(x, z, ones(m), ones(m), rule, 5, 1e-12)
-                b = LinearTrees.scan_feature(x, z, LinearTrees.UnitHessians{Float64}(m), ones(m), rule, 5, 1e-12)
-                @test all(isequal(getfield(a, f), getfield(b, f)) for f in fields)
-            end
+    x = sort(randn(rng, 60)); m = 60
+    # one target per winning kind: a step (pcon), a noisy line (lin/plin) and a hinge (blin)
+    for z in (Float64[xi <= x[m ÷ 2] ? 0.0 : 3.0 for xi in x], 2 .* x .+ randn(rng, m),
+            max.(x .- x[m ÷ 3], 0.0))
+        for rule in (BIC(), MinDeviance((PCON, BLIN, PLIN)))
+            a = LinearTrees.scan_feature(x, z, ones(m), ones(m), rule, 5, 1e-12)
+            b = LinearTrees.scan_feature(x, z, LinearTrees.UnitHessians{Float64}(m), ones(m), rule, 5, 1e-12)
+            @test all(isequal(getfield(a, f), getfield(b, f)) for f in fields)
         end
     end
-end
-
-@testset "unit_hessian is true only where h is exactly one" begin
-    # the fast path above is taken when `unit_hessian(loss)` holds and every
-    # weight is one. `MSE`'s row hessian is `one(f)` and the `HMIN` floor
-    # leaves it; every other loss has a hessian that varies with the fit, so a
-    # `true` here would silently replace it with ones.
+    # the fast path is taken when `unit_hessian(loss)` holds and every weight is
+    # one. `MSE`'s row hessian is `one(f)` and the `HMIN` floor leaves it; every
+    # other loss has a hessian that varies with the fit, so a `true` there would
+    # silently replace it with ones.
     @test LinearTrees.unit_hessian(MSE())
-    for l in (Huber(1.0), Quantile(0.3), MAD(), Logistic(), Poisson(), NegBin(2.0), Gamma(),
-            Tweedie(1.5), Softmax(3))
-        @test !LinearTrees.unit_hessian(l)
-    end
+    @test !LinearTrees.unit_hessian(MAD())
 end

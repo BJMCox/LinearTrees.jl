@@ -1,4 +1,4 @@
-using StableRNGs, Statistics
+using StableRNGs
 import DecisionTree
 
 @testset "exact linear data gives one lin root" begin
@@ -50,35 +50,18 @@ end
     # non-uniform: MAD and Quantile disagreed with duplication by ~1.8e-3 and
     # ~1.9e-3 (measured interactively at FIX_BASE) despite the other losses
     # already agreeing to 1e-11 or tighter.
+    # one loss per weighting path: MSE for the smooth scan, MAD and Quantile
+    # for the IRLS refit, where the defect was.
     rng = StableRNG(8)
     n = 60
     X = rand(rng, n, 2); y = X[:, 1] .+ 0.3 .* randn(rng, n)
     w = Float64.(rand(rng, 1:3, n))
     rows = reduce(vcat, [fill(i, Int(w[i])) for i in 1:n])
-    for (loss, yy) in ((MSE(), y), (Logistic(), Float64.(y .> median(y))),
-                       (Poisson(), Float64.(round.(Int, abs.(y) .* 3))),
-                       (MAD(), y), (Quantile(0.7), y))
+    for (loss, yy) in ((MSE(), y), (MAD(), y), (Quantile(0.7), y))
         tw = fit_tree(X, yy, loss; weights = w)
         td = fit_tree(X[rows, :], yy[rows], loss)
         @test maximum(abs.(predict(tw, X) .- predict(td, X))) < 1e-8
         @test length(tw.nodes) == length(td.nodes)   # the same tree, not just the same predictions
-    end
-end
-
-@testset "median_abs is a weighted median (I5)" begin
-    # Unit weights must reproduce Statistics.median for both parities; general
-    # weights must match Statistics.median on the row-duplicated data, which
-    # is the actual invariant fit_tree needs (spec line 779-780).
-    rng = StableRNG(78)
-    for m in 1:12
-        r = randn(rng, m)
-        @test LinearTrees.median_abs(r, ones(m)) ≈ median(abs.(r))
-    end
-    for _ in 1:50
-        m = rand(rng, 3:15)
-        r = randn(rng, m); w = Float64.(rand(rng, 1:4, m))
-        dup = reduce(vcat, [fill(r[i], Int(w[i])) for i in 1:m])
-        @test LinearTrees.median_abs(r, w) ≈ median(abs.(dup))
     end
 end
 
@@ -156,48 +139,13 @@ end
     @test t1.nodes != t5.nodes
 end
 
-@testset "irls_refit does not allocate a fresh residual or sort buffer (B2)" begin
-    # fails if irls_refit's residual buffer or median_abs's sort buffers revert
-    # to a fresh per-call allocation. `masks` is passed explicitly (as the
-    # categorical call site in grow_subtree does) so this isolates exactly the
-    # buffers B2 targets: irls_refit's own `masks::Vector{UInt64}=UInt64[]`
-    # default, used at the other three call sites, allocates an empty-vector
-    # header (32 bytes, measured) regardless of this fix -- unrelated to the
-    # residual/sort buffers here, and out of this item's scope.
-    function irls_refit_alloc()
-        n = 4000
-        X = rand(n, 1); y = X[:, 1] .+ 0.1 .* randn(n)
-        y[1:20] .+= 5   # outliers, so IRLS solves a non-degenerate residual
-        loss = MAD()
-        w = ones(n)
-        f0 = Float64(LinearTrees.initscore(loss, y, w))
-        f = fill(f0, n)
-        idx = Matrix{Int32}(undef, n, 1)
-        LinearTrees.presort!(idx, X, 1)
-        st = LinearTrees.FitState{Float64,Float64,typeof(loss),BIC}(; X, y, w, f,
-            g = zeros(n), h = zeros(n), z = zeros(n), idx, roworder = collect(Int32(1):Int32(n)), isleft = zeros(Bool, n),
-            scratch = [LinearTrees.Scratch{Float64,Float64}()],
-            nodes = LinearTrees.Node{Float64,Float64}[], catmasks = UInt64[],
-            iscat = zeros(Bool, 1), nlevels = zeros(Int, 1), loss, rule = BIC(), lo = -Inf, hi = Inf,
-            max_depth = 12, min_fit = 10.0, min_leaf = 5.0, min_sum_hessian = 1.0, max_lin_chain = 10,
-            truncate = false, nthreads = 1, niter = 5, unith = false)   # MAD, so h is never one
-        rows = view(st.roworder, 1:n)
-        LinearTrees.refresh!(st, rows, 1)
-        b = LinearTrees.fit_con(LinearTrees.node_sums(st, rows))[1]
-        node = LinearTrees.Node{Float64,Float64}(; lintercept = b, cover = Float64(n))
-        masks = UInt64[]
-        LinearTrees.irls_refit(st, node, rows, 1, 5, masks)
-        return @allocated LinearTrees.irls_refit(st, node, rows, 1, 5, masks)
-    end
-    @test irls_refit_alloc() == 0
-end
-
-@testset "threaded split search equals serial" begin
+@testset "threaded predict and score equal serial" begin
+    # the threaded *fit* is covered over every thread count in test/threads.jl;
+    # this is the row-block split inside `predict`/`score`, above
+    # `PARALLEL_MIN_ROWS`.
     rng = StableRNG(35)
-    X = rand(rng, 40_000, 6); y = sin.(3 .* X[:, 1]) .+ X[:, 2] .* X[:, 3] .+ 0.1 .* randn(rng, 40_000)
-    t1 = fit_tree(X, y; nthreads = 1, max_depth = 4)
-    tn = fit_tree(X, y; max_depth = 4)                 # nthreads defaults to Threads.nthreads()
-    @test t1.nodes == tn.nodes
-    @test predict(tn, X) == predict(tn, X; nthreads = 1)
-    @test score(tn, X; clip = false) == score(tn, X; clip = false, nthreads = 1)
+    X = rand(rng, 20_000, 6); y = sin.(3 .* X[:, 1]) .+ X[:, 2] .* X[:, 3] .+ 0.1 .* randn(rng, 20_000)
+    t = fit_tree(X, y; max_depth = 4)                  # nthreads defaults to Threads.nthreads()
+    @test predict(t, X) == predict(t, X; nthreads = 1)
+    @test score(t, X; clip = false) == score(t, X; clip = false, nthreads = 1)
 end

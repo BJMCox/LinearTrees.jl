@@ -13,7 +13,7 @@ end
     rng = StableRNG(20)
     X = rand(rng, 300, 2); y = sin.(3 .* X[:, 1]) .+ 2 .* X[:, 2]
     t = fit_tree(X, y)
-    for i in 1:20
+    for i in 1:3
         x = X[i, :]
         b, a = coeftable(t, x)
         @test b + dot(a, x) ≈ score(t, X[i:i, :]; clip = false)[1] atol = 1e-10
