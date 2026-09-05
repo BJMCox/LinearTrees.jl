@@ -53,6 +53,7 @@ end
 "JSON-friendly `Dict` for `l`: its type name plus a name-to-value map of its fields."
 lossdict(l::Loss) = Dict{String,Any}("name" => string(nameof(typeof(l))),
     "params" => Dict{String,Any}(String(f) => getfield(l, f) for f in fieldnames(typeof(l))))
+lossdict(l::Softmax) = Dict{String,Any}("name" => "Softmax", "params" => Dict{String,Any}("K" => nclasses(l)))   # K is a type parameter, not a field
 lossdict(l::AdaptedLoss) = throw(ArgumentError(
     "AdaptedLoss wraps a LossFunctions.jl loss and cannot round-trip through to_dict"))
 

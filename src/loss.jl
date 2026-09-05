@@ -48,11 +48,23 @@ struct Tweedie <: Loss
     Tweedie(ρ::Real) = (1 < ρ < 2 || throw(ArgumentError("ρ must lie in (1, 2)")); new(Float64(ρ)))
 end
 
-"K-class softmax with class K as the reference at logit zero. Diagonal Hessian."
-struct Softmax <: Loss
-    K::Int
-    Softmax(K) = (K >= 2 || throw(ArgumentError("K must be at least 2")); new(Int(K)))
+"""
+    Softmax(K)
+
+K-class softmax with class K as the reference at logit zero. Diagonal Hessian.
+`K` is a type parameter so the coefficient type `SVector{K-1,T}` is known at
+compile time and every fit specialises on it.
+"""
+struct Softmax{K} <: Loss
+    function Softmax{K}() where {K}
+        K isa Int && K >= 2 || throw(ArgumentError("K must be an integer >= 2, got $K"))
+        return new{K}()
+    end
 end
+Softmax(K::Integer) = Softmax{Int(K)}()
+
+"Number of classes of a `Softmax` loss."
+nclasses(::Softmax{K}) where {K} = K
 
 """
     issmooth(loss)
@@ -70,7 +82,7 @@ Coefficient type for `loss` given feature type `T`. `T` for every scalar
 loss, `SVector{K-1,T}` for `Softmax(K)`.
 """
 coeftype(::Loss, ::Type{T}) where {T} = T
-coeftype(l::Softmax, ::Type{T}) where {T} = SVector{l.K - 1,T}
+coeftype(::Softmax{K}, ::Type{T}) where {K,T} = SVector{K - 1,T}
 
 # ---- links -----------------------------------------------------------------
 """
@@ -285,12 +297,12 @@ initscore(::Gamma, y, w) = log(wmean(y, w))
 Log-odds of each non-reference class against the reference class `K`,
 from the weighted class frequencies.
 """
-function initscore(l::Softmax, y, w)
+function initscore(l::Softmax{K}, y, w) where {K}
     T = float(eltype(w))
     tot = sum(w)
-    pk = ntuple(k -> clamp(sum(w[i] for i in eachindex(y) if y[i] == k; init = zero(T)) / tot, 1e-6, 1.0), l.K)
-    ref = log(pk[l.K])
-    return SVector{l.K - 1,T}(ntuple(k -> log(pk[k]) - ref, l.K - 1))
+    pk = ntuple(k -> clamp(sum(w[i] for i in eachindex(y) if y[i] == k; init = zero(T)) / tot, 1e-6, 1.0), K)
+    ref = log(pk[K])
+    return SVector{K - 1,T}(ntuple(k -> log(pk[k]) - ref, K - 1))
 end
 
 # ---- true deviance for reporting ------------------------------------------
@@ -335,9 +347,9 @@ function scorebound(::Union{Poisson,NegBin,Gamma,Tweedie}, y; truncation_factor 
     S = log(max(maximum(y), 1)) + 3
     return (-S, S)
 end
-function scorebound(l::Softmax, y; truncation_factor = 3)
+function scorebound(::Softmax{K}, y; truncation_factor = 3) where {K}
     T = float(eltype(y))
-    return (fill(T(-10), SVector{l.K - 1}), fill(T(10), SVector{l.K - 1}))
+    return (fill(T(-10), SVector{K - 1}), fill(T(10), SVector{K - 1}))
 end
 
 # ---- target validation -----------------------------------------------------
@@ -358,9 +370,9 @@ _validate(::Logistic, y) = all(v -> v == 0 || v == 1, y) || throw(ArgumentError(
 _validate(::Union{Poisson,NegBin}, y) = all(v -> v >= 0 && isinteger(v), y) || throw(ArgumentError("count losses need non-negative integers"))
 _validate(::Gamma, y) = all(>(0), y) || throw(ArgumentError("Gamma needs positive targets"))
 _validate(::Tweedie, y) = all(>=(0), y) || throw(ArgumentError("Tweedie needs non-negative targets"))
-function _validate(l::Softmax, y)
-    all(v -> isinteger(v) && 1 <= v <= l.K, y) || throw(ArgumentError("Softmax($(l.K)) needs integer targets in 1:$(l.K)"))
-    all(k -> any(==(k), y), 1:l.K) || throw(ArgumentError("every class in 1:$(l.K) must be present"))
+function _validate(::Softmax{K}, y) where {K}
+    all(v -> isinteger(v) && 1 <= v <= K, y) || throw(ArgumentError("Softmax($K) needs integer targets in 1:$K"))
+    all(k -> any(==(k), y), 1:K) || throw(ArgumentError("every class in 1:$K must be present"))
 end
 
 # ---- LossFunctions.jl adapter -----------------------------------------------
