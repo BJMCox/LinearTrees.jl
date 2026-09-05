@@ -32,10 +32,9 @@ end
     @test isfinite(predict(m2, df3)[1])
 end
 
-@testset "TableEncoder rejects an unrecognised unseen policy" begin
-    # fails if a typo'd `unseen` silently selects :error instead of raising here
-    @test_throws ArgumentError LinearTrees.TableEncoder(rand(5, 2), :nope)
-    @test_throws ArgumentError LinearTrees.TableEncoder(DataFrame(x = [1.0, 2.0]), :nope)
+@testset "fit rejects an unrecognised unseen policy" begin
+    # fails if a typo'd `unseen` silently selects :error instead of raising
+    @test_throws ArgumentError fit(LinearTreeRegressorFit, rand(5, 2), rand(5); unseen = :nope)
 end
 
 @testset "classifier" begin
