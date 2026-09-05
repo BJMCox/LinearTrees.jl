@@ -510,22 +510,26 @@ sharing question arises.
 
 **Risk** Low. `Scratch` grows by six fields, which is the cost.
 
-### 7. `fit_tree`'s threaded scaling
+### 7. `fit_tree`'s threaded scaling -- done
 
-**Where** `src/fit.jl:406-424` and `:542-556`.
+**Share at the time** case 1 reached 2.47x on 10 threads, case 3 2.16x,
+against 9.45x for `predict`.
 
-**Share** case 1 reaches 2.47x on 10 threads, case 3 2.16x, against 9.45x for
-`predict`.
+**Cause** `best_split` threaded over features only above `PARALLEL_MIN_ROWS`
+rows, and sibling subtrees spawned only below `SUBTREE_PARALLEL_DEPTH = 3`,
+which capped concurrency at eight subtrees and, because `tids` halved at each
+spawn, usually fewer. A depth-12 tree keeps most of its nodes below both
+gates, and the eight static subtrees were unbalanced 4:1.
 
-**Change** `best_split` threads over features only above `PARALLEL_MIN_ROWS`
-rows, and sibling subtrees spawn only below `SUBTREE_PARALLEL_DEPTH = 3`, which
-caps concurrency at eight subtrees and, because `tids` halves at each spawn,
-usually fewer. A depth-12 tree keeps most of its nodes below both gates. Gate
-the spawn on `length(tids) >= 2` alone and let depth run.
-
-**Risk** High: the disjoint-`tids` argument is the entire safety case for
-concurrent growth, so this needs `test/threads.jl` extended over odd thread
-counts and a re-check that threaded still equals serial bit for bit.
+**Change taken** the static `tids` range is gone. `FitState` carries a
+`ScratchPool` of the scratch ids no task owns; a split node whose right child
+has at least `SUBTREE_MIN_ROWS = 256` rows tries to take one and spawns that
+sibling, and `best_split` and `partition!` borrow spare ids for the duration
+of one call. `SCRATCH_PER_THREAD = 2` sets per worker keep a task blocked on a
+sibling from starving a runnable one. Against the same one-thread time, case 1
+at 10 threads went from 2.71x to 6.8x and the wide (`p = 60`) case from 2.72x
+to 7.1x, each the median of five runs of a min-of-five benchmark; ten-thread
+timings spread about 15% run to run.
 
 ### 8. `score_row`'s column-major loads
 

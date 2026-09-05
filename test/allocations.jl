@@ -19,6 +19,21 @@ using StableRNGs, DataFrames, CategoricalArrays
     @test score_row_alloc() == 0
 end
 
+@testset "a serial fit allocates one scratch set" begin
+    # `nthreads == 1` must build exactly one `Scratch`, not `SCRATCH_PER_THREAD`
+    # of them: a second set on this design is 100_000 * 28 = 2.8 MB, which the
+    # budget below excludes. Measured 24.2 MB, deterministic to the byte.
+    function serial_fit_alloc()
+        rng = StableRNG(42)
+        n, p = 100_000, 6
+        X = rand(rng, n, p)
+        y = sum(floor.(4 .* X[:, j]) for j in 1:3) .+ 0.1 .* randn(rng, n)
+        fit_tree(X, y; nthreads = 1, max_depth = 8)
+        return @allocated fit_tree(X, y; nthreads = 1, max_depth = 8)
+    end
+    @test serial_fit_alloc() < 25_500_000
+end
+
 @testset "shap recursion does not allocate per row after warm-up" begin
     # Fails the moment a `copy(path)` (or any other fresh Vector{PathElem})
     # comes back into `visit!`: the first row grows the pool, so a second row
