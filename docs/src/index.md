@@ -33,10 +33,16 @@ print_tree(TreeView(tree))
 
 ## Performance
 
-`fit_tree` allocates one scratch set per worker, each of size `n` (four
-vectors plus an `Int32` buffer), so memory is about `nthreads × 5 × 8n` bytes
-plus the `n × p` `Int32` presort. For `Softmax(K)` two of the four vectors
-hold `K-1` coordinates per row, so their share grows by that factor.
+`fit_tree` grows sibling subtrees concurrently, each on one scratch set: four
+vectors plus an `Int32` buffer. It allocates two sets per worker, so a task
+blocked on a sibling never denies a runnable one its buffers, and exactly one
+set at `nthreads = 1`. A set's vectors start empty and grow only to the
+largest node that set is used on, which is what keeps the second set per
+worker affordable: on a 200_000-row, 20-column `MSE` fit at ten threads the
+live scratch measures 80 MiB, against 137 MiB if all twenty sets were sized
+to `n` up front and 69 MiB for one eagerly sized set per worker. The `n × p`
+`Int32` presort sits next to it. For `Softmax(K)` two of the four vectors hold
+`K-1` coordinates per row, so their share grows by that factor.
 
 ## Index
 

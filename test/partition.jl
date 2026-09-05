@@ -32,7 +32,7 @@ end
     end
     leftrows = idx[span[1:3:end][1:10], 1]   # 10 of the span's rows, picked by position in column 1
     isleft = zeros(Bool, n)
-    scratch = [LinearTrees.Scratch{Float64,Float64}(n) for _ in 1:2]
+    scratch = [LinearTrees.Scratch{Float64,Float64}() for _ in 1:2]
     expected = [vcat(filter(i -> i in leftrows, idx[span, j]), filter(i -> !(i in leftrows), idx[span, j])) for j in 1:p]
     nleft = LinearTrees.partition!(idx, span, leftrows, isleft, scratch, 1:2)
     @test nleft == 10
