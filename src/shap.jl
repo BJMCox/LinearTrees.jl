@@ -266,6 +266,15 @@ satisfies the efficiency identity.
 expected_score(tree::LinearTree) = _expected_score(tree, 1)
 
 """
+Row gate for `shap`'s `row_blocks`. `PARALLEL_MIN_ROWS` is calibrated on one
+`score_row` walk per row; one SHAP row instead visits every node of the tree,
+so the same amount of work is reached after `PARALLEL_MIN_ROWS / nodes` rows.
+On the shared gate a depth-12 tree got no parallelism at all below 2^14 rows,
+which is above every size SHAP is normally called at.
+"""
+shap_min_rows(tree::LinearTree) = max(2, cld(PARALLEL_MIN_ROWS, length(tree.nodes)))
+
+"""
     shap!(values, clipped, tree, X; nthreads=Threads.nthreads())
 
 In-place [`shap`](@ref): write into `values` (`n × p`, or `n × p × (K-1)` for
@@ -276,7 +285,7 @@ function shap!(values, clipped::Vector{Bool}, tree::LinearTree{T,V}, X::Abstract
         nthreads = Threads.nthreads()) where {T,V}
     n = size(X, 1)
     fill!(values, 0)
-    row_blocks(n, nthreads) do rs
+    row_blocks(n, nthreads; minrows = shap_min_rows(tree)) do rs
         pool = PathPool()   # one per block: never shared between tasks; grows lazily, see PathPool
         for i in rs
             shap_recurse!(values, tree, view(X, i, :), i, 1, pool, 1.0, 1.0, 0)

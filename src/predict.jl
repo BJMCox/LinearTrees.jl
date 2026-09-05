@@ -131,10 +131,15 @@ end
 predict!(::AbstractVector, ::LinearTree{T,V,<:Softmax}, ::AbstractMatrix; kw...) where {T,V} =
     throw(ArgumentError("Softmax prediction needs an n × K matrix output"))
 
-"Run `f` over `nthreads` contiguous row blocks, threaded when `n` is large enough."
-function row_blocks(f, n::Integer, nthreads::Integer)
+"""
+Run `f` over `nthreads` contiguous row blocks, threaded once there are
+`minrows` rows. The default, `PARALLEL_MIN_ROWS`, is calibrated on one
+`score_row` walk per row, which is what `score` and `predict!` do; a caller
+whose per-row work is orders of magnitude heavier passes its own, lower, gate.
+"""
+function row_blocks(f, n::Integer, nthreads::Integer; minrows::Integer = PARALLEL_MIN_ROWS)
     nthreads = clamp(nthreads, 1, Threads.nthreads())
-    if nthreads == 1 || n < PARALLEL_MIN_ROWS
+    if nthreads == 1 || n < minrows
         f(1:n)
     else
         chunk = cld(n, nthreads)

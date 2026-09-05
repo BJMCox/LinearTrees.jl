@@ -192,3 +192,22 @@ end
     @test res.base != t.base
     @test vec(sum(res.values; dims = 2)) .+ res.base ≈ score(t, X; clip = false) atol = 1e-12
 end
+
+@testset "shap threads below PARALLEL_MIN_ROWS and stays bit-identical" begin
+    # Fails while `shap!` uses the default `row_blocks` gate: a 2_000-row call
+    # then runs in a single block whatever `nthreads` says, so a depth-12
+    # tree gets no parallelism at exactly the sizes SHAP is used at.
+    rng = StableRNG(37)
+    n = 2_000
+    X = rand(rng, n, 5)
+    y = sin.(3 .* X[:, 1]) .+ 2 .* X[:, 2] .* (X[:, 3] .> 0.5) .+ 0.05 .* randn(rng, n)
+    t = fit_tree(X, y; max_depth = 10)
+    nt = min(4, Threads.nthreads())
+    r1 = shap(t, X; nthreads = 1)
+    rn = shap(t, X; nthreads = nt)
+    @test r1.values == rn.values                 # bit-for-bit
+    @test r1.clipped == rn.clipped
+    nblocks = Threads.Atomic{Int}(0)
+    LinearTrees.row_blocks(_ -> Threads.atomic_add!(nblocks, 1), n, nt; minrows = LinearTrees.shap_min_rows(t))
+    @test nblocks[] == nt
+end

@@ -51,3 +51,25 @@ end
     root = LinearTree{T,T,MSE}([N(lintercept = 7.0)], UInt64[], MSE(), -1.0, 1.0, 0.0, 1, true)
     @test score(root, zeros(1, 1)) == [1.0]        # con root is clamped too
 end
+
+@testset "row_blocks takes a per-caller row minimum" begin
+    # `PARALLEL_MIN_ROWS` is calibrated on `score_row`, which costs a tree walk
+    # per row. `shap` costs a walk of every node per row -- thousands of times
+    # more -- so it must be able to thread far below that gate. Fails while
+    # `row_blocks` hard-codes the threshold: 1_000 rows then run in one block.
+    nt = min(4, Threads.nthreads())
+    # blocks run on separate tasks, so they are counted with an atomic and the
+    # rows they cover are marked in place; pushing to a shared Vector here
+    # trips Julia's concurrent-resize check
+    nblocks = Threads.Atomic{Int}(0)
+    covered = zeros(Int, 1_000)
+    count_block(rs) = (Threads.atomic_add!(nblocks, 1); covered[rs] .+= 1)
+    LinearTrees.row_blocks(count_block, 1_000, nt; minrows = 100)
+    @test nblocks[] == nt
+    @test all(==(1), covered)
+    # the default is still the shared gate
+    nblocks[] = 0
+    LinearTrees.row_blocks(count_block, 1_000, nt)
+    @test nblocks[] == 1
+    @test all(==(2), covered)
+end
