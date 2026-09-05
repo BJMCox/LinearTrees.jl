@@ -66,9 +66,11 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     # `niter` reaches an `Int` field, so a non-integer would surface as an
     # `InexactError` from deep inside the fit rather than as a rejected argument
     isinteger(niter) && niter >= 1 || throw(ArgumentError("niter must be an integer >= 1, got $niter"))
-    max_depth >= 0 || throw(ArgumentError("max_depth must be >= 0, got $max_depth"))
+    isinteger(max_depth) && max_depth >= 0 || throw(ArgumentError("max_depth must be an integer >= 0, got $max_depth"))
+    isinteger(max_lin_chain) && max_lin_chain >= 1 || throw(ArgumentError("max_lin_chain must be an integer >= 1, got $max_lin_chain"))
     min_fit >= 1 || throw(ArgumentError("min_fit must be >= 1, got $min_fit"))
     min_leaf >= 1 || throw(ArgumentError("min_leaf must be >= 1, got $min_leaf"))
+    min_sum_hessian >= 0 || throw(ArgumentError("min_sum_hessian must be >= 0, got $min_sum_hessian"))
     # below 1 the padding term goes negative, so the clamp band closes inside the
     # observed range of `y` and every extreme score is pulled toward the middle
     truncation_factor >= 1 || throw(ArgumentError("truncation_factor must be >= 1, got $truncation_factor"))
@@ -185,7 +187,9 @@ function refresh!(st::FitState, rows, tid)
     if st.nthreads == 1 || length(rows) < PARALLEL_MIN_ROWS
         refresh_chunk!(st, rows, ε)
     else
-        chunks = collect(Iterators.partition(rows, cld(length(rows), st.nthreads)))
+        # plain index vectors, not views of `rows`: a view-of-a-view into `st.y` makes
+        # Base's alias check recurse during inference and leaves dynamic dispatch behind
+        chunks = [rows[r] for r in Iterators.partition(eachindex(rows), cld(length(rows), st.nthreads))]
         Threads.@threads for ch in chunks
             refresh_chunk!(st, ch, ε)
         end

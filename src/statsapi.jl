@@ -240,7 +240,7 @@ function StatsAPI.deviance(m::LinearTreeClassifierFit)
         return deviance(loss, Float64.(m.y .== 1), score(m.tree, m.X), m.w)
     end
     s = score(m.tree, m.X)
-    f = [SVector{loss.K - 1}(view(s, i, :)) for i in axes(s, 1)]
+    f = [SVector{nclasses(loss) - 1}(view(s, i, :)) for i in axes(s, 1)]
     return deviance(loss, m.y, f, m.w)
 end
 
