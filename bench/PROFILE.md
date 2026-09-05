@@ -350,14 +350,20 @@ Case 6 is unchanged serially and now scales.
 
 ### Where the six cases stand now
 
-| Case | serial (ms) | 10 threads (ms) | speedup | change vs base, serial |
-|---|---|---|---|---|
-| 1 `fit_tree` MSE | 2183 | 851 | 2.57x | -17% |
-| 2 `fit_tree` Softmax+cat | 1053 | 383 | 2.75x | -5% |
-| 3 `fit_tree` MAD | 931 | 430 | 2.17x | -12% |
-| 4 `fit` on a DataFrame | 414 | 110 | 3.76x | -32% |
-| 5 `predict` (1e6 rows) | 86.8 | 9.22 | 9.41x | 0 |
-| 6 `shap` (1e4 rows) | 3763 | 458 | 8.22x | 0 serial, 8.3x threaded |
+From `bench/profiles/summary-t1.txt` and `summary-t10.txt`, the numbers as
+committed. Run-to-run spread on the fit cases is a few percent, so the
+per-fix tables above and this one differ slightly where the same quantity
+appears in both.
+
+| Case | serial (ms) | 10 threads (ms) | speedup | change vs base, serial | allocs | bytes |
+|---|---|---|---|---|---|---|
+| 1 `fit_tree` MSE | 2101 | 850 | 2.47x | -20% | 70_453 | 102.1 MB |
+| 2 `fit_tree` Softmax+cat | 1062 | 380 | 2.79x | -5% | 9_529 | 35.1 MB |
+| 3 `fit_tree` MAD | 926 | 429 | 2.16x | -12% | 20_229 | 34.8 MB |
+| 4 `fit` on a DataFrame | 415 | 110 | 3.76x | -34% | 123_917 | 49.1 MB |
+| 5 `predict` (1e6 rows) | 87.0 | 9.20 | 9.45x | 0 | 3 | 8.0 MB |
+| 5 `predict!` (1e6 rows) | 86.8 | 12.3 | 7.06x | 0 | 0 | 0 |
+| 6 `shap` (1e4 rows) | 3799 | 466 | 8.15x | 0 serial, 8.1x threaded | 154 | 0.85 MB |
 
 ## Ranked targets
 
@@ -472,7 +478,7 @@ sharing question arises.
 
 **Where** `src/fit.jl:406-424` and `:542-556`.
 
-**Share** case 1 reaches 2.45x on 10 threads, case 3 2.20x, against 9.65x for
+**Share** case 1 reaches 2.47x on 10 threads, case 3 2.16x, against 9.45x for
 `predict`.
 
 **Change** `best_split` threads over features only above `PARALLEL_MIN_ROWS`
