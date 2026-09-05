@@ -56,6 +56,9 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
     best = nocandidate(T, V)
     nu = nunique(xs)
     nc = ncoord(V)
+    # `n` is fixed for the whole scan, so the penalty term's `log(n)` is
+    # computed once here instead of once per candidate in the sweep below
+    logn = score_logn(rule, n)
 
     # con
     if allowed(rule, CON)
@@ -90,14 +93,14 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
         if allowed(rule, PCON)
             bl, rl = fit_con(left); br, rr = fit_con(right)
             rss = rl + rr
-            sc = selection_score(rule, PCON, sum(rss), n, dmin, nc)
+            sc = selection_score(rule, PCON, sum(rss), n, dmin, nc, logn)
             sc < best.score && (best = Candidate{T,V}(PCON, t, zero(V), bl, zero(V), br, rss, sc))
         end
         if allowed(rule, BLIN) && nu >= MIN_UNIQUE_LIN
             r = fit_blin(left, right, t)
             if r !== nothing
                 al, bl, ar, br, rss = r
-                sc = selection_score(rule, BLIN, sum(rss), n, dmin, nc)
+                sc = selection_score(rule, BLIN, sum(rss), n, dmin, nc, logn)
                 sc < best.score && (best = Candidate{T,V}(BLIN, t, al, bl, ar, br, rss, sc))
             end
         end
@@ -106,7 +109,7 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
             if rl !== nothing && rr !== nothing
                 al, bl, rssl = rl; ar, br, rssr = rr
                 rss = rssl + rssr
-                sc = selection_score(rule, PLIN, sum(rss), n, dmin, nc)
+                sc = selection_score(rule, PLIN, sum(rss), n, dmin, nc, logn)
                 sc < best.score && (best = Candidate{T,V}(PLIN, t, al, bl, ar, br, rss, sc))
             end
         end

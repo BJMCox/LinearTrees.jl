@@ -32,16 +32,34 @@ function allowed(r::MinDeviance, k::ModelKind)
 end
 allowed(::GainRule, ::ModelKind) = throw(ArgumentError("GainRule is reserved for boosting"))
 
+"""
+    score_logn(rule, n)
+
+`log(n)` for `selection_score`'s penalty term. The split sweep holds one value
+per feature instead of calling `log` once per candidate; the term itself stays
+inside `selection_score`, so the arithmetic that produces the score, and hence
+the score, is unchanged to the last bit.
+
+Returns zero where `selection_score` returns `Inf` without reaching the
+penalty (`n <= 0`, or a non-finite `n`), which also keeps `log` off a negative
+argument.
+"""
+score_logn(::BIC, n) = (isfinite(n) && n > 0) ? log(n) : zero(float(n))
+score_logn(::MinDeviance, n) = zero(float(n))
+score_logn(::GainRule, n) = throw(ArgumentError("GainRule is reserved for boosting"))
+
 # `ncoord` is the number of coefficient coordinates (K-1 for softmax, 1 otherwise):
 # every model kind fits `ncoord` times its scalar parameter count, so the BIC
 # penalty scales with it while the deviance term already sums over coordinates.
-@inline function selection_score(r::BIC, kind::ModelKind, surrogate, n, dmin, ncoord::Integer = 1)
+@inline function selection_score(r::BIC, kind::ModelKind, surrogate, n, dmin, ncoord::Integer = 1,
+        logn = score_logn(r, n))
     (isfinite(surrogate) && isfinite(n) && n > 0) || return Inf
     dev = max(surrogate, dmin)
-    return n * log(dev / n) + ncoord * r.dof[Int(kind) + 1] * log(n)
+    return n * log(dev / n) + ncoord * r.dof[Int(kind) + 1] * logn
 end
 
-@inline function selection_score(r::MinDeviance, kind::ModelKind, surrogate, n, dmin, ncoord::Integer = 1)
+@inline function selection_score(r::MinDeviance, kind::ModelKind, surrogate, n, dmin, ncoord::Integer = 1,
+        logn = zero(float(n)))
     allowed(r, kind) || return Inf
     return isfinite(surrogate) ? Float64(surrogate) : Inf
 end
