@@ -169,9 +169,9 @@ one-sided weight (`τ` or `1-τ`) instead.
 """
 function irls_weights!(h::AbstractVector{T}, loss::Union{Quantile,MAD}, y::AbstractVector, f::AbstractVector;
         ε = max(irls_epsilon(y .- f, ones(T, length(y))), sqrt(eps(T)) * max(maximum(abs, y), one(T)))) where {T}
-    r = y .- f
-    for i in eachindex(h)
-        h[i] = max(l1weight(loss, r[i]) / max(abs(r[i]), ε), T(HMIN))
+    for i in eachindex(h, y, f)
+        r = y[i] - f[i]
+        h[i] = max(l1weight(loss, r) / max(abs(r), ε), T(HMIN))
     end
     return h
 end

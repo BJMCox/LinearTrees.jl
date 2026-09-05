@@ -95,7 +95,7 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{T}, w::Vector{T}, loss::L, rule::R,
         Node{T,V}[], UInt64[], categorical, iscat, nlevels, loss, rule, lo, hi, max_depth, T(min_fit), T(min_leaf),
         T(min_sum_hessian), max_lin_chain, truncate, nthreads, niter)
     rows = collect(Int32(1):Int32(n))
-    refresh!(st, rows)
+    refresh!(st, rows, 1)
     st.nodes, st.catmasks = grow_subtree(st, rows, 1:n, 0, 0, 1:nthreads)
     # Fold the clamped start score into the root node: training accumulates it in
     # st.f before any node is fit, but prediction starts score_row at zero, so the
@@ -131,11 +131,11 @@ weight. Rows are independent, so large row sets are processed in chunks on
 separate threads; there is no cross-row reduction, so the result is identical
 to the serial pass.
 """
-function refresh!(st::FitState, rows)
+function refresh!(st::FitState, rows, tid)
+    ε = node_epsilon(st, rows, tid)
     if st.nthreads == 1 || length(rows) < PARALLEL_MIN_ROWS
-        refresh_chunk!(st, rows, node_epsilon(st, rows))
+        refresh_chunk!(st, rows, ε)
     else
-        ε = node_epsilon(st, rows)
         chunks = collect(Iterators.partition(rows, cld(length(rows), st.nthreads)))
         Threads.@threads for ch in chunks
             refresh_chunk!(st, ch, ε)
@@ -144,11 +144,24 @@ function refresh!(st::FitState, rows)
     return st
 end
 
-# `ε` for IRLS is computed once over the whole `rows` set so a chunked pass
-# matches the serial one exactly; smooth losses ignore it.
-node_epsilon(st::FitState{T}, rows) where {T} = issmooth(st.loss) ? zero(T) :
-    max(irls_epsilon(view(st.y, rows) .- view(st.f, rows), view(st.w, rows)),
+"""
+`ε` for IRLS, computed once over the whole `rows` set so a chunked pass
+matches the serial one exactly; smooth losses ignore it. Runs on worker
+`tid`'s scratch: the residual goes in `.ws`, `median_abs!`'s abs-value buffer
+is `.xs` and its sort order is `perms[tid]`. All three are free here for the
+same reason they are free in `irls_refit` -- `best_split` has returned and
+`partition!` has not yet run -- so the node's ε costs no allocation.
+"""
+function node_epsilon(st::FitState{T}, rows, tid) where {T}
+    issmooth(st.loss) && return zero(T)
+    sc = st.scratch[tid]
+    resid = view(sc.ws, 1:length(rows))
+    for (k, i) in enumerate(rows)
+        resid[k] = st.y[i] - st.f[i]
+    end
+    return max(irls_epsilon!(sc.xs, st.perms[tid], resid, view(st.w, rows)),
         sqrt(eps(T)) * max(maximum(abs, view(st.y, rows)), one(T)))
+end
 
 function refresh_chunk!(st::FitState, rows, ε)
     yv = view(st.y, rows); fv = view(st.f, rows)
@@ -254,31 +267,29 @@ candidate order per coordinate `k`; each is scanned in turn and the
 lowest-scoring candidate wins. A scalar `V` has exactly one coordinate, so
 this reduces to the original single-order scan.
 """
-function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin) where {T,V}
+function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin, tid) where {T,V}
     L = st.nlevels[j]
-    sz = zeros(V, L); sw = zeros(V, L); nrows = zeros(Int, L)
+    # `counts` is offset by one so it doubles as the counting sort's histogram
+    sz = zeros(V, L); sw = zeros(V, L); counts = zeros(Int, L + 1)
     for i in rows
         c = Int(st.X[i, j])
         sz[c] += st.h[i] .* st.z[i]
         sw[c] += st.h[i]
-        nrows[c] += 1
+        counts[c + 1] += 1
     end
-    present = findall(>(0), nrows)
+    present = [c for c in 1:L if counts[c + 1] > 0]
     length(present) < 2 && return nocandidate(T, V), Int[]
     # Bucket rows by level in one O(L + |rows|) counting-sort pass, then walk
     # the buckets in rank order to fill the scratch. No O(L · |rows|) rescans.
     # The bucketing itself doesn't depend on level order, so it is built once
-    # and reused for every coordinate's ordering below.
-    counts = zeros(Int, L + 1)
-    for i in rows
-        counts[Int(st.X[i, j]) + 1] += 1
-    end
+    # and reused for every coordinate's ordering below. `perms[tid]` is this
+    # worker's buffer and is free until `partition!` runs, well after the scan.
     cumoffset = zeros(Int, L + 1)
     for c in 1:L
         cumoffset[c + 1] = cumoffset[c] + counts[c + 1]
     end
     cursor = copy(cumoffset)
-    bucketed = Vector{Int32}(undef, length(rows))
+    bucketed = st.perms[tid]
     for i in rows
         c = Int(st.X[i, j])
         cursor[c] += 1
@@ -332,7 +343,7 @@ function best_split_serial(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, 
     best = nocandidate(T, V); bestj = 0; bestleft = Int[]
     for j in features
         if st.iscat[j]
-            c, leftcodes = scan_categorical(st, sc, rows, j, dmin)
+            c, leftcodes = scan_categorical(st, sc, rows, j, dmin, tid)
         else
             m = gather!(st, sc, span, j)
             c = scan_feature(view(sc.xs, 1:m), view(sc.zs, 1:m), view(sc.hs, 1:m), view(sc.ws, 1:m),
@@ -373,13 +384,13 @@ function best_split(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, tids::U
     return best, bestj, bestleft
 end
 
-function dmin_for(st::FitState{T,V}, rows) where {T,V}
+"`nw` is the node's total weight, which `grow_subtree` already holds; recomputing it here would be a second O(|rows|) pass."
+function dmin_for(st::FitState{T,V}, rows, nw) where {T,V}
     s = zero(T)
     for i in rows
         s += sum(st.h[i] .* st.z[i] .^ 2)   # sum over coordinates for vector V; a no-op for scalar V
     end
-    n = sum(view(st.w, rows))
-    return eps(T) * max(s, n)
+    return eps(T) * max(s, nw)
 end
 
 leafnode(st::FitState{T,V}, rows, b) where {T,V} =
@@ -432,12 +443,12 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
         update_score!(st, rows, me)
         return Node{T,V}[me], UInt64[]
     end
-    dmin = dmin_for(st, rows)
+    dmin = dmin_for(st, rows, nw)
     best, bestj, leftcodes = best_split(st, rows, span, dmin, tids)
-    con_surrogate = fit_con(node_sums(st, rows))[2]
+    con_intercept, con_surrogate = fit_con(node_sums(st, rows))
     gain = T(sum(con_surrogate) - sum(best.surrogate))
     if best.kind == CON || bestj == 0
-        me = leafnode(st, rows, best.kind == CON ? best.lintercept : fit_con(node_sums(st, rows))[1])
+        me = leafnode(st, rows, best.kind == CON ? best.lintercept : con_intercept)
         me = refit_node(st, me, rows, first(tids))
         update_score!(st, rows, me)
         return Node{T,V}[me], UInt64[]
@@ -454,7 +465,7 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
         me = Node{T,V}(; feature = bestj, threshold = T(NaN), lcoef = best.lcoef, lintercept = best.lintercept,
             rcoef = best.lcoef, rintercept = best.lintercept, xmin, xmax, cover = nw, xmean, gain, model = LIN)
         me = refit_node(st, me, rows, first(tids))
-        update_score!(st, rows, me); refresh!(st, rows)
+        update_score!(st, rows, me); refresh!(st, rows, first(tids))
         cnodes, cmasks = grow_subtree(st, rows, span, depth, linchain + 1, tids)::Subtree{T,V}
         me = Node{T,V}(me; left = Int32(2), right = Int32(2))
         nodes = vcat(Node{T,V}[me], shift_subtree(cnodes, Int32(1), Int32(0)))
@@ -471,8 +482,16 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
         catstart, catwords)
     me = refit_node(st, me, rows, first(tids), masks)
     update_score!(st, rows, me, masks)
-    refresh!(st, rows)
+    refresh!(st, rows, first(tids))
+    # count first so both sides are sized exactly: growing them from empty costs
+    # about 2·log2(|rows|) reallocations per split node. The push order is the
+    # parent's row order, which every downstream sum depends on, so it stays.
+    nleftrows = 0
+    for i in rows
+        nleftrows += goes_left(st, me, i, masks)
+    end
     leftrows = Int32[]; rightrows = Int32[]
+    sizehint!(leftrows, nleftrows); sizehint!(rightrows, length(rows) - nleftrows)
     for i in rows
         (goes_left(st, me, i, masks) ? push!(leftrows, i) : push!(rightrows, i))
     end
