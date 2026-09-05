@@ -515,6 +515,14 @@ Only worth it if `predict` becomes the bottleneck.
 
 ## P2: the scan-speed pass
 
+Protocol for every number in this section: Apple M4 Pro, Julia 1.12.7, eleven
+`@benchmark` samples, and the two arms of each comparison run alternately from
+the same source tree with only the change under test toggled. Run-to-run drift
+on this machine reached 8% during the pass, so a before/after pair taken
+sequentially is not trustworthy at this scale; best-of-eleven is quoted next to
+the median wherever the margin is small. Reproduce with `bench/ab.jl` (case 1
+is its first row) or with the case-1 data from `bench/cases.jl` alone.
+
 ### 1. Score once per kind per feature (ranked target 1, done)
 
 `scan_feature` now carries the lowest `devkey` each of `pcon`, `blin`
@@ -524,9 +532,10 @@ three times per split point. `devkey` is the deviance in the form the rule
 compares it in -- `max(dev, dmin)` for `BIC`, the raw value for `MinDeviance`,
 whose score has no floor -- so the per-kind minimiser is the one the
 interleaved sweep kept, and the key hands to `selection_score` for a
-bit-identical score. Case 1 (Apple M4 Pro, Julia 1.12.7, median of five)
-drops from **2210 ms to 1504 ms serial (-32%)** and from **952 ms to 621 ms on
-ten threads (-35%)**; allocations are unchanged. Only an exact cross-kind score
+bit-identical score. Case 1 drops from **2086 ms to 1429 ms serial (-31%)**
+and from **826 ms to 542 ms on ten threads (-34%)**; allocations are
+unchanged; best-of-eleven, 2023 -> 1363 ms serial and 801 -> 532 ms on ten
+threads, gives the same picture. Only an exact cross-kind score
 tie can now resolve differently (it goes to the earlier kind in
 `(con, lin, pcon, blin, plin)` rather than to the lower split point), and the
 fitted trees are bit-identical on all thirteen designs checked: the four
@@ -541,10 +550,12 @@ sweep still multiplied every row sum by it. `unit_hessian(loss)` plus a
 `all(isone, w)` check at the start of the fit sets `FitState.unith`; the split
 scan then gets `UnitHessians{V}`, an `hs` vector of `OneHessian` markers whose
 `addrow`/`subrow` methods are the general ones with every `h *` dropped, and
-`gather!` stops writing `sc.hs` at all. Case 1, same machine and protocol,
-against the score-once commit: **serial 1504 -> 1402 ms (-6.8%)** and
-**ten threads 621 -> 552 ms (-11%)**, over the 3% bar the brief set. The
-multiply dropped is by exactly one, so the trees are bit-identical, checked on
+`gather!` stops writing `sc.hs` at all. Case 1, with the path switched off and
+on at `FitState.unith` and everything else held fixed: **serial 1554 -> 1432 ms
+(-7.9%)** median, 1457 -> 1360 ms best-of-eleven (-6.6%); **ten threads
+571 -> 536 ms (-6.0%)** median, 551 -> 504 ms best (-8.5%) -- over the 3% bar
+the brief set on both. The multiply dropped is by exactly one, so the trees are
+bit-identical, checked on
 the same thirteen designs and on the case-1 tree itself (3808 nodes, every node
 field compared as a bit pattern).
 
@@ -575,12 +586,16 @@ three measured reasons.
    exact in 56% of random cases. The disagreement in (1) is the conditioning of
    the blin normal equations at `Float64`, not a defect of either ordering --
    which is also why it cannot be tuned away.
-3. **No end-to-end serial win, and the trees move.** Case 1 serial goes
-   `1402 -> 1469 ms` (worse; the tree changes, so the work changes) and
-   ten-thread `552 -> 525 ms`. The fitted trees differ on 135 of case 1's 3808
+3. **No end-to-end win to weigh against that, and the trees move.** Case 1
+   measured `1402 -> 1469 ms` serial and `552 -> 525 ms` on ten threads, but
+   those two runs were sequential rather than alternated and the tree itself
+   changes, so the work changes with it: the end-to-end comparison carries no
+   weight either way, and the isolated sweep above is the only trustworthy
+   speed number. The fitted trees differ on 135 of case 1's 3808
    nodes, on all 28 nodes of the `mse_bic` fixture, and the `softmax_cat`
-   fixture grows from 36 to 54 nodes. Blessing that would mean regenerating
-   every partition fixture to buy a threaded-only gain.
+   fixture grows from 35 to 53 nodes. Blessing that means regenerating every
+   partition fixture, and (1) and (2) say the new trees would be no better
+   founded than the old ones.
 
 Worth revisiting only together with the conditioning: solving the blin system
 on centred sums (`x - x̄`) would cut both the cancellation and the operation

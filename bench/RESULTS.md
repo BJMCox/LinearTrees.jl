@@ -113,10 +113,19 @@ kind, so `scan_feature` now carries the lowest deviance each of `pcon`, `blin`
 and `plin` reaches through the split sweep and calls `selection_score` once per
 kind per feature instead of once per kind per split point. On the P1 profiling
 case 1 (`fit_tree` MSE, `n = 200_000`, `p = 20`, `max_depth = 12`, Apple M4
-Pro, Julia 1.12.7, median of five `@benchmark` samples) this takes the serial
-median from **2210 ms to 1504 ms (-32%)** and the ten-thread median from
-**952 ms to 621 ms (-35%)**, with the allocation count unchanged. The fitted
+Pro, Julia 1.12.7, eleven `@benchmark` samples with the two arms run
+alternately) this takes the serial median from **2086 ms to 1429 ms (-31%)**
+and the ten-thread median from **826 ms to 542 ms (-34%)**, with the
+allocation count unchanged. The fitted
 trees are bit-identical on the four stored partition designs, the eight PILOT
 reference fixtures and a `Softmax(3)` design with a categorical column; only an
 exact cross-kind score tie can resolve differently, and it now goes to the kind
 that comes first in `(con, lin, pcon, blin, plin)`.
+
+On top of that, an unweighted `MSE` fit has a row hessian of exactly one on
+every row, so the scan takes an accumulation path with the multiply by it
+removed: another **-7.9%** serial (1554 -> 1432 ms on the same case) and
+**-6.0%** on ten threads (571 -> 536 ms), bit-identical, since the factor
+dropped is exactly one. `bench/PROFILE.md` has the protocol, the two changes
+that were measured and rejected (a Schur-complement form of the `blin` solve
+and `@inbounds` on the two hottest loops), and the numbers behind both.
