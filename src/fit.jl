@@ -631,6 +631,9 @@ score_logn(r::PconOnly, n) = score_logn(r.inner, n)
 devkey(r::PconOnly, surrogate, dmin) = devkey(r.inner, surrogate, dmin)
 selection_score(r::PconOnly, k, s, n, dmin, ncoord::Integer = 1, logn = score_logn(r, n)) =
     allowed(r, k) ? selection_score(r.inner, k, s, n, dmin, ncoord, logn) : Inf
+ridge(r::PconOnly) = ridge(r.inner)
+@inline fit_con(s::MomentSums, r::PconOnly) = fit_con(s, r.inner)
+@inline fit_lin(s::MomentSums, r::PconOnly; tol = SINGULAR_TOL) = fit_lin(s, r.inner; tol)
 
 """
 Order the node's levels by weighted mean working response, scan a `pcon`
@@ -850,7 +853,7 @@ function grow_subtree(st::FitState{T,V}, rows::RowView, span::UnitRange{Int}, de
     nw = sum(view(st.w, rows))
     sumh = sum(sum(h) for h in view(st.h, rows))   # sum over coordinates too, for vector V
     if nw < st.min_fit || depth >= st.max_depth || sumh < st.min_sum_hessian || linchain >= st.max_lin_chain
-        b = fit_con(node_sums(st, rows))[1]
+        b = fit_con(node_sums(st, rows), st.rule)[1]
         me = leafnode(st, rows, b)
         me = refit_node(st, me, rows, tid)
         update_score!(st, rows, me)
@@ -869,7 +872,7 @@ function grow_subtree(st::FitState{T,V}, rows::RowView, span::UnitRange{Int}, de
     finally
         giveback!(st.pool, ids)
     end
-    con_intercept, con_surrogate = fit_con(node_sums(st, rows))
+    con_intercept, con_surrogate = fit_con(node_sums(st, rows), st.rule)
     gain = T(sum(con_surrogate) - sum(best.surrogate))
     if best.kind == CON || bestj == 0
         me = leafnode(st, rows, best.kind == CON ? best.lintercept : con_intercept)
@@ -1033,17 +1036,17 @@ function irls_refit(st::FitState{T,V}, n::Node{T,V}, rows, tid, niter, masks::Ve
             end
         end
         if n.model == CON
-            b = fit_con(left)[1]
+            b = fit_con(left, st.rule)[1]
             n = Node{T,V}(n; lintercept = b, rintercept = b)
         elseif n.model == LIN
-            r = fit_lin(left); r === nothing && break
+            r = fit_lin(left, st.rule); r === nothing && break
             a, b, _ = r
             n = Node{T,V}(n; lcoef = a, lintercept = b, rcoef = a, rintercept = b)
         elseif n.model == PCON
-            bl = fit_con(left)[1]; br = fit_con(right)[1]
+            bl = fit_con(left, st.rule)[1]; br = fit_con(right, st.rule)[1]
             n = Node{T,V}(n; lintercept = bl, rintercept = br)
         elseif n.model == PLIN
-            rl = fit_lin(left); rr = fit_lin(right)
+            rl = fit_lin(left, st.rule); rr = fit_lin(right, st.rule)
             (rl === nothing || rr === nothing) && break
             n = Node{T,V}(n; lcoef = rl[1], lintercept = rl[2], rcoef = rr[1], rintercept = rr[2])
         else # BLIN

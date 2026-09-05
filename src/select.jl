@@ -17,10 +17,24 @@ struct MinDeviance <: SelectionRule
     kinds::Tuple{Vararg{ModelKind}}
 end
 
-"Reserved for sub-project two."
+"""
+    GainRule(; lambda_slope = 1.0, lambda_intercept = 1.0, gamma = 0.0)
+
+Boosting's selection rule (Guryanov 2019, eq. 12 and 13). Offers `con`,
+`pcon`, and `plin`. The regularised deviance of a fit is `Σ h (z − a x − b)²
++ lambda_slope a² + lambda_intercept b²`, obtained by adding the two ridges
+to the Gram sums in `fit_lin` and `fit_con`. A split's score is its
+children's regularised deviance plus `gamma` per coefficient coordinate, so a
+split is taken exactly when its gain over the parent's constant fit exceeds
+`gamma`. `BIC`'s `dof` penalty and `dmin` floor play no part.
+"""
 struct GainRule <: SelectionRule
-    threshold::Float64
+    lambda_slope::Float64
+    lambda_intercept::Float64
+    gamma::Float64
 end
+GainRule(; lambda_slope = 1.0, lambda_intercept = 1.0, gamma = 0.0) =
+    GainRule(Float64(lambda_slope), Float64(lambda_intercept), Float64(gamma))
 
 allowed(::BIC, ::ModelKind) = true
 function allowed(r::MinDeviance, k::ModelKind)
@@ -30,7 +44,11 @@ function allowed(r::MinDeviance, k::ModelKind)
     end
     return false
 end
-allowed(::GainRule, ::ModelKind) = throw(ArgumentError("GainRule is reserved for boosting"))
+allowed(::GainRule, k::ModelKind) = k == CON || k == PCON || k == PLIN
+
+"L2 ridges `(λ_slope, λ_intercept)` a rule adds to the closed forms. Zero for every rule but `GainRule`."
+ridge(::SelectionRule) = (0.0, 0.0)
+ridge(r::GainRule) = (r.lambda_slope, r.lambda_intercept)
 
 """
     score_logn(rule, n)
@@ -46,7 +64,8 @@ argument.
 """
 score_logn(::SelectionRule, n) = (isfinite(n) && n > 0) ? log(n) : zero(float(n))   # BIC and any rule with a log-n penalty
 score_logn(::MinDeviance, n) = zero(float(n))
-score_logn(::GainRule, n) = throw(ArgumentError("GainRule is reserved for boosting"))
+# no log-n penalty, so the sweep's hoisted `logn` is zero and unused
+score_logn(::GainRule, n) = zero(float(n))
 
 """
     devkey(rule, surrogate, dmin)
@@ -84,7 +103,11 @@ No fit has been observed to produce `-Inf`; the guard is for a latent case.
     return isfinite(surrogate) ? d : oftype(d, Inf)
 end
 devkey(::MinDeviance, surrogate, dmin) = surrogate
-devkey(::GainRule, surrogate, dmin) = throw(ArgumentError("GainRule is reserved for boosting"))
+# the score is the deviance plus a constant, so the raw deviance is already
+# the key; a non-finite one is keyed to Inf so it can never win its kind,
+# matching the Inf its own `selection_score` returns
+@inline devkey(::GainRule, surrogate, dmin) =
+    isfinite(surrogate) ? surrogate : oftype(float(surrogate), Inf)
 
 # `ncoord` is the number of coefficient coordinates (K-1 for softmax, 1 otherwise):
 # every model kind fits `ncoord` times its scalar parameter count, so the BIC
@@ -102,4 +125,17 @@ end
     return isfinite(surrogate) ? Float64(surrogate) : Inf
 end
 
-selection_score(::GainRule, args...) = throw(ArgumentError("GainRule is reserved for boosting"))
+@inline function selection_score(r::GainRule, kind::ModelKind, surrogate, n, dmin, ncoord::Integer = 1,
+        logn = zero(float(n)))
+    allowed(r, kind) || return Inf
+    isfinite(surrogate) || return Inf
+    return kind == CON ? Float64(surrogate) : Float64(surrogate) + r.gamma * ncoord
+end
+
+# A rule with no ridge reaches the unridged closed forms rather than adding a
+# literal zero: `sw .+ 0.0` is a no-op in value but not in instruction count,
+# and the BIC scan calls these twice per split point.
+@inline fit_con(s::MomentSums, ::SelectionRule) = fit_con(s)
+@inline fit_lin(s::MomentSums, ::SelectionRule; tol = SINGULAR_TOL) = fit_lin(s; tol)
+@inline fit_con(s::MomentSums, r::GainRule) = fit_con(s, r.lambda_intercept)
+@inline fit_lin(s::MomentSums, r::GainRule; tol = SINGULAR_TOL) = fit_lin(s, r.lambda_slope, r.lambda_intercept; tol)

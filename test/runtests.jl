@@ -19,6 +19,7 @@ using LinearAlgebra
     include("predict.jl")
     include("accumulate.jl")
     include("select.jl")
+    include("boost_rule.jl")
     include("scan.jl")
     include("fit.jl")
     include("fit_losses.jl")
