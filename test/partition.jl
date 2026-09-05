@@ -40,12 +40,26 @@ end
     @test !any(isleft[idx[span, 1]])   # marker cleared for reuse by the next node
 end
 
+# Structure (kinds, features, thresholds, links, covers) must match exactly; the
+# fitted numbers match to rounding. Bit identity holds within one process mode but
+# not across modes: `Pkg.test` runs with `--check-bounds=yes`, which blocks SIMD in
+# `sum` and changes the summation order, moving these fixtures by up to 3e-10.
+# A partition defect changes the structure, which is what this test guards.
+function node_close(a, b)
+    a.model == b.model && a.feature == b.feature && a.left == b.left && a.right == b.right &&
+        a.catstart == b.catstart && a.catwords == b.catwords && a.cover == b.cover &&
+        (isnan(a.threshold) ? isnan(b.threshold) : a.threshold == b.threshold) &&
+        all(isapprox(getfield(a, f), getfield(b, f); rtol = 1e-9, atol = 1e-9)
+            for f in (:lcoef, :lintercept, :rcoef, :rintercept, :xmin, :xmax, :xmean, :gain))
+end
+
 @testset "partitioned growth reproduces the recorded trees" begin
     for (name, X, y, loss, kw) in partition_cases()
         ref = from_dict(JSON3.read(read(joinpath(@__DIR__, "fixtures", "partition", "$name.json"), String), Dict{String,Any}))
         for nt in (1, Threads.nthreads())
             t = fit_tree(X, y, loss; nthreads = nt, kw...)
-            @test t.nodes == ref.nodes
+            @test length(t.nodes) == length(ref.nodes)
+            @test all(node_close(a, b) for (a, b) in zip(t.nodes, ref.nodes))
             @test t.catmasks == ref.catmasks
         end
     end
