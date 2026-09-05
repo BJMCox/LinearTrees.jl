@@ -1,0 +1,24 @@
+# case 2, --track-allocation=user, one call after clear_malloc_data()
+        502336 B  fit.jl.90266.mem:126   st = FitState{T,V,L,R}(; X = Xm, y = yv, w, f, g = zeros(V, n), h = zeros(V, n), z = zeros(V, n),
+        409680 B  fit.jl.90266.mem:124   idx = Matrix{Int32}(undef, n, p)
+        245952 B  fit.jl.90266.mem:90    yv = Vector{T}(y[keep]); w = w[keep]
+        163904 B  fit.jl.90266.mem:123   f = fill(clampscore(f0, lo, hi), n)
+         81984 B  fit.jl.90266.mem:82    w = weights === nothing ? ones(T, n) : Vector{T}(weights)
+         49216 B  fit.jl.90266.mem:132   rows = collect(Int32(1):Int32(n))
+         41024 B  fit.jl.90266.mem:539   sizehint!(leftrows, nleftrows); sizehint!(rightrows, length(rows) - nleftrows)
+         13312 B  fit.jl.90266.mem:318   sz = zeros(V, L); sw = zeros(V, L); counts = zeros(Int, L + 1)
+          7488 B  fit.jl.90266.mem:394   leftcodes = Int[]
+          5376 B  fit.jl.90266.mem:347   order = sort(present; by = c -> sz[c][k] / sw[c][k])
+          4992 B  fit.jl.90266.mem:348   rank = zeros(Int32, L)
+          3328 B  fit.jl.90266.mem:332   cumoffset = zeros(Int, L + 1)
+          3328 B  fit.jl.90266.mem:336   cursor = copy(cumoffset)
+           960 B  fit.jl.90266.mem:363   bestleft = cand.kind == PCON ? [lc for lc in order if rank[lc] <= cand.threshold] : Int[]
+           832 B  fit.jl.90266.mem:325   present = [c for c in 1:L if counts[c + 1] > 0]
+           832 B  fit.jl.90266.mem:345   best = nocandidate(T, V); bestleft = Int[]
+           832 B  fit.jl.90266.mem:386   best = nocandidate(T, V); bestj = 0; bestleft = Int[]
+           800 B  fit.jl.90266.mem:515   update_score!(st, rows, me); refresh!(st, rows, first(tids))
+           144 B  fit.jl.90266.mem:92    nlevels = zeros(Int, p)
+           112 B  fit.jl.90266.mem:376   append!(masks, zeros(UInt64, words))
+            80 B  fit.jl.90266.mem:93    iscat = zeros(Bool, p)
+            64 B  fit.jl.90266.mem:483   update_score!(st, rows, me)
+            64 B  fit.jl.90266.mem:538   leftrows = Int32[]; rightrows = Int32[]

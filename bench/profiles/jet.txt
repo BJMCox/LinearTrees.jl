@@ -1,0 +1,589 @@
+JET.report_opt, target_modules = (LinearTrees,), Julia 1.12.7
+
+### fit_tree MSE  -- 0 site(s)
+
+### fit_tree Huber  -- 0 site(s)
+
+### fit_tree Quantile  -- 0 site(s)
+
+### fit_tree MAD  -- 0 site(s)
+
+### fit_tree Logistic  -- 0 site(s)
+
+### fit_tree Poisson  -- 0 site(s)
+
+### fit_tree NegBin  -- 0 site(s)
+
+### fit_tree Gamma  -- 0 site(s)
+
+### fit_tree Tweedie  -- 0 site(s)
+
+### fit_tree Softmax  -- 0 site(s)
+
+### fit_tree Softmax categorical  -- 0 site(s)
+
+### predict  -- 0 site(s)
+
+### predict!  -- 0 site(s)
+
+### predict Softmax  -- 0 site(s)
+
+### score  -- 0 site(s)
+
+### shap  -- 0 site(s)
+
+### shap!  -- 0 site(s)
+
+### shap Softmax  -- 0 site(s)
+
+### feature_importance  -- 0 site(s)
+
+### coeftable  -- 0 site(s)
+
+### expected_score  -- 0 site(s)
+
+### to_dict  -- 0 site(s)
+
+### from_dict  -- 18 site(s)
+      6  serialize.jl:102
+      3  serialize.jl:89
+      2  serialize.jl:92
+      2  serialize.jl:101
+      2  serialize.jl:88
+      2  serialize.jl:94
+      1  serialize.jl:100
+--- full report ---
+═════ 18 possible errors found ═════
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:88
+│ runtime dispatch detected: (%1::Any LinearTrees.:(==) 1)::Any
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:89
+│ runtime dispatch detected: (%5::Any LinearTrees.:(==) "Float32")::Any
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:89
+│ runtime dispatch detected: (%9::Any LinearTrees.:(==) "Float64")::Any
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:89
+│ runtime dispatch detected: string("unrecognised element type \"", %15::Any, "\"")::String
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:92
+│ runtime dispatch detected: (%23::Any LinearTrees.:(==) 1)::Any
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:92
+│ runtime dispatch detected: (%23::Any LinearTrees.:- 1)::Any
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:94
+│ runtime dispatch detected: Base.Generator(%69::Union{…}, %70::Any)::Base.Generator
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:94
+│ runtime dispatch detected: collect(%71::Base.Generator)::Any
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:100
+│ runtime dispatch detected: LinearTrees.lossfromdict(%73::Any)::Any
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:101
+│ runtime dispatch detected: Base.Generator(#from_dict##3, %75::Any)::Base.Generator{_A, LinearTrees.var"#from_dict##3#from_dict##4"} where _A
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:101
+│ runtime dispatch detected: collect(%76::Base.Generator{_A, LinearTrees.var"#from_dict##3#from_dict##4"} where _A)::Any
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:102
+│ runtime dispatch detected: %44::Union{LinearTrees.var"#convV#from_dict##0"{…} where _A, LinearTrees.var"#convV#from_dict##0"{…} where _A}(%80::Any)::Any
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:102
+│ runtime dispatch detected: %44::Union{LinearTrees.var"#convV#from_dict##0"{…} where _A, LinearTrees.var"#convV#from_dict##0"{…} where _A}(%82::Any)::Any
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:102
+│ runtime dispatch detected: %44::Union{LinearTrees.var"#convV#from_dict##0"{…} where _A, LinearTrees.var"#convV#from_dict##0"{…} where _A}(%84::Any)::Any
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:102
+│ runtime dispatch detected: LinearTrees.Int(%86::Any)::Any
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:102
+│ runtime dispatch detected: LinearTrees.Bool(%88::Any)::Any
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:102
+│ runtime dispatch detected: %79::Union{Type{LinearTree{Float32, T, _A}} where {T, _A}, Type{LinearTree{Float64, T, _A}} where {T, _A}}(%72::Any, %77::Any, %74::Any, %81::Any, %83::Any, %85::Any, %87::Any, %89::Any)::Union{LinearTree{Float32}, LinearTree{Float64}}
+└────────────────────
+┌ from_dict(d::Dict{String, Any}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/serialize.jl:88
+│ runtime dispatch detected: string("unknown LinearTrees dict format ", %92::Any)::String
+└────────────────────
+
+
+### fit LinearTreeRegressorFit  -- 11 site(s)
+      4  statsapi.jl:53
+      1  statsapi.jl:75
+      1  statsapi.jl:102
+      1  statsapi.jl:73
+      1  statsapi.jl:74
+      1  statsapi.jl:97
+      1  statsapi.jl:100
+      1  statsapi.jl:45
+--- full report ---
+═════ 11 possible errors found ═════
+┌ (::var"#14#15")(Xa::DataFrame, ya::Vector{Float64}) @ Main /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/typecheck.jl:101
+│┌ kwcall(::@NamedTuple{max_depth::Int64}, ::typeof(fit), ::Type{LinearTreeRegressorFit}, X::DataFrame, y::Vector{Float64}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:185
+││┌ fit(::Type{…}, X::DataFrame, y::Vector{…}; loss::MSE, weights::Nothing, unseen::Symbol, nthreads::Int64, kwargs::@Kwargs{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:187
+│││┌ LinearTrees.TableEncoder(table::DataFrame, unseen::Symbol) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:45
+││││ runtime dispatch detected: refpool(%197::AbstractVector)::Any
+│││└────────────────────
+│││┌ LinearTrees.TableEncoder(table::DataFrame, unseen::Symbol) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:53
+││││ runtime dispatch detected: levels(%197::AbstractVector)::Any
+│││└────────────────────
+│││┌ LinearTrees.TableEncoder(table::DataFrame, unseen::Symbol) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:53
+││││ runtime dispatch detected: Base.Filter(#TableEncoder##4, %255::Any)::Base.Iterators.Filter{LinearTrees.var"#TableEncoder##4#TableEncoder##5"}
+│││└────────────────────
+│││┌ LinearTrees.TableEncoder(table::DataFrame, unseen::Symbol) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:53
+││││ runtime dispatch detected: Base.Generator(identity, %256::Base.Iterators.Filter{LinearTrees.var"#TableEncoder##4#TableEncoder##5"})::Base.Generator{…} where I<:(Base.Iterators.Filter{…})
+│││└────────────────────
+│││┌ LinearTrees.TableEncoder(table::DataFrame, unseen::Symbol) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:53
+││││ runtime dispatch detected: collect(LinearTrees.Any, %257::Base.Generator{…} where I<:(Base.Iterators.Filter{…}))::Vector{Any}
+│││└────────────────────
+││┌ fit(::Type{…}, X::DataFrame, y::Vector{…}; loss::MSE, weights::Nothing, unseen::Symbol, nthreads::Int64, kwargs::@Kwargs{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:188
+│││┌ kwcall(::@NamedTuple{nthreads::Int64}, ::typeof(LinearTrees.encode), enc::LinearTrees.TableEncoder, table::DataFrame) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:71
+││││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:76
+│││││┌ threading_run(fun::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, static::Bool) @ Base.Threads ./threadingconstructs.jl:178
+││││││┌ (::Base.Threads.var"#threading_run##0#threading_run##1"{LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, Int64})() @ Base.Threads ./threadingconstructs.jl:178
+│││││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64) @ LinearTrees ./threadingconstructs.jl:246
+││││││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64; onethread::Bool) @ LinearTrees ./threadingconstructs.jl:279
+│││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:97
+││││││││││ runtime dispatch detected: LinearTrees.any(LinearTrees.ismissing, %21::AbstractVector)::Any
+│││││││││└────────────────────
+│││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:100
+││││││││││ runtime dispatch detected: LinearTrees.encode_levels!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %136::Union{Dict{Any, Any}, Dict{_A, Int64} where _A}, %139::Int64, %140::Symbol, %18::Symbol)::Any
+│││││││││└────────────────────
+│││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:102
+││││││││││ runtime dispatch detected: LinearTrees.encode_numeric!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %18::Symbol)::Any
+│││││││││└────────────────────
+││││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:73
+│││││ runtime dispatch detected: LinearTrees.length(%21::AbstractVector)::Any
+││││└────────────────────
+││││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:74
+│││││ runtime dispatch detected: ::Matrix{Float64}(LinearTrees.undef, %22::Any, %26::Int64)::Matrix{Float64}
+││││└────────────────────
+││││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:75
+│││││ runtime dispatch detected: (%22::Any LinearTrees.:>= LinearTrees.PARALLEL_MIN_ROWS)::Any
+││││└────────────────────
+
+
+### fit LinearTreeClassifierFit  -- 19 site(s)
+      4  statsapi.jl:53
+      2  predict.jl:4
+      1  statsapi.jl:210
+      1  statsapi.jl:75
+      1  statsapi.jl:73
+      1  accumulate.jl:55
+      1  statsapi.jl:74
+      1  statsapi.jl:102
+      1  select.jl:56
+      1  accumulate.jl:96
+      1  statsapi.jl:100
+      1  statsapi.jl:211
+      1  statsapi.jl:45
+      1  loss.jl:64
+      1  statsapi.jl:97
+--- full report ---
+═════ 19 possible errors found ═════
+┌ (::var"#16#17")(Xa::DataFrame, ya::Vector{String}) @ Main /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/typecheck.jl:103
+│┌ kwcall(::@NamedTuple{max_depth::Int64}, ::typeof(fit), ::Type{LinearTreeClassifierFit}, X::DataFrame, y::Vector{String}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:194
+││┌ fit(::Type{…}, X::DataFrame, y::Vector{…}; weights::Nothing, unseen::Symbol, nthreads::Int64, kwargs::@Kwargs{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:196
+│││┌ LinearTrees.TableEncoder(table::DataFrame, unseen::Symbol) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:45
+││││ runtime dispatch detected: refpool(%197::AbstractVector)::Any
+│││└────────────────────
+│││┌ LinearTrees.TableEncoder(table::DataFrame, unseen::Symbol) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:53
+││││ runtime dispatch detected: levels(%197::AbstractVector)::Any
+│││└────────────────────
+│││┌ LinearTrees.TableEncoder(table::DataFrame, unseen::Symbol) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:53
+││││ runtime dispatch detected: Base.Filter(#TableEncoder##4, %255::Any)::Base.Iterators.Filter{LinearTrees.var"#TableEncoder##4#TableEncoder##5"}
+│││└────────────────────
+│││┌ LinearTrees.TableEncoder(table::DataFrame, unseen::Symbol) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:53
+││││ runtime dispatch detected: Base.Generator(identity, %256::Base.Iterators.Filter{LinearTrees.var"#TableEncoder##4#TableEncoder##5"})::Base.Generator{…} where I<:(Base.Iterators.Filter{…})
+│││└────────────────────
+│││┌ LinearTrees.TableEncoder(table::DataFrame, unseen::Symbol) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:53
+││││ runtime dispatch detected: collect(LinearTrees.Any, %257::Base.Generator{…} where I<:(Base.Iterators.Filter{…}))::Vector{Any}
+│││└────────────────────
+││┌ fit(::Type{…}, X::DataFrame, y::Vector{…}; weights::Nothing, unseen::Symbol, nthreads::Int64, kwargs::@Kwargs{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:197
+│││┌ kwcall(::@NamedTuple{nthreads::Int64}, ::typeof(LinearTrees.encode), enc::LinearTrees.TableEncoder, table::DataFrame) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:71
+││││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:76
+│││││┌ threading_run(fun::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, static::Bool) @ Base.Threads ./threadingconstructs.jl:178
+││││││┌ (::Base.Threads.var"#threading_run##0#threading_run##1"{LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, Int64})() @ Base.Threads ./threadingconstructs.jl:178
+│││││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64) @ LinearTrees ./threadingconstructs.jl:246
+││││││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64; onethread::Bool) @ LinearTrees ./threadingconstructs.jl:279
+│││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:97
+││││││││││ runtime dispatch detected: LinearTrees.any(LinearTrees.ismissing, %21::AbstractVector)::Any
+│││││││││└────────────────────
+│││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:100
+││││││││││ runtime dispatch detected: LinearTrees.encode_levels!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %136::Union{Dict{Any, Any}, Dict{_A, Int64} where _A}, %139::Int64, %140::Symbol, %18::Symbol)::Any
+│││││││││└────────────────────
+│││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:102
+││││││││││ runtime dispatch detected: LinearTrees.encode_numeric!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %18::Symbol)::Any
+│││││││││└────────────────────
+││││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:73
+│││││ runtime dispatch detected: LinearTrees.length(%21::AbstractVector)::Any
+││││└────────────────────
+││││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:74
+│││││ runtime dispatch detected: ::Matrix{Float64}(LinearTrees.undef, %22::Any, %26::Int64)::Matrix{Float64}
+││││└────────────────────
+││││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:75
+│││││ runtime dispatch detected: (%22::Any LinearTrees.:>= LinearTrees.PARALLEL_MIN_ROWS)::Any
+││││└────────────────────
+││┌ fit(::Type{…}, X::DataFrame, y::Vector{…}; weights::Nothing, unseen::Symbol, nthreads::Int64, kwargs::@Kwargs{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:208
+│││┌ Softmax(K::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/loss.jl:64
+││││ runtime dispatch detected: %1::Type{Softmax{_A}} where _A()::Softmax
+│││└────────────────────
+││┌ fit(::Type{…}, X::DataFrame, y::Vector{…}; weights::Nothing, unseen::Symbol, nthreads::Int64, kwargs::@Kwargs{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:210
+│││┌ kwcall(::@NamedTuple{…}, ::typeof(fit_tree), X::Matrix{…}, y::Vector{…}, loss::Softmax) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:61
+││││┌ fit_tree(X::Matrix{…}, y::Vector{…}, loss::Softmax; weights::Vector{…}, categorical::Vector{…}, rule::BIC, max_depth::Int64, min_fit::Int64, min_leaf::Int64, min_sum_hessian::Float64, max_lin_chain::Int64, truncate::Bool, truncation_factor::Int64, nthreads::Int64, niter::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:102
+│││││┌ kwcall(::@NamedTuple{…}, ::typeof(LinearTrees._fit_tree), Xm::Matrix{…}, yv::Vector{…}, w::Vector{…}, loss::Softmax, rule::BIC, ::Type{…} where _A, iscat::Vector{…}, nlevels::Vector{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:114
+││││││┌ _fit_tree(Xm::Matrix{…}, yv::Vector{…}, w::Vector{…}, loss::Softmax, rule::BIC, ::Type{…} where _A, iscat::Vector{…}, nlevels::Vector{…}; max_depth::Int64, min_fit::Int64, min_leaf::Int64, min_sum_hessian::Float64, max_lin_chain::Int64, truncate::Bool, truncation_factor::Int64, nthreads::Int64, niter::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:123
+│││││││┌ clampscore(s::T, lo::T, hi::T) where T<:Real @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/predict.jl:4
+││││││││ runtime dispatch detected: LinearTrees.max(s::Real, lo::Real)::Any
+│││││││└────────────────────
+│││││││┌ clampscore(s::T, lo::T, hi::T) where T<:Real @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/predict.jl:4
+││││││││ runtime dispatch detected: LinearTrees.min(%1::Any, hi::Real)::Any
+│││││││└────────────────────
+││││││┌ _fit_tree(Xm::Matrix{…}, yv::Vector{…}, w::Vector{…}, loss::Softmax, rule::BIC, ::Type{…} where _A, iscat::Vector{…}, nlevels::Vector{…}; max_depth::Int64, min_fit::Int64, min_leaf::Int64, min_sum_hessian::Float64, max_lin_chain::Int64, truncate::Bool, truncation_factor::Int64, nthreads::Int64, niter::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:134
+│││││││┌ grow_subtree(st::LinearTrees.FitState{…} where L<:Softmax, rows::Vector{…}, span::UnitRange{…}, depth::Int64, linchain::Int64, tids::UnitRange{…}, nodes::Array{…}, masks::Vector{…}) where V<:(SVector{…} where _A) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:490
+││││││││┌ best_split(st::LinearTrees.FitState{…} where {…}, rows::Vector{…}, span::UnitRange{…}, dmin::Any, tids::UnitRange{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:415
+│││││││││┌ best_split_serial(st::LinearTrees.FitState{…} where {…}, rows::Vector{…}, span::UnitRange{…}, dmin::Any, features::UnitRange{…}, tid::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:394
+││││││││││┌ scan_feature(xs::SubArray{…}, zs::SubArray{…} where P<:(Vector{…} where V<:(SVector{…} where _A)), hs::SubArray{…} where P<:(Vector{…} where V<:(SVector{…} where _A)), ws::SubArray{…}, rule::BIC, min_leaf::Float64, dmin::Any) where V<:(SVector{…} where _A) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/scan.jl:66
+│││││││││││┌ selection_score(r::BIC, kind::ModelKind, surrogate::Any, n::Float64, dmin::Any, ncoord::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/select.jl:56
+││││││││││││ runtime dispatch detected: #self#::typeof(LinearTrees.selection_score)(r::BIC, kind::ModelKind, surrogate::Any, n::Float64, dmin::Any, ncoord::Int64, %11::Float64)::Any
+│││││││││││└────────────────────
+││││││││││┌ scan_feature(xs::SubArray{…}, zs::SubArray{…} where P<:(Vector{…} where V<:(SVector{…} where _A)), hs::SubArray{…} where P<:(Vector{…} where V<:(SVector{…} where _A)), ws::SubArray{…}, rule::BIC, min_leaf::Float64, dmin::Any) where V<:(SVector{…} where _A) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/scan.jl:71
+│││││││││││┌ fit_lin(s::LinearTrees.MomentSums{V} where V<:(SVector{_A, Float64} where _A)) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:55
+││││││││││││ runtime dispatch detected: LinearTrees.:(var"#fit_lin#25")(LinearTrees.SINGULAR_TOL, #self#::typeof(LinearTrees.fit_lin), s::LinearTrees.MomentSums{V} where V<:(SVector{_A, Float64} where _A))::Union{Nothing, Tuple{Any, Any, Any}}
+│││││││││││└────────────────────
+││││││││││┌ scan_feature(xs::SubArray{…}, zs::SubArray{…} where P<:(Vector{…} where V<:(SVector{…} where _A)), hs::SubArray{…} where P<:(Vector{…} where V<:(SVector{…} where _A)), ws::SubArray{…}, rule::BIC, min_leaf::Float64, dmin::Any) where V<:(SVector{…} where _A) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/scan.jl:100
+│││││││││││┌ fit_blin(sl::LinearTrees.MomentSums{V}, sr::LinearTrees.MomentSums{V}, t::Float64) where {Km1, V<:SVector{Km1, Float64}} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:96
+││││││││││││ runtime dispatch detected: LinearTrees.:(var"#fit_blin#27")(LinearTrees.SINGULAR_TOL, #self#::typeof(LinearTrees.fit_blin), sl::LinearTrees.MomentSums{V} where {Km1, V<:SVector{Km1, Float64}}, sr::LinearTrees.MomentSums{V} where {Km1, V<:SVector{Km1, Float64}}, t::Float64)::Union{Nothing, NTuple{5, Any}}
+│││││││││││└────────────────────
+││┌ fit(::Type{…}, X::DataFrame, y::Vector{…}; weights::Nothing, unseen::Symbol, nthreads::Int64, kwargs::@Kwargs{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:210
+│││ runtime dispatch detected: Core.kwcall(%539::@NamedTuple{weights::Vector{Float64}, categorical::Vector{Int64}, nthreads::Int64, max_depth::Int64}, fit_tree, %2::Matrix{Float64}, %535::Union{Vector{Float64}, Vector{Int64}}, %320::Union{Logistic, Softmax})::Union{LinearTree{Float64, Float64, Logistic}, LinearTree{Float64, SVector{_A, Float64}, L} where {_A, L<:Softmax}}
+││└────────────────────
+││┌ fit(::Type{…}, X::DataFrame, y::Vector{…}; weights::Nothing, unseen::Symbol, nthreads::Int64, kwargs::@Kwargs{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:211
+│││ runtime dispatch detected: LinearTreeClassifierFit(%554::Union{LinearTree{Float64, Float64, Logistic}, LinearTree{Float64, SVector{_A, Float64}, L} where {_A, L<:Softmax}}, %1::LinearTrees.TableEncoder, %2::Matrix{Float64}, %256::Vector{Int64}, %263::Vector{Float64}, %243::Vector{String})::Union{LinearTreeClassifierFit{…}, LinearTreeClassifierFit{…} where Tr<:(LinearTree{…} where {…})}
+││└────────────────────
+
+
+### predict LinearTreeRegressorFit  -- 6 site(s)
+      1  statsapi.jl:102
+      1  statsapi.jl:73
+      1  statsapi.jl:74
+      1  statsapi.jl:97
+      1  statsapi.jl:100
+      1  statsapi.jl:75
+--- full report ---
+═════ 6 possible errors found ═════
+┌ predict(m::LinearTreeRegressorFit{LinearTree{Float64, Float64, MSE}}, X::DataFrame) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:214
+│┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:71
+││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:76
+│││┌ threading_run(fun::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, static::Bool) @ Base.Threads ./threadingconstructs.jl:178
+││││┌ (::Base.Threads.var"#threading_run##0#threading_run##1"{LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, Int64})() @ Base.Threads ./threadingconstructs.jl:178
+│││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64) @ LinearTrees ./threadingconstructs.jl:246
+││││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64; onethread::Bool) @ LinearTrees ./threadingconstructs.jl:279
+│││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:97
+││││││││ runtime dispatch detected: LinearTrees.any(LinearTrees.ismissing, %21::AbstractVector)::Any
+│││││││└────────────────────
+│││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:100
+││││││││ runtime dispatch detected: LinearTrees.encode_levels!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %136::Union{Dict{Any, Any}, Dict{_A, Int64} where _A}, %139::Int64, %140::Symbol, %18::Symbol)::Any
+│││││││└────────────────────
+│││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:102
+││││││││ runtime dispatch detected: LinearTrees.encode_numeric!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %18::Symbol)::Any
+│││││││└────────────────────
+││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:73
+│││ runtime dispatch detected: LinearTrees.length(%21::AbstractVector)::Any
+││└────────────────────
+││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:74
+│││ runtime dispatch detected: ::Matrix{Float64}(LinearTrees.undef, %22::Any, %26::Int64)::Matrix{Float64}
+││└────────────────────
+││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:75
+│││ runtime dispatch detected: (%22::Any LinearTrees.:>= LinearTrees.PARALLEL_MIN_ROWS)::Any
+││└────────────────────
+
+
+### predict LinearTreeClassifierFit  -- 6 site(s)
+      1  statsapi.jl:102
+      1  statsapi.jl:73
+      1  statsapi.jl:74
+      1  statsapi.jl:97
+      1  statsapi.jl:100
+      1  statsapi.jl:75
+--- full report ---
+═════ 6 possible errors found ═════
+┌ predict(m::LinearTreeClassifierFit{LinearTree{Float64, SVector{2, Float64}, Softmax{3}}, String}, X::DataFrame) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:217
+│┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:71
+││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:76
+│││┌ threading_run(fun::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, static::Bool) @ Base.Threads ./threadingconstructs.jl:178
+││││┌ (::Base.Threads.var"#threading_run##0#threading_run##1"{LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, Int64})() @ Base.Threads ./threadingconstructs.jl:178
+│││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64) @ LinearTrees ./threadingconstructs.jl:246
+││││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64; onethread::Bool) @ LinearTrees ./threadingconstructs.jl:279
+│││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:97
+││││││││ runtime dispatch detected: LinearTrees.any(LinearTrees.ismissing, %21::AbstractVector)::Any
+│││││││└────────────────────
+│││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:100
+││││││││ runtime dispatch detected: LinearTrees.encode_levels!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %136::Union{Dict{Any, Any}, Dict{_A, Int64} where _A}, %139::Int64, %140::Symbol, %18::Symbol)::Any
+│││││││└────────────────────
+│││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:102
+││││││││ runtime dispatch detected: LinearTrees.encode_numeric!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %18::Symbol)::Any
+│││││││└────────────────────
+││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:73
+│││ runtime dispatch detected: LinearTrees.length(%21::AbstractVector)::Any
+││└────────────────────
+││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:74
+│││ runtime dispatch detected: ::Matrix{Float64}(LinearTrees.undef, %22::Any, %26::Int64)::Matrix{Float64}
+││└────────────────────
+││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:75
+│││ runtime dispatch detected: (%22::Any LinearTrees.:>= LinearTrees.PARALLEL_MIN_ROWS)::Any
+││└────────────────────
+
+
+### MMI.fit LinearTreeRegressor  -- 12 site(s)
+      2  mlj.jl:37
+      2  predict.jl:4
+      2  accumulate.jl:69
+      1  statsapi.jl:102
+      1  accumulate.jl:55
+      1  accumulate.jl:96
+      1  statsapi.jl:97
+      1  statsapi.jl:100
+      1  mlj.jl:36
+--- full report ---
+═════ 12 possible errors found ═════
+┌ fit(m::LinearTreeRegressor, verbosity::Int64, X::DataFrame, y::Vector{Float64}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/mlj.jl:36
+│┌ fit(m::LinearTreeRegressor, verbosity::Int64, X::DataFrame, y::Vector{Float64}, w::Nothing) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/mlj.jl:36
+││┌ kwcall(::NamedTuple, ::typeof(fit), ::Type{LinearTreeRegressorFit}, X::DataFrame, y::Vector{Float64}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:185
+│││┌ fit(::Type{…}, X::DataFrame, y::Vector{…}; loss::Loss, weights::Any, unseen::Any, nthreads::Any, kwargs...) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:188
+││││┌ kwcall(::NamedTuple{…}, ::typeof(LinearTrees.encode), enc::LinearTrees.TableEncoder, table::DataFrame) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:71
+│││││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Any) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:76
+││││││┌ threading_run(fun::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, static::Bool) @ Base.Threads ./threadingconstructs.jl:178
+│││││││┌ (::Base.Threads.var"#threading_run##0#threading_run##1"{LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, Int64})() @ Base.Threads ./threadingconstructs.jl:178
+││││││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64) @ LinearTrees ./threadingconstructs.jl:246
+│││││││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64; onethread::Bool) @ LinearTrees ./threadingconstructs.jl:279
+││││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:97
+│││││││││││ runtime dispatch detected: LinearTrees.any(LinearTrees.ismissing, %21::AbstractVector)::Any
+││││││││││└────────────────────
+││││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:100
+│││││││││││ runtime dispatch detected: LinearTrees.encode_levels!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %136::Union{Dict{Any, Any}, Dict{_A, Int64} where _A}, %139::Int64, %140::Symbol, %18::Symbol)::Any
+││││││││││└────────────────────
+││││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:102
+│││││││││││ runtime dispatch detected: LinearTrees.encode_numeric!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %18::Symbol)::Any
+││││││││││└────────────────────
+│││┌ fit(::Type{…}, X::DataFrame, y::Vector{…}; loss::Loss, weights::Any, unseen::Any, nthreads::Any, kwargs...) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:190
+││││┌ kwcall(::NamedTuple, ::typeof(fit_tree), X::Matrix{Float64}, y::Vector{Float64}, loss::Loss) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:61
+│││││┌ fit_tree(X::Matrix{…}, y::Vector{…}, loss::Loss; weights::Any, categorical::Any, rule::LinearTrees.SelectionRule, max_depth::Any, min_fit::Any, min_leaf::Any, min_sum_hessian::Any, max_lin_chain::Any, truncate::Any, truncation_factor::Any, nthreads::Any, niter::Any) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:102
+││││││┌ kwcall(::NamedTuple{…}, ::typeof(LinearTrees._fit_tree), Xm::Matrix{…}, yv::Vector{…}, w::Vector{…}, loss::L, rule::R, ::Type{…}, iscat::Vector{…}, nlevels::Vector{…}) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:114
+│││││││┌ _fit_tree(Xm::Matrix{…}, yv::Vector{…}, w::Vector{…}, loss::L, rule::R, ::Type{…}, iscat::Vector{…}, nlevels::Vector{…}; max_depth::Any, min_fit::Any, min_leaf::Any, min_sum_hessian::Any, max_lin_chain::Any, truncate::Any, truncation_factor::Any, nthreads::Any, niter::Any) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:123
+││││││││┌ clampscore(s::T, lo::T, hi::T) where T<:Real @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/predict.jl:4
+│││││││││ runtime dispatch detected: LinearTrees.max(s::Real, lo::Real)::Any
+││││││││└────────────────────
+││││││││┌ clampscore(s::T, lo::T, hi::T) where T<:Real @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/predict.jl:4
+│││││││││ runtime dispatch detected: LinearTrees.min(%1::Any, hi::Real)::Any
+││││││││└────────────────────
+│││││││┌ _fit_tree(Xm::Matrix{…}, yv::Vector{…}, w::Vector{…}, loss::L, rule::R, ::Type{…}, iscat::Vector{…}, nlevels::Vector{…}; max_depth::Any, min_fit::Any, min_leaf::Any, min_sum_hessian::Any, max_lin_chain::Any, truncate::Any, truncation_factor::Any, nthreads::Any, niter::Any) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:134
+││││││││┌ grow_subtree(st::LinearTrees.FitState{…}, rows::Vector{…}, span::UnitRange{…}, depth::Int64, linchain::Int64, tids::UnitRange{…}, nodes::Array{…}, masks::Vector{…}) where T @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:484
+│││││││││┌ refit_node(st::LinearTrees.FitState{T, Float64} where T, n::Node{_A, Float64} where _A, rows::Vector{Int32}, tid::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/loss.jl:276
+││││││││││┌ refit_node(st::LinearTrees.FitState{…} where T, n::Node{…} where _A, rows::Vector{…}, tid::Int64, masks::Vector{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/loss.jl:276
+│││││││││││┌ irls_refit(st::LinearTrees.FitState{…}, n::Node{…}, rows::Vector{…}, tid::Int64, niter::Int64, masks::Vector{…}) where T @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:648
+││││││││││││┌ fit_blin(sl::LinearTrees.MomentSums{Float64}, sr::LinearTrees.MomentSums{Float64}, t::Any) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:69
+│││││││││││││ runtime dispatch detected: LinearTrees.:(var"#fit_blin#26")(LinearTrees.SINGULAR_TOL, #self#::typeof(LinearTrees.fit_blin), sl::LinearTrees.MomentSums{Float64}, sr::LinearTrees.MomentSums{Float64}, t::Any)::Union{Nothing, NTuple{5, Any}}
+││││││││││││└────────────────────
+││││││┌ kwcall(::NamedTuple{…}, ::typeof(LinearTrees._fit_tree), Xm::Matrix{…}, yv::Vector{…}, w::Vector{…}, loss::L, rule::R, ::Type{…}, iscat::Vector{…}, nlevels::Vector{…}) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:114
+│││││││┌ _fit_tree(Xm::Matrix{…}, yv::Vector{…}, w::Vector{…}, loss::L, rule::R, ::Type{…}, iscat::Vector{…}, nlevels::Vector{…}; max_depth::Any, min_fit::Any, min_leaf::Any, min_sum_hessian::Any, max_lin_chain::Any, truncate::Any, truncation_factor::Any, nthreads::Any, niter::Any) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:134
+││││││││┌ grow_subtree(st::LinearTrees.FitState{…}, rows::Vector{…}, span::UnitRange{…}, depth::Int64, linchain::Int64, tids::UnitRange{…}, nodes::Array{…}, masks::Vector{…}) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:490
+│││││││││┌ best_split(st::LinearTrees.FitState{…} where {…}, rows::Vector{…}, span::UnitRange{…}, dmin::Any, tids::UnitRange{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:415
+││││││││││┌ best_split_serial(st::LinearTrees.FitState{…} where {…}, rows::Vector{…}, span::UnitRange{…}, dmin::Any, features::UnitRange{…}, tid::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:391
+│││││││││││┌ scan_categorical(st::LinearTrees.FitState{…}, sc::LinearTrees.Scratch{…}, rows::Vector{…}, j::Int64, dmin::Any) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:362
+││││││││││││┌ scan_feature(xs::SubArray{…} where P<:(Vector), zs::SubArray{…} where P<:(Vector{…} where V<:(SVector{…} where _A)), hs::SubArray{…} where P<:(Vector{…} where V<:(SVector{…} where _A)), ws::SubArray{…} where P<:(Vector), rule::LinearTrees.PconOnly, min_leaf::Any, dmin::Any) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/scan.jl:71
+│││││││││││││┌ fit_lin(s::LinearTrees.MomentSums{V} where V<:(SVector{_A, Float64} where _A)) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:55
+││││││││││││││ runtime dispatch detected: LinearTrees.:(var"#fit_lin#25")(LinearTrees.SINGULAR_TOL, #self#::typeof(LinearTrees.fit_lin), s::LinearTrees.MomentSums{V} where V<:(SVector{_A, Float64} where _A))::Union{Nothing, Tuple{Any, Any, Any}}
+│││││││││││││└────────────────────
+││││││││││││┌ scan_feature(xs::SubArray{…} where P<:(Vector), zs::SubArray{…} where P<:(Vector{…} where V<:(SVector{…} where _A)), hs::SubArray{…} where P<:(Vector{…} where V<:(SVector{…} where _A)), ws::SubArray{…} where P<:(Vector), rule::LinearTrees.PconOnly, min_leaf::Any, dmin::Any) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/scan.jl:100
+│││││││││││││┌ fit_blin(sl::LinearTrees.MomentSums{V}, sr::LinearTrees.MomentSums{V}, t::Any) where {Km1, V<:SVector{Km1, Float64}} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:96
+││││││││││││││┌ fit_blin(sl::LinearTrees.MomentSums{V}, sr::LinearTrees.MomentSums{V}, t::Any; tol::Float64) where {Km1, V<:SVector{…}} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:100
+│││││││││││││││┌ kwcall(::@NamedTuple{…}, ::typeof(LinearTrees.fit_blin), sl::LinearTrees.MomentSums{…}, sr::LinearTrees.MomentSums{…}, t::Any) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:69
+││││││││││││││││ runtime dispatch detected: LinearTrees.:(var"#fit_blin#26")(1.0e-12, _3::typeof(LinearTrees.fit_blin), sl::LinearTrees.MomentSums{Float64}, sr::LinearTrees.MomentSums{Float64}, t::Any)::Union{Nothing, NTuple{5, Any}}
+│││││││││││││││└────────────────────
+│││││││││││││┌ fit_blin(sl::LinearTrees.MomentSums{V}, sr::LinearTrees.MomentSums{V}, t::Any) where {Km1, V<:SVector{Km1, Float64}} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:96
+││││││││││││││ runtime dispatch detected: LinearTrees.:(var"#fit_blin#27")(LinearTrees.SINGULAR_TOL, #self#::typeof(LinearTrees.fit_blin), sl::LinearTrees.MomentSums{V} where {Km1, V<:SVector{Km1, Float64}}, sr::LinearTrees.MomentSums{V} where {Km1, V<:SVector{Km1, Float64}}, t::Any)::Union{Nothing, NTuple{5, Any}}
+│││││││││││││└────────────────────
+│┌ fit(m::LinearTreeRegressor, verbosity::Int64, X::DataFrame, y::Vector{Float64}, w::Nothing) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/mlj.jl:36
+││ runtime dispatch detected: Core.kwcall(%138::NamedTuple, fit, LinearTreeRegressorFit, X::DataFrame, %116::Vector{Float64})::Union{…}
+│└────────────────────
+│┌ fit(m::LinearTreeRegressor, verbosity::Int64, X::DataFrame, y::Vector{Float64}, w::Nothing) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/mlj.jl:37
+││ runtime dispatch detected: feature_importance(%139::Union{…})::Vector{Float64}
+│└────────────────────
+│┌ fit(m::LinearTreeRegressor, verbosity::Int64, X::DataFrame, y::Vector{Float64}, w::Nothing) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/mlj.jl:37
+││ runtime dispatch detected: LinearTrees.kind_counts(%150::Union{LinearTree{_A, Float64} where _A, LinearTree{_A, SVector{_A1, Float64}} where {_A, _A1}})::Dict
+│└────────────────────
+
+
+### MMI.fit LinearTreeClassifier  -- 14 site(s)
+      2  predict.jl:4
+      2  mlj.jl:43
+      2  accumulate.jl:69
+      1  loss.jl:125
+      1  mlj.jl:42
+      1  accumulate.jl:55
+      1  statsapi.jl:102
+      1  accumulate.jl:96
+      1  statsapi.jl:100
+      1  loss.jl:64
+      1  statsapi.jl:97
+--- full report ---
+═════ 14 possible errors found ═════
+┌ fit(m::LinearTreeClassifier, verbosity::Int64, X::DataFrame, y::Vector{String}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/mlj.jl:42
+│┌ fit(m::LinearTreeClassifier, verbosity::Int64, X::DataFrame, y::Vector{String}, w::Nothing) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/mlj.jl:42
+││┌ kwcall(::NamedTuple, ::typeof(fit), ::Type{LinearTreeClassifierFit}, X::DataFrame, y::Vector{String}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:194
+│││┌ fit(::Type{…}, X::DataFrame, y::Vector{…}; weights::Any, unseen::Any, nthreads::Any, kwargs...) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:197
+││││┌ kwcall(::NamedTuple{…}, ::typeof(LinearTrees.encode), enc::LinearTrees.TableEncoder, table::DataFrame) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:71
+│││││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Any) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:76
+││││││┌ threading_run(fun::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, static::Bool) @ Base.Threads ./threadingconstructs.jl:178
+│││││││┌ (::Base.Threads.var"#threading_run##0#threading_run##1"{LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, Int64})() @ Base.Threads ./threadingconstructs.jl:178
+││││││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64) @ LinearTrees ./threadingconstructs.jl:246
+│││││││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64; onethread::Bool) @ LinearTrees ./threadingconstructs.jl:279
+││││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:97
+│││││││││││ runtime dispatch detected: LinearTrees.any(LinearTrees.ismissing, %21::AbstractVector)::Any
+││││││││││└────────────────────
+││││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:100
+│││││││││││ runtime dispatch detected: LinearTrees.encode_levels!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %136::Union{Dict{Any, Any}, Dict{_A, Int64} where _A}, %139::Int64, %140::Symbol, %18::Symbol)::Any
+││││││││││└────────────────────
+││││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:102
+│││││││││││ runtime dispatch detected: LinearTrees.encode_numeric!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %18::Symbol)::Any
+││││││││││└────────────────────
+│││┌ fit(::Type{…}, X::DataFrame, y::Vector{…}; weights::Any, unseen::Any, nthreads::Any, kwargs...) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:208
+││││┌ Softmax(K::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/loss.jl:64
+│││││ runtime dispatch detected: %1::Type{Softmax{_A}} where _A()::Softmax
+││││└────────────────────
+│││┌ fit(::Type{…}, X::DataFrame, y::Vector{…}; weights::Any, unseen::Any, nthreads::Any, kwargs...) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:210
+││││┌ kwcall(::NamedTuple, ::typeof(fit_tree), X::Matrix{Float64}, y::Vector{Float64}, loss::Logistic) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:61
+│││││┌ fit_tree(X::Matrix{…}, y::Vector{…}, loss::Logistic; weights::Any, categorical::Any, rule::LinearTrees.SelectionRule, max_depth::Any, min_fit::Any, min_leaf::Any, min_sum_hessian::Any, max_lin_chain::Any, truncate::Any, truncation_factor::Any, nthreads::Any, niter::Any) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:102
+││││││┌ kwcall(::NamedTuple{…}, ::typeof(LinearTrees._fit_tree), Xm::Matrix{…}, yv::Vector{…}, w::Vector{…}, loss::Logistic, rule::R, ::Type{…}, iscat::Vector{…}, nlevels::Vector{…}) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:114
+│││││││┌ _fit_tree(Xm::Matrix{…}, yv::Vector{…}, w::Vector{…}, loss::Logistic, rule::R, ::Type{…}, iscat::Vector{…}, nlevels::Vector{…}; max_depth::Any, min_fit::Any, min_leaf::Any, min_sum_hessian::Any, max_lin_chain::Any, truncate::Any, truncation_factor::Any, nthreads::Any, niter::Any) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:133
+││││││││┌ refresh!(st::LinearTrees.FitState{_A, Float64, Logistic} where _A, rows::Vector{Int32}, tid::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:188
+│││││││││┌ refresh_chunk!(st::LinearTrees.FitState{_A, Float64, Logistic} where _A, rows::Vector{Int32}, ε::Any) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:222
+││││││││││┌ gradhess!(g::SubArray{…}, h::SubArray{…}, loss::Logistic, y::SubArray{…} where {…}, f::SubArray{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/loss.jl:148
+│││││││││││┌ gh(::Logistic, y::Any, f::Float64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/loss.jl:125
+││││││││││││ runtime dispatch detected: (%4::Float64 LinearTrees.:- y::Any)::Any
+│││││││││││└────────────────────
+│││││││┌ _fit_tree(Xm::Matrix{…}, yv::Vector{…}, w::Vector{…}, loss::Logistic, rule::R, ::Type{…}, iscat::Vector{…}, nlevels::Vector{…}; max_depth::Any, min_fit::Any, min_leaf::Any, min_sum_hessian::Any, max_lin_chain::Any, truncate::Any, truncation_factor::Any, nthreads::Any, niter::Any) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:134
+││││││││┌ grow_subtree(st::LinearTrees.FitState{…}, rows::Vector{…}, span::UnitRange{…}, depth::Int64, linchain::Int64, tids::UnitRange{…}, nodes::Array{…}, masks::Vector{…}) where T @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:490
+│││││││││┌ best_split(st::LinearTrees.FitState{…} where T, rows::Vector{…}, span::UnitRange{…}, dmin::Any, tids::UnitRange{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:415
+││││││││││┌ best_split_serial(st::LinearTrees.FitState{…} where T, rows::Vector{…}, span::UnitRange{…}, dmin::Any, features::UnitRange{…}, tid::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:391
+│││││││││││┌ scan_categorical(st::LinearTrees.FitState{…}, sc::LinearTrees.Scratch{…}, rows::Vector{…}, j::Int64, dmin::Any) where T @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:362
+││││││││││││┌ scan_feature(xs::SubArray{…} where P<:(Vector), zs::SubArray{…}, hs::SubArray{…}, ws::SubArray{…} where P<:(Vector), rule::LinearTrees.PconOnly, min_leaf::Any, dmin::Any) where T<:Real @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/scan.jl:100
+│││││││││││││┌ fit_blin(sl::LinearTrees.MomentSums{Float64}, sr::LinearTrees.MomentSums{Float64}, t::Any) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:69
+││││││││││││││ runtime dispatch detected: LinearTrees.:(var"#fit_blin#26")(LinearTrees.SINGULAR_TOL, #self#::typeof(LinearTrees.fit_blin), sl::LinearTrees.MomentSums{Float64}, sr::LinearTrees.MomentSums{Float64}, t::Any)::Union{Nothing, NTuple{5, Any}}
+│││││││││││││└────────────────────
+││││┌ kwcall(::NamedTuple, ::typeof(fit_tree), X::Matrix{Float64}, y::Vector{Float64}, loss::Softmax) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:61
+│││││┌ fit_tree(X::Matrix{…}, y::Vector{…}, loss::Softmax; weights::Any, categorical::Any, rule::LinearTrees.SelectionRule, max_depth::Any, min_fit::Any, min_leaf::Any, min_sum_hessian::Any, max_lin_chain::Any, truncate::Any, truncation_factor::Any, nthreads::Any, niter::Any) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:102
+││││││┌ kwcall(::NamedTuple{…}, ::typeof(LinearTrees._fit_tree), Xm::Matrix{…}, yv::Vector{…}, w::Vector{…}, loss::L, rule::R, ::Type{…}, iscat::Vector{…}, nlevels::Vector{…}) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:114
+│││││││┌ _fit_tree(Xm::Matrix{…}, yv::Vector{…}, w::Vector{…}, loss::L, rule::R, ::Type{…}, iscat::Vector{…}, nlevels::Vector{…}; max_depth::Any, min_fit::Any, min_leaf::Any, min_sum_hessian::Any, max_lin_chain::Any, truncate::Any, truncation_factor::Any, nthreads::Any, niter::Any) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:123
+││││││││┌ clampscore(s::T, lo::T, hi::T) where T<:Real @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/predict.jl:4
+│││││││││ runtime dispatch detected: LinearTrees.max(s::Real, lo::Real)::Any
+││││││││└────────────────────
+││││││││┌ clampscore(s::T, lo::T, hi::T) where T<:Real @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/predict.jl:4
+│││││││││ runtime dispatch detected: LinearTrees.min(%1::Any, hi::Real)::Any
+││││││││└────────────────────
+│││││││┌ _fit_tree(Xm::Matrix{…}, yv::Vector{…}, w::Vector{…}, loss::L, rule::R, ::Type{…}, iscat::Vector{…}, nlevels::Vector{…}; max_depth::Any, min_fit::Any, min_leaf::Any, min_sum_hessian::Any, max_lin_chain::Any, truncate::Any, truncation_factor::Any, nthreads::Any, niter::Any) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:134
+││││││││┌ grow_subtree(st::LinearTrees.FitState{…} where L<:Softmax, rows::Vector{…}, span::UnitRange{…}, depth::Int64, linchain::Int64, tids::UnitRange{…}, nodes::Array{…}, masks::Vector{…}) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:490
+│││││││││┌ best_split(st::LinearTrees.FitState{…} where {…}, rows::Vector{…}, span::UnitRange{…}, dmin::Any, tids::UnitRange{…}) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:415
+││││││││││┌ best_split_serial(st::LinearTrees.FitState{…} where {…}, rows::Vector{…}, span::UnitRange{…}, dmin::Any, features::UnitRange{…}, tid::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:391
+│││││││││││┌ scan_categorical(st::LinearTrees.FitState{…} where L<:Softmax, sc::LinearTrees.Scratch{…}, rows::Vector{…}, j::Int64, dmin::Any) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:362
+││││││││││││┌ scan_feature(xs::SubArray{…} where P<:(Vector), zs::SubArray{…} where P<:(Vector{…} where V<:(SVector{…} where _A)), hs::SubArray{…} where P<:(Vector{…} where V<:(SVector{…} where _A)), ws::SubArray{…} where P<:(Vector), rule::LinearTrees.PconOnly, min_leaf::Any, dmin::Any) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/scan.jl:71
+│││││││││││││┌ fit_lin(s::LinearTrees.MomentSums{V} where V<:(SVector{_A, Float64} where _A)) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:55
+││││││││││││││ runtime dispatch detected: LinearTrees.:(var"#fit_lin#25")(LinearTrees.SINGULAR_TOL, #self#::typeof(LinearTrees.fit_lin), s::LinearTrees.MomentSums{V} where V<:(SVector{_A, Float64} where _A))::Union{Nothing, Tuple{Any, Any, Any}}
+│││││││││││││└────────────────────
+││││││││││││┌ scan_feature(xs::SubArray{…} where P<:(Vector), zs::SubArray{…} where P<:(Vector{…} where V<:(SVector{…} where _A)), hs::SubArray{…} where P<:(Vector{…} where V<:(SVector{…} where _A)), ws::SubArray{…} where P<:(Vector), rule::LinearTrees.PconOnly, min_leaf::Any, dmin::Any) where {…} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/scan.jl:100
+│││││││││││││┌ fit_blin(sl::LinearTrees.MomentSums{V}, sr::LinearTrees.MomentSums{V}, t::Any) where {Km1, V<:SVector{Km1, Float64}} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:96
+││││││││││││││┌ fit_blin(sl::LinearTrees.MomentSums{V}, sr::LinearTrees.MomentSums{V}, t::Any; tol::Float64) where {Km1, V<:SVector{…}} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:100
+│││││││││││││││┌ kwcall(::@NamedTuple{…}, ::typeof(LinearTrees.fit_blin), sl::LinearTrees.MomentSums{…}, sr::LinearTrees.MomentSums{…}, t::Any) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:69
+││││││││││││││││ runtime dispatch detected: LinearTrees.:(var"#fit_blin#26")(1.0e-12, _3::typeof(LinearTrees.fit_blin), sl::LinearTrees.MomentSums{Float64}, sr::LinearTrees.MomentSums{Float64}, t::Any)::Union{Nothing, NTuple{5, Any}}
+│││││││││││││││└────────────────────
+│││││││││││││┌ fit_blin(sl::LinearTrees.MomentSums{V}, sr::LinearTrees.MomentSums{V}, t::Any) where {Km1, V<:SVector{Km1, Float64}} @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:96
+││││││││││││││ runtime dispatch detected: LinearTrees.:(var"#fit_blin#27")(LinearTrees.SINGULAR_TOL, #self#::typeof(LinearTrees.fit_blin), sl::LinearTrees.MomentSums{V} where {Km1, V<:SVector{Km1, Float64}}, sr::LinearTrees.MomentSums{V} where {Km1, V<:SVector{Km1, Float64}}, t::Any)::Union{Nothing, NTuple{5, Any}}
+│││││││││││││└────────────────────
+│┌ fit(m::LinearTreeClassifier, verbosity::Int64, X::DataFrame, y::Vector{String}, w::Nothing) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/mlj.jl:42
+││ runtime dispatch detected: Core.kwcall(%117::NamedTuple, fit, LinearTreeClassifierFit, X::DataFrame, %100::Vector{String})::Union{…}
+│└────────────────────
+│┌ fit(m::LinearTreeClassifier, verbosity::Int64, X::DataFrame, y::Vector{String}, w::Nothing) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/mlj.jl:43
+││ runtime dispatch detected: feature_importance(%118::Union{…})::Vector{Float64}
+│└────────────────────
+│┌ fit(m::LinearTreeClassifier, verbosity::Int64, X::DataFrame, y::Vector{String}, w::Nothing) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/mlj.jl:43
+││ runtime dispatch detected: LinearTrees.kind_counts(%129::Union{LinearTree{_A, Float64, Logistic} where _A, LinearTree{_A, SVector{…}, L} where {_A, _A1, L<:Softmax}})::Dict
+│└────────────────────
+
+
+### MMI.predict LinearTreeRegressor  -- 6 site(s)
+      1  statsapi.jl:102
+      1  statsapi.jl:73
+      1  statsapi.jl:74
+      1  statsapi.jl:97
+      1  statsapi.jl:100
+      1  statsapi.jl:75
+--- full report ---
+═════ 6 possible errors found ═════
+┌ predict(::LinearTreeRegressor, fr::LinearTreeRegressorFit{LinearTree{Float64, Float64, MSE}}, Xnew::DataFrame) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/mlj.jl:47
+│┌ predict(m::LinearTreeRegressorFit{LinearTree{Float64, Float64, MSE}}, X::DataFrame) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:214
+││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:71
+│││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:76
+││││┌ threading_run(fun::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, static::Bool) @ Base.Threads ./threadingconstructs.jl:178
+│││││┌ (::Base.Threads.var"#threading_run##0#threading_run##1"{LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, Int64})() @ Base.Threads ./threadingconstructs.jl:178
+││││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64) @ LinearTrees ./threadingconstructs.jl:246
+│││││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64; onethread::Bool) @ LinearTrees ./threadingconstructs.jl:279
+││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:97
+│││││││││ runtime dispatch detected: LinearTrees.any(LinearTrees.ismissing, %21::AbstractVector)::Any
+││││││││└────────────────────
+││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:100
+│││││││││ runtime dispatch detected: LinearTrees.encode_levels!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %136::Union{Dict{Any, Any}, Dict{_A, Int64} where _A}, %139::Int64, %140::Symbol, %18::Symbol)::Any
+││││││││└────────────────────
+││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:102
+│││││││││ runtime dispatch detected: LinearTrees.encode_numeric!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %18::Symbol)::Any
+││││││││└────────────────────
+│││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:73
+││││ runtime dispatch detected: LinearTrees.length(%21::AbstractVector)::Any
+│││└────────────────────
+│││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:74
+││││ runtime dispatch detected: ::Matrix{Float64}(LinearTrees.undef, %22::Any, %26::Int64)::Matrix{Float64}
+│││└────────────────────
+│││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:75
+││││ runtime dispatch detected: (%22::Any LinearTrees.:>= LinearTrees.PARALLEL_MIN_ROWS)::Any
+│││└────────────────────
+
+
+### MMI.predict LinearTreeClassifier  -- 6 site(s)
+      1  statsapi.jl:102
+      1  statsapi.jl:73
+      1  statsapi.jl:74
+      1  statsapi.jl:97
+      1  statsapi.jl:100
+      1  statsapi.jl:75
+--- full report ---
+═════ 6 possible errors found ═════
+┌ predict(::LinearTreeClassifier, fr::LinearTreeClassifierFit{LinearTree{…}, String}, Xnew::DataFrame) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/mlj.jl:58
+│┌ predict(m::LinearTreeClassifierFit{LinearTree{Float64, SVector{2, Float64}, Softmax{3}}, String}, X::DataFrame) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:217
+││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:71
+│││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:76
+││││┌ threading_run(fun::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, static::Bool) @ Base.Threads ./threadingconstructs.jl:178
+│││││┌ (::Base.Threads.var"#threading_run##0#threading_run##1"{LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}}, Int64})() @ Base.Threads ./threadingconstructs.jl:178
+││││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64) @ LinearTrees ./threadingconstructs.jl:246
+│││││││┌ (::LinearTrees.var"#94#95"{LinearTrees.var"#96#97"{…}})(tid::Int64; onethread::Bool) @ LinearTrees ./threadingconstructs.jl:279
+││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:97
+│││││││││ runtime dispatch detected: LinearTrees.any(LinearTrees.ismissing, %21::AbstractVector)::Any
+││││││││└────────────────────
+││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:100
+│││││││││ runtime dispatch detected: LinearTrees.encode_levels!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %136::Union{Dict{Any, Any}, Dict{_A, Int64} where _A}, %139::Int64, %140::Symbol, %18::Symbol)::Any
+││││││││└────────────────────
+││││││││┌ encode_column!(out::Matrix{…}, enc::LinearTrees.TableEncoder, cols::DataFrames.DataFrameColumns{…}, j::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:102
+│││││││││ runtime dispatch detected: LinearTrees.encode_numeric!(out::Matrix{Float64}, %21::AbstractVector, j::Int64, %18::Symbol)::Any
+││││││││└────────────────────
+│││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:73
+││││ runtime dispatch detected: LinearTrees.length(%21::AbstractVector)::Any
+│││└────────────────────
+│││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:74
+││││ runtime dispatch detected: ::Matrix{Float64}(LinearTrees.undef, %22::Any, %26::Int64)::Matrix{Float64}
+│││└────────────────────
+│││┌ encode(enc::LinearTrees.TableEncoder, table::DataFrame; nthreads::Int64) @ LinearTrees /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/statsapi.jl:75
+││││ runtime dispatch detected: (%22::Any LinearTrees.:>= LinearTrees.PARALLEL_MIN_ROWS)::Any
+│││└────────────────────
+

@@ -120,7 +120,7 @@ end
 const T = Float64
 const VS = SVector{2,Float64}
 const FSs = LinearTrees.FitState{T,T,MSE,BIC}
-const FSv = LinearTrees.FitState{T,VS,Softmax,BIC}
+const FSv = LinearTrees.FitState{T,VS,Softmax{3},BIC}
 const SCs = LinearTrees.Scratch{T,T}
 const SCv = LinearTrees.Scratch{T,VS}
 const COL = SubArray{Float64,1,Matrix{Float64},Tuple{UnitRange{Int},Int},true}

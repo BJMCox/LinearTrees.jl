@@ -1,0 +1,15 @@
+# case3-mad  threads=10  sampled allocs=226  sampled bytes=39260  rate=0.01
+       17420 B         4 allocs  fit.jl:192 refresh!
+       13520 B         8 allocs  fit.jl:541 grow_subtree
+        4928 B       154 allocs  fit.jl:396 best_split_serial
+         944 B         6 allocs  fit.jl:193 refresh!
+         560 B         3 allocs  fit.jl:160 column_blocks
+         544 B        17 allocs  fit.jl:388 best_split_serial
+         352 B        11 allocs  loss.jl:276 refit_node
+         320 B        10 allocs  fit.jl:665 update_score!
+         288 B         3 allocs  fit.jl:419 best_split
+         192 B         6 allocs  fit.jl:540 grow_subtree
+          96 B         1 allocs  gc-alloc-profiler.h:43 maybe_record_alloc_to_profile
+          32 B         1 allocs  fit.jl:17 Scratch
+          32 B         1 allocs  fit.jl:420 best_split
+          32 B         1 allocs  fit.jl:90 #fit_tree#31

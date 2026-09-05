@@ -1,0 +1,19 @@
+# case 3, --track-allocation=user, one call after clear_malloc_data()
+        409680 B  fit.jl.90702.mem:124   idx = Matrix{Int32}(undef, n, p)
+        256560 B  fit.jl.90702.mem:126   st = FitState{T,V,L,R}(; X = Xm, y = yv, w, f, g = zeros(V, n), h = zeros(V, n), z = zeros(V, n),
+        245952 B  fit.jl.90702.mem:90    yv = Vector{T}(y[keep]); w = w[keep]
+        243744 B  fit.jl.90702.mem:539   sizehint!(leftrows, nleftrows); sizehint!(rightrows, length(rows) - nleftrows)
+        163968 B  fit.jl.90702.mem:119   f0 = V(initscore(loss, yv, w))
+         81984 B  fit.jl.90702.mem:82    w = weights === nothing ? ones(T, n) : Vector{T}(weights)
+         81984 B  fit.jl.90702.mem:123   f = fill(clampscore(f0, lo, hi), n)
+         49216 B  fit.jl.90702.mem:132   rows = collect(Int32(1):Int32(n))
+         32960 B  fit.jl.90702.mem:394   leftcodes = Int[]
+          3296 B  fit.jl.90702.mem:386   best = nocandidate(T, V); bestj = 0; bestleft = Int[]
+          2048 B  fit.jl.90702.mem:538   leftrows = Int32[]; rightrows = Int32[]
+          1216 B  fit.jl.90702.mem:514   me = refit_node(st, me, rows, first(tids))
+          1216 B  fit.jl.90702.mem:515   update_score!(st, rows, me); refresh!(st, rows, first(tids))
+          1056 B  fit.jl.90702.mem:493   me = refit_node(st, me, rows, first(tids))
+          1056 B  fit.jl.90702.mem:494   update_score!(st, rows, me)
+           144 B  fit.jl.90702.mem:92    nlevels = zeros(Int, p)
+            80 B  fit.jl.90702.mem:93    iscat = zeros(Bool, p)
+            32 B  fit.jl.90702.mem:61    function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();

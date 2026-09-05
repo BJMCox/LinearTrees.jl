@@ -1,0 +1,130 @@
+# case6-shap  threads=1  samples=2524  mincount=50 (2%), sorted by cumulative count
+ Count  Overhead File                                                                                                  Line Function
+ =====  ======== ====                                                                                                  ==== ========
+    50        50 @Base/array.jl                                                                                       1478 resize!(a::Vector{LinearTrees.PathElem}, nl_::Int64)
+    50         0 @Base/array.jl                                                                                       2444 findfirst
+    50        50 @LinearTrees/src/shap.jl                                                                              118 attribute_constant!(φ::Matrix{Float64}, path::Vector{LinearTrees.PathElem}, v::Float64, row::Int64)
+    53         0 @LinearTrees/src/shap.jl                                                                              192 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+    54        54 @LinearTrees/src/shap.jl                                                                              161 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+    55        55 @LinearTrees/src/shap.jl                                                                              128 attribute_constant!(φ::Matrix{Float64}, path::Vector{LinearTrees.PathElem}, v::Float64, row::Int64)
+    59         0 @LinearTrees/src/shap.jl                                                                              100 unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+    60        60 @LinearTrees/src/shap.jl                                                                               99 unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+    62         0 @LinearTrees/src/shap.jl                                                                              109 unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+    62        62 @LinearTrees/src/shap.jl                                                                              114 unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+    64         0 @Base/array.jl                                                                                        986 setindex!
+    64        64 @Base/array.jl                                                                                        991 _setindex!
+    70        70 @Base/promotion.jl                                                                                      ? unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+    70         0 @LinearTrees/src/shap.jl                                                                              186 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+    71        71 @Base/range.jl                                                                                          ? unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+    78        78 @LinearTrees/src/shap.jl                                                                               65 extend!(path::Vector{LinearTrees.PathElem}, zerofrac::Float64, onefrac::Float64, feature::Int32)
+    80         3 @LinearTrees/src/shap.jl                                                                              227 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+    85         0 @LinearTrees/src/shap.jl                                                                              194 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+    91         0 @LinearTrees/src/shap.jl                                                                               71 extend!(path::Vector{LinearTrees.PathElem}, zerofrac::Float64, onefrac::Float64, feature::Int32)
+   100       100 @Base/essentials.jl                                                                                   920 getindex
+   109       109 @LinearTrees/src/shap.jl                                                                                ? visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   111         0 @LinearTrees/src/shap.jl                                                                              120 attribute_constant!(φ::Matrix{Float64}, path::Vector{LinearTrees.PathElem}, v::Float64, row::Int64)
+   115         1 @LinearTrees/src/shap.jl                                                                              127 attribute_constant!(φ::Matrix{Float64}, path::Vector{LinearTrees.PathElem}, v::Float64, row::Int64)
+   119         0 @LinearTrees/src/shap.jl                                                                              229 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   124         0 @LinearTrees/src/shap.jl                                                                              111 unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+   128         0 @LinearTrees/src/shap.jl                                                                              213 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   136         0 @LinearTrees/src/shap.jl                                                                               60 copyinto!
+   148         1 @LinearTrees/src/shap.jl                                                                              195 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   208         0 @LinearTrees/src/shap.jl                                                                              223 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   248         1 @LinearTrees/src/shap.jl                                                                              230 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   252        16 @LinearTrees/src/shap.jl                                                                              165 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   301       301 @Base/essentials.jl                                                                                    11 length
+   309         3 @LinearTrees/src/shap.jl                                                                              228 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   352        10 @LinearTrees/src/shap.jl                                                                              113 unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+   413       254 @Base/essentials.jl                                                                                   919 getindex
+   430         0 @LinearTrees/src/shap.jl                                                                              224 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   470         0 @Base/range.jl                                                                                        921 iterate
+   470       470 @Base/promotion.jl                                                                                    637 ==
+   988         0 @LinearTrees/src/shap.jl                                                                              125 attribute_constant!(φ::Matrix{Float64}, path::Vector{LinearTrees.PathElem}, v::Float64, row::Int64)
+  2373         7 @LinearTrees/src/shap.jl                                                                              232 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+  2375        27 @LinearTrees/src/shap.jl                                                                              231 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+  2381         0 @Base/client.jl                                                                                       550 _start()
+  2381         0 @Base/client.jl                                                                                       317 exec_options(opts::Base.JLOptions)
+  2381         0 @Base/Base.jl                                                                                         306 include(mod::Module, _path::String)
+  2381         0 @Base/loading.jl                                                                                     3012 _include(mapexpr::Function, mod::Module, _path::String)
+  2381         0 @Base/loading.jl                                                                                     2952 include_string(mapexpr::typeof(identity), mod::Module, code::String, filename::String)
+  2381         0 @Base/boot.jl                                                                                         489 eval(m::Module, e::Any)
+  2381         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   105 run_case(name::String, f::Function)
+  2381         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   108 run_case(name::String, f::var"#33#34"; label::String)
+  2381         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl    53 cpu_profile(name::String, f::var"#33#34")
+  2381         0 @Profile/src/Profile.jl                                                                                60 macro expansion
+  2381         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   146 (::var"#33#34")()
+  2381         0 @LinearTrees/src/shap.jl                                                                              305 shap(tree::LinearTree{Float64, Float64, MSE}, X::Matrix{Float64})
+  2381         0 @LinearTrees/src/shap.jl                                                                              308 shap(tree::LinearTree{Float64, Float64, MSE}, X::Matrix{Float64}; nthreads::Int64)
+  2381         0 @LinearTrees/src/shap.jl                                                                              284 shap!
+  2381         0 @LinearTrees/src/shap.jl                                                                              288 shap!(values::Matrix{Float64}, clipped::Vector{Bool}, tree::LinearTree{Float64, Float64, MSE}, X::Matrix{Float64}; nthreads::Int64)
+  2381         0 @LinearTrees/src/predict.jl                                                                           140 row_blocks
+  2381         0 @LinearTrees/src/predict.jl                                                                           143 row_blocks(f::LinearTrees.var"#85#86"{Matrix{Float64}, Vector{Bool}, LinearTree{Float64, Float64, MSE}, Matrix{Float64}}, n::Int64, nthreads::Int64; min…
+  2381         0 @LinearTrees/src/shap.jl                                                                              291 (::LinearTrees.var"#85#86"{Matrix{Float64}, Vector{Bool}, LinearTree{Float64, Float64, MSE}, Matrix{Float64}})(rs::UnitRange{Int64})
+  2381         0 @LinearTrees/src/shap.jl                                                                              147 shap_recurse!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{I…
+Total snapshots: 2524. Utilization: 100% across all threads and tasks. Use the `groupby` kwarg to break down by thread and/or task.
+
+
+# same profile, sorted by self time (Overhead)
+ Count  Overhead File                                                                                                  Line Function
+ =====  ======== ====                                                                                                  ==== ========
+  2381         0 @Base/client.jl                                                                                       550 _start()
+  2381         0 @Base/client.jl                                                                                       317 exec_options(opts::Base.JLOptions)
+  2381         0 @Base/Base.jl                                                                                         306 include(mod::Module, _path::String)
+  2381         0 @Base/loading.jl                                                                                     3012 _include(mapexpr::Function, mod::Module, _path::String)
+  2381         0 @Base/loading.jl                                                                                     2952 include_string(mapexpr::typeof(identity), mod::Module, code::String, filename::String)
+  2381         0 @Base/boot.jl                                                                                         489 eval(m::Module, e::Any)
+  2381         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   105 run_case(name::String, f::Function)
+  2381         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   108 run_case(name::String, f::var"#33#34"; label::String)
+  2381         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl    53 cpu_profile(name::String, f::var"#33#34")
+  2381         0 @Profile/src/Profile.jl                                                                                60 macro expansion
+  2381         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   146 (::var"#33#34")()
+  2381         0 @LinearTrees/src/shap.jl                                                                              305 shap(tree::LinearTree{Float64, Float64, MSE}, X::Matrix{Float64})
+  2381         0 @LinearTrees/src/shap.jl                                                                              308 shap(tree::LinearTree{Float64, Float64, MSE}, X::Matrix{Float64}; nthreads::Int64)
+  2381         0 @LinearTrees/src/shap.jl                                                                              284 shap!
+  2381         0 @LinearTrees/src/shap.jl                                                                              288 shap!(values::Matrix{Float64}, clipped::Vector{Bool}, tree::LinearTree{Float64, Float64, MSE}, X::Matrix{Float64}; nthreads::Int64)
+  2381         0 @LinearTrees/src/predict.jl                                                                           140 row_blocks
+  2381         0 @LinearTrees/src/predict.jl                                                                           143 row_blocks(f::LinearTrees.var"#85#86"{Matrix{Float64}, Vector{Bool}, LinearTree{Float64, Float64, MSE}, Matrix{Float64}}, n::Int64, nthreads::Int64; min…
+  2381         0 @LinearTrees/src/shap.jl                                                                              291 (::LinearTrees.var"#85#86"{Matrix{Float64}, Vector{Bool}, LinearTree{Float64, Float64, MSE}, Matrix{Float64}})(rs::UnitRange{Int64})
+  2381         0 @LinearTrees/src/shap.jl                                                                              147 shap_recurse!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{I…
+   988         0 @LinearTrees/src/shap.jl                                                                              125 attribute_constant!(φ::Matrix{Float64}, path::Vector{LinearTrees.PathElem}, v::Float64, row::Int64)
+   470         0 @Base/range.jl                                                                                        921 iterate
+   430         0 @LinearTrees/src/shap.jl                                                                              224 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   208         0 @LinearTrees/src/shap.jl                                                                              223 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   136         0 @LinearTrees/src/shap.jl                                                                               60 copyinto!
+    53         0 @LinearTrees/src/shap.jl                                                                              192 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   111         0 @LinearTrees/src/shap.jl                                                                              120 attribute_constant!(φ::Matrix{Float64}, path::Vector{LinearTrees.PathElem}, v::Float64, row::Int64)
+    62         0 @LinearTrees/src/shap.jl                                                                              109 unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+    59         0 @LinearTrees/src/shap.jl                                                                              100 unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+   119         0 @LinearTrees/src/shap.jl                                                                              229 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   128         0 @LinearTrees/src/shap.jl                                                                              213 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+    85         0 @LinearTrees/src/shap.jl                                                                              194 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   124         0 @LinearTrees/src/shap.jl                                                                              111 unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+    50         0 @Base/array.jl                                                                                       2444 findfirst
+    91         0 @LinearTrees/src/shap.jl                                                                               71 extend!(path::Vector{LinearTrees.PathElem}, zerofrac::Float64, onefrac::Float64, feature::Int32)
+    64         0 @Base/array.jl                                                                                        986 setindex!
+    70         0 @LinearTrees/src/shap.jl                                                                              186 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   248         1 @LinearTrees/src/shap.jl                                                                              230 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   115         1 @LinearTrees/src/shap.jl                                                                              127 attribute_constant!(φ::Matrix{Float64}, path::Vector{LinearTrees.PathElem}, v::Float64, row::Int64)
+   148         1 @LinearTrees/src/shap.jl                                                                              195 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   309         3 @LinearTrees/src/shap.jl                                                                              228 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+    80         3 @LinearTrees/src/shap.jl                                                                              227 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+  2373         7 @LinearTrees/src/shap.jl                                                                              232 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   352        10 @LinearTrees/src/shap.jl                                                                              113 unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+   252        16 @LinearTrees/src/shap.jl                                                                              165 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+  2375        27 @LinearTrees/src/shap.jl                                                                              231 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+    50        50 @Base/array.jl                                                                                       1478 resize!(a::Vector{LinearTrees.PathElem}, nl_::Int64)
+    50        50 @LinearTrees/src/shap.jl                                                                              118 attribute_constant!(φ::Matrix{Float64}, path::Vector{LinearTrees.PathElem}, v::Float64, row::Int64)
+    54        54 @LinearTrees/src/shap.jl                                                                              161 visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+    55        55 @LinearTrees/src/shap.jl                                                                              128 attribute_constant!(φ::Matrix{Float64}, path::Vector{LinearTrees.PathElem}, v::Float64, row::Int64)
+    60        60 @LinearTrees/src/shap.jl                                                                               99 unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+    62        62 @LinearTrees/src/shap.jl                                                                              114 unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+    64        64 @Base/array.jl                                                                                        991 _setindex!
+    70        70 @Base/promotion.jl                                                                                      ? unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+    71        71 @Base/range.jl                                                                                          ? unwound_sum(path::Vector{LinearTrees.PathElem}, i::Int64)
+    78        78 @LinearTrees/src/shap.jl                                                                               65 extend!(path::Vector{LinearTrees.PathElem}, zerofrac::Float64, onefrac::Float64, feature::Int32)
+   100       100 @Base/essentials.jl                                                                                   920 getindex
+   109       109 @LinearTrees/src/shap.jl                                                                                ? visit!(φ::Matrix{Float64}, tree::LinearTree{Float64, Float64, MSE}, x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}…
+   413       254 @Base/essentials.jl                                                                                   919 getindex
+   301       301 @Base/essentials.jl                                                                                    11 length
+   470       470 @Base/promotion.jl                                                                                    637 ==
+Total snapshots: 2524. Utilization: 100% across all threads and tasks. Use the `groupby` kwarg to break down by thread and/or task.

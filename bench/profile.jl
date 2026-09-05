@@ -13,7 +13,7 @@
 #
 # Two things this script does not do, because they need their own process:
 #
-#   julia --project=bench --track-allocation=user bench/trackalloc.jl
+#   julia --project=bench -t 1 --track-allocation=user bench/trackalloc.jl <case>
 #   julia --project=bench bench/typecheck.jl        # JET + @code_warntype
 #
 # Set `LT_PROFILE_CASES=1,5` to run a subset.

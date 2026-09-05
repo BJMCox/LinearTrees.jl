@@ -1,0 +1,16 @@
+# case1-mse  threads=10  sampled allocs=722  sampled bytes=1798048  rate=0.01
+     1600080 B         4 allocs  fit.jl:17 Scratch
+       91464 B        38 allocs  fit.jl:541 grow_subtree
+       80088 B         4 allocs  fit.jl:192 refresh!
+       18272 B       571 allocs  fit.jl:396 best_split_serial
+        3808 B         1 allocs  fit.jl:518 grow_subtree
+         928 B        29 allocs  fit.jl:388 best_split_serial
+         880 B        13 allocs  fit.jl:193 refresh!
+         832 B        26 allocs  fit.jl:540 grow_subtree
+         640 B        20 allocs  fit.jl:665 update_score!
+         384 B         7 allocs  fit.jl:160 column_blocks
+         224 B         1 allocs  fit.jl:551 grow_subtree
+         192 B         2 allocs  gc-alloc-profiler.h:43 maybe_record_alloc_to_profile
+         120 B         3 allocs  fit.jl:173 #presort!##0
+         112 B         2 allocs  fit.jl:419 best_split
+          24 B         1 allocs  fit.jl:556 grow_subtree

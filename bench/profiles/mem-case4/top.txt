@@ -1,0 +1,31 @@
+# case 4, --track-allocation=user, one call after clear_malloc_data()
+       2559744 B  statsapi.jl.91007.mem:108   end
+       2429312 B  statsapi.jl.91007.mem:104   for i in eachindex(col)
+       1280000 B  statsapi.jl.91007.mem:105   v = Float64(col[i])
+        802896 B  statsapi.jl.91007.mem:74    out = Matrix{Float64}(undef, n, length(enc.names))
+        640000 B  statsapi.jl.91007.mem:95    v = col[i]
+        639936 B  statsapi.jl.91007.mem:102   end
+        607328 B  statsapi.jl.91007.mem:94    for i in eachindex(col)
+        409680 B  fit.jl.91007.mem:124   idx = Matrix{Int32}(undef, n, p)
+        306304 B  fit.jl.91007.mem:539   sizehint!(leftrows, nleftrows); sizehint!(rightrows, length(rows) - nleftrows)
+        256560 B  fit.jl.91007.mem:126   st = FitState{T,V,L,R}(; X = Xm, y = yv, w, f, g = zeros(V, n), h = zeros(V, n), z = zeros(V, n),
+        245952 B  fit.jl.91007.mem:90    yv = Vector{T}(y[keep]); w = w[keep]
+        155120 B  fit.jl.91007.mem:318   sz = zeros(V, L); sw = zeros(V, L); counts = zeros(Int, L + 1)
+         81984 B  fit.jl.91007.mem:82    w = weights === nothing ? ones(T, n) : Vector{T}(weights)
+         81984 B  fit.jl.91007.mem:123   f = fill(clampscore(f0, lo, hi), n)
+         81984 B  loss.jl.91007.mem:279   wmean(y, w) = sum(w .* y) / sum(w)
+         81984 B  statsapi.jl.91007.mem:171   w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
+         81984 B  statsapi.jl.91007.mem:173   return LinearTreeRegressorFit(tree, enc, Xm, Vector{Float64}(y), w)
+         70912 B  fit.jl.91007.mem:394   leftcodes = Int[]
+         49216 B  fit.jl.91007.mem:132   rows = collect(Int32(1):Int32(n))
+         17728 B  fit.jl.91007.mem:325   present = [c for c in 1:L if counts[c + 1] > 0]
+         15520 B  fit.jl.91007.mem:326   length(present) < 2 && return nocandidate(T, V), Int[]
+          8864 B  fit.jl.91007.mem:386   best = nocandidate(T, V); bestj = 0; bestleft = Int[]
+          7360 B  fit.jl.91007.mem:538   leftrows = Int32[]; rightrows = Int32[]
+          6912 B  fit.jl.91007.mem:332   cumoffset = zeros(Int, L + 1)
+          6912 B  fit.jl.91007.mem:336   cursor = copy(cumoffset)
+          5536 B  fit.jl.91007.mem:347   order = sort(present; by = c -> sz[c][k] / sw[c][k])
+          5520 B  fit.jl.91007.mem:348   rank = zeros(Int32, L)
+          3984 B  fit.jl.91007.mem:376   append!(masks, zeros(UInt64, words))
+          3648 B  fit.jl.91007.mem:494   update_score!(st, rows, me)
+          2208 B  fit.jl.91007.mem:345   best = nocandidate(T, V); bestleft = Int[]

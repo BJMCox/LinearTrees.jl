@@ -1,0 +1,2326 @@
+
+==============================================================================
+== scan_feature scalar
+==============================================================================
+MethodInstance for LinearTrees.scan_feature(::SubArray{Float64, 1, Matrix{Float64}, Tuple{UnitRange{Int64}, Int64}, true}, ::SubArray{Float64, 1, Matrix{Float64}, Tuple{UnitRange{Int64}, Int64}, true}, ::SubArray{Float64, 1, Matrix{Float64}, Tuple{UnitRange{Int64}, Int64}, true}, ::SubArray{Float64, 1, Matrix{Float64}, Tuple{UnitRange{Int64}, Int64}, true}, ::BIC, ::Float64, ::Float64)
+  from scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::AbstractVector{V}, ws::AbstractVector{T}, rule::LinearTrees.SelectionRule, min_leaf, dmin) where {T<:Real, V} @ LinearTrees ~/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/scan.jl:48
+Static Parameters
+  T = Float64
+  V = Float64
+Arguments
+  #self#::Core.Const(LinearTrees.scan_feature)
+  xs::SubArray{Float64, 1, Matrix{Float64}, Tuple{UnitRange{Int64}, Int64}, true}
+  zs::SubArray{Float64, 1, Matrix{Float64}, Tuple{UnitRange{Int64}, Int64}, true}
+  hs::SubArray{Float64, 1, Matrix{Float64}, Tuple{UnitRange{Int64}, Int64}, true}
+  ws::SubArray{Float64, 1, Matrix{Float64}, Tuple{UnitRange{Int64}, Int64}, true}
+  rule::BIC
+  min_leaf::Float64
+  dmin::Float64
+Locals
+  @_9::UNION{NOTHING, TUPLE{INT64, INT64}}
+  @_10::Int64
+  @_11::Int64
+  @_12::UNION{NOTHING, TUPLE{INT64, INT64}}
+  uleft::Int64
+  wright::Float64
+  wleft::Float64
+  right::LinearTrees.MomentSums{Float64}
+  left::LinearTrees.MomentSums{Float64}
+  best::LinearTrees.Candidate{Float64, Float64}
+  sc::Float64
+  rss::Float64
+  b::Float64
+  a::Float64
+  r::UNION{NOTHING, TUPLE{FLOAT64, FLOAT64, FLOAT64}, NTUPLE{5, FLOAT64}}
+  logn::Float64
+  nc::Int64
+  nu::Int64
+  total::LinearTrees.MomentSums{Float64}
+  n::Float64
+  m::Int64
+  i@_30::Int64
+  @_31::Int64
+  @_32::Int64
+  @_33::Int64
+  @_34::Int64
+  @_35::Int64
+  rssr::Float64
+  br::Float64
+  ar::Float64
+  rssl::Float64
+  bl::Float64
+  al::Float64
+  rr::UNION{NOTHING, FLOAT64, TUPLE{FLOAT64, FLOAT64, FLOAT64}}
+  rl::UNION{NOTHING, FLOAT64, TUPLE{FLOAT64, FLOAT64, FLOAT64}}
+  uright::Int64
+  t::Float64
+  i@_46::Int64
+  @_47::Bool
+Body::LinearTrees.Candidate{Float64, Float64}
+1 ──        Core.NewvarNode(:(@_9))
+│           Core.NewvarNode(:(@_10))
+│           Core.NewvarNode(:(@_11))
+│           Core.NewvarNode(:(uleft))
+│           Core.NewvarNode(:(wright))
+│           Core.NewvarNode(:(wleft))
+│           Core.NewvarNode(:(right))
+│           Core.NewvarNode(:(left))
+│           Core.NewvarNode(:(best))
+│           Core.NewvarNode(:(sc))
+│           Core.NewvarNode(:(rss))
+│           Core.NewvarNode(:(b))
+│           Core.NewvarNode(:(a))
+│           Core.NewvarNode(:(r))
+│           Core.NewvarNode(:(logn))
+│           Core.NewvarNode(:(nc))
+│           Core.NewvarNode(:(nu))
+│    %18  = LinearTrees.length::Core.Const(length)
+│           (m = (%18)(xs))
+│    %20  = LinearTrees.sum::Core.Const(sum)
+│           (n = (%20)(ws))
+│    %22  = LinearTrees.zero::Core.Const(zero)
+│    %23  = LinearTrees.MomentSums::Core.Const(LinearTrees.MomentSums)
+│    %24  = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│    %25  = Core.apply_type(%23, %24)::Core.Const(LinearTrees.MomentSums{Float64})
+│           (total = (%22)(%25))
+│    %27  = LinearTrees.:(:)::Core.Const(Colon())
+│    %28  = m::Int64
+│    %29  = (%27)(1, %28)::Core.PartialStruct(UnitRange{Int64}, Any[Core.Const(1), Int64])
+│           (@_12 = Base.iterate(%29))
+│    %31  = @_12::UNION{NOTHING, TUPLE{INT64, INT64}}
+│    %32  = (%31 === nothing)::Bool
+│    %33  = Base.not_int(%32)::Bool
+└───        goto #4 if not %33
+2 ┄─ %35  = @_12::Tuple{Int64, Int64}
+│           (i@_30 = Core.getfield(%35, 1))
+│    %37  = Core.getfield(%35, 2)::Int64
+│    %38  = LinearTrees.addrow::Core.Const(LinearTrees.addrow)
+│    %39  = total::LinearTrees.MomentSums{Float64}
+│    %40  = i@_30::Int64
+│    %41  = Base.getindex(xs, %40)::Float64
+│    %42  = i@_30::Int64
+│    %43  = Base.getindex(zs, %42)::Float64
+│    %44  = i@_30::Int64
+│    %45  = Base.getindex(hs, %44)::Float64
+│           (total = (%38)(%39, %41, %43, %45))
+│           (@_12 = Base.iterate(%29, %37))
+│    %48  = @_12::UNION{NOTHING, TUPLE{INT64, INT64}}
+│    %49  = (%48 === nothing)::Bool
+│    %50  = Base.not_int(%49)::Bool
+└───        goto #4 if not %50
+3 ──        goto #2
+4 ┄─ %53  = LinearTrees.nocandidate::Core.Const(LinearTrees.nocandidate)
+│    %54  = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %55  = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│           (best = (%53)(%54, %55))
+│    %57  = LinearTrees.nunique::Core.Const(LinearTrees.nunique)
+│           (nu = (%57)(xs))
+│    %59  = LinearTrees.ncoord::Core.Const(LinearTrees.ncoord)
+│    %60  = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│           (nc = (%59)(%60))
+│    %62  = LinearTrees.score_logn::Core.Const(LinearTrees.score_logn)
+│    %63  = n::Float64
+│           (logn = (%62)(rule, %63))
+│    %65  = LinearTrees.allowed::Core.Const(LinearTrees.allowed)
+│    %66  = LinearTrees.CON::Core.Const(CON)
+│    %67  = (%65)(rule, %66)::Core.Const(true)
+└───        goto #7 if not %67
+5 ── %69  = LinearTrees.fit_con::Core.Const(LinearTrees.fit_con)
+│    %70  = total::LinearTrees.MomentSums{Float64}
+│    %71  = (%69)(%70)::Tuple{Float64, Float64}
+│    %72  = Base.indexed_iterate(%71, 1)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(2)])
+│           (b = Core.getfield(%72, 1))
+│           (@_11 = Core.getfield(%72, 2))
+│    %75  = @_11::Core.Const(2)
+│    %76  = Base.indexed_iterate(%71, 2, %75)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(3)])
+│           (rss = Core.getfield(%76, 1))
+│    %78  = LinearTrees.selection_score::Core.Const(LinearTrees.selection_score)
+│    %79  = LinearTrees.CON::Core.Const(CON)
+│    %80  = LinearTrees.sum::Core.Const(sum)
+│    %81  = rss::Float64
+│    %82  = (%80)(%81)::Float64
+│    %83  = n::Float64
+│    %84  = nc::Core.Const(1)
+│           (sc = (%78)(rule, %79, %82, %83, dmin, %84))
+│    %86  = LinearTrees.:<::Core.Const(<)
+│    %87  = sc::Float64
+│    %88  = best::Core.Const(LinearTrees.Candidate{Float64, Float64}(CON, NaN, 0.0, 0.0, 0.0, 0.0, Inf, Inf))
+│    %89  = Base.getproperty(%88, :score)::Core.Const(Inf)
+│    %90  = (%86)(%87, %89)::Bool
+└───        goto #7 if not %90
+6 ── %92  = LinearTrees.Candidate::Core.Const(LinearTrees.Candidate)
+│    %93  = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %94  = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│    %95  = Core.apply_type(%92, %93, %94)::Core.Const(LinearTrees.Candidate{Float64, Float64})
+│    %96  = LinearTrees.CON::Core.Const(CON)
+│    %97  = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %98  = LinearTrees.NaN::Core.Const(NaN)
+│    %99  = (%97)(%98)::Core.Const(NaN)
+│    %100 = LinearTrees.zero::Core.Const(zero)
+│    %101 = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│    %102 = (%100)(%101)::Core.Const(0.0)
+│    %103 = b::Float64
+│    %104 = LinearTrees.zero::Core.Const(zero)
+│    %105 = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│    %106 = (%104)(%105)::Core.Const(0.0)
+│    %107 = b::Float64
+│    %108 = rss::Float64
+│    %109 = sc::Float64
+│           (best = (%95)(%96, %99, %102, %103, %106, %107, %108, %109))
+└───        goto #7
+7 ┄─ %112 = LinearTrees.allowed::Core.Const(LinearTrees.allowed)
+│    %113 = LinearTrees.LIN::Core.Const(LIN)
+│    %114 = (%112)(rule, %113)::Core.Const(true)
+└───        goto #12 if not %114
+8 ── %116 = LinearTrees.:>=::Core.Const(>=)
+│    %117 = nu::Int64
+│    %118 = LinearTrees.MIN_UNIQUE_LIN::Core.Const(5)
+│    %119 = (%116)(%117, %118)::Bool
+└───        goto #12 if not %119
+9 ── %121 = LinearTrees.fit_lin::Core.Const(LinearTrees.fit_lin)
+│    %122 = total::LinearTrees.MomentSums{Float64}
+│           (r = (%121)(%122))
+│    %124 = LinearTrees.:!==::Core.Const(!==)
+│    %125 = r::UNION{NOTHING, TUPLE{FLOAT64, FLOAT64, FLOAT64}}
+│    %126 = LinearTrees.nothing::Core.Const(nothing)
+│    %127 = (%124)(%125, %126)::Bool
+└───        goto #12 if not %127
+10 ─ %129 = r::Tuple{Float64, Float64, Float64}
+│    %130 = Base.indexed_iterate(%129, 1)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(2)])
+│           (a = Core.getfield(%130, 1))
+│           (@_10 = Core.getfield(%130, 2))
+│    %133 = r::Tuple{Float64, Float64, Float64}
+│    %134 = @_10::Core.Const(2)
+│    %135 = Base.indexed_iterate(%133, 2, %134)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(3)])
+│           (b = Core.getfield(%135, 1))
+│           (@_10 = Core.getfield(%135, 2))
+│    %138 = r::Tuple{Float64, Float64, Float64}
+│    %139 = @_10::Core.Const(3)
+│    %140 = Base.indexed_iterate(%138, 3, %139)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(4)])
+│           (rss = Core.getfield(%140, 1))
+│    %142 = LinearTrees.selection_score::Core.Const(LinearTrees.selection_score)
+│    %143 = LinearTrees.LIN::Core.Const(LIN)
+│    %144 = LinearTrees.sum::Core.Const(sum)
+│    %145 = rss::Float64
+│    %146 = (%144)(%145)::Float64
+│    %147 = n::Float64
+│    %148 = nc::Core.Const(1)
+│           (sc = (%142)(rule, %143, %146, %147, dmin, %148))
+│    %150 = LinearTrees.:<::Core.Const(<)
+│    %151 = sc::Float64
+│    %152 = best::Core.PartialStruct(LinearTrees.Candidate{Float64, Float64}, Any[Core.Const(CON), Core.Const(NaN), Core.Const(0.0), Float64, Core.Const(0.0), Float64, Float64, Float64])
+│    %153 = Base.getproperty(%152, :score)::Float64
+│    %154 = (%150)(%151, %153)::Bool
+└───        goto #12 if not %154
+11 ─ %156 = LinearTrees.Candidate::Core.Const(LinearTrees.Candidate)
+│    %157 = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %158 = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│    %159 = Core.apply_type(%156, %157, %158)::Core.Const(LinearTrees.Candidate{Float64, Float64})
+│    %160 = LinearTrees.LIN::Core.Const(LIN)
+│    %161 = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %162 = LinearTrees.NaN::Core.Const(NaN)
+│    %163 = (%161)(%162)::Core.Const(NaN)
+│    %164 = a::Float64
+│    %165 = b::Float64
+│    %166 = a::Float64
+│    %167 = b::Float64
+│    %168 = rss::Float64
+│    %169 = sc::Float64
+│           (best = (%159)(%160, %163, %164, %165, %166, %167, %168, %169))
+└───        goto #12
+12 ┄ %172 = LinearTrees.zero::Core.Const(zero)
+│    %173 = LinearTrees.MomentSums::Core.Const(LinearTrees.MomentSums)
+│    %174 = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│    %175 = Core.apply_type(%173, %174)::Core.Const(LinearTrees.MomentSums{Float64})
+│           (left = (%172)(%175))
+│    %177 = total::LinearTrees.MomentSums{Float64}
+│           (right = %177)
+│    %179 = LinearTrees.zero::Core.Const(zero)
+│    %180 = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│           (wleft = (%179)(%180))
+│    %182 = n::Float64
+│           (wright = %182)
+│           (uleft = 0)
+│    %185 = LinearTrees.:(:)::Core.Const(Colon())
+│    %186 = LinearTrees.:-::Core.Const(-)
+│    %187 = m::Int64
+│    %188 = (%186)(%187, 1)::Int64
+│    %189 = (%185)(1, %188)::Core.PartialStruct(UnitRange{Int64}, Any[Core.Const(1), Int64])
+│           (@_9 = Base.iterate(%189))
+│    %191 = @_9::UNION{NOTHING, TUPLE{INT64, INT64}}
+│    %192 = (%191 === nothing)::Bool
+│    %193 = Base.not_int(%192)::Bool
+└───        goto #43 if not %193
+13 ┄        Core.NewvarNode(:(@_31))
+│           Core.NewvarNode(:(@_32))
+│           Core.NewvarNode(:(@_33))
+│           Core.NewvarNode(:(@_34))
+│           Core.NewvarNode(:(@_35))
+│           Core.NewvarNode(:(rssr))
+│           Core.NewvarNode(:(br))
+│           Core.NewvarNode(:(ar))
+│           Core.NewvarNode(:(rssl))
+│           Core.NewvarNode(:(bl))
+│           Core.NewvarNode(:(al))
+│           Core.NewvarNode(:(rr))
+│           Core.NewvarNode(:(rl))
+│           Core.NewvarNode(:(uright))
+│           Core.NewvarNode(:(t))
+│    %210 = @_9::Tuple{Int64, Int64}
+│           (i@_46 = Core.getfield(%210, 1))
+│    %212 = Core.getfield(%210, 2)::Int64
+│    %213 = LinearTrees.addrow::Core.Const(LinearTrees.addrow)
+│    %214 = left::LinearTrees.MomentSums{Float64}
+│    %215 = i@_46::Int64
+│    %216 = Base.getindex(xs, %215)::Float64
+│    %217 = i@_46::Int64
+│    %218 = Base.getindex(zs, %217)::Float64
+│    %219 = i@_46::Int64
+│    %220 = Base.getindex(hs, %219)::Float64
+│           (left = (%213)(%214, %216, %218, %220))
+│    %222 = LinearTrees.subrow::Core.Const(LinearTrees.subrow)
+│    %223 = right::LinearTrees.MomentSums{Float64}
+│    %224 = i@_46::Int64
+│    %225 = Base.getindex(xs, %224)::Float64
+│    %226 = i@_46::Int64
+│    %227 = Base.getindex(zs, %226)::Float64
+│    %228 = i@_46::Int64
+│    %229 = Base.getindex(hs, %228)::Float64
+│           (right = (%222)(%223, %225, %227, %229))
+│    %231 = LinearTrees.:+::Core.Const(+)
+│    %232 = wleft::Float64
+│    %233 = i@_46::Int64
+│    %234 = Base.getindex(ws, %233)::Float64
+│           (wleft = (%231)(%232, %234))
+│    %236 = LinearTrees.:-::Core.Const(-)
+│    %237 = wright::Float64
+│    %238 = i@_46::Int64
+│    %239 = Base.getindex(ws, %238)::Float64
+│           (wright = (%236)(%237, %239))
+│    %241 = LinearTrees.:(==)::Core.Const(==)
+│    %242 = i@_46::Int64
+│    %243 = (%241)(%242, 1)::Bool
+└───        goto #15 if not %243
+14 ─        goto #16
+15 ─ %246 = LinearTrees.:!=::Core.Const(!=)
+│    %247 = i@_46::Int64
+│    %248 = Base.getindex(xs, %247)::Float64
+│    %249 = LinearTrees.:-::Core.Const(-)
+│    %250 = i@_46::Int64
+│    %251 = (%249)(%250, 1)::Int64
+│    %252 = Base.getindex(xs, %251)::Float64
+│    %253 = (%246)(%248, %252)::Bool
+└───        goto #17 if not %253
+16 ┄ %255 = LinearTrees.:+::Core.Const(+)
+│    %256 = uleft::Int64
+│           (uleft = (%255)(%256, 1))
+└───        goto #17
+17 ┄ %259 = LinearTrees.:<::Core.Const(<)
+│    %260 = i@_46::Int64
+│    %261 = Base.getindex(xs, %260)::Float64
+│    %262 = LinearTrees.:+::Core.Const(+)
+│    %263 = i@_46::Int64
+│    %264 = (%262)(%263, 1)::Int64
+│    %265 = Base.getindex(xs, %264)::Float64
+│    %266 = (%259)(%261, %265)::Bool
+└───        goto #19 if not %266
+18 ─        goto #20
+19 ─        goto #41
+20 ─ %270 = LinearTrees.:>=::Core.Const(>=)
+│    %271 = wleft::Float64
+│    %272 = (%270)(%271, min_leaf)::Bool
+└───        goto #22 if not %272
+21 ─ %274 = LinearTrees.:>=::Core.Const(>=)
+│    %275 = wright::Float64
+│           (@_47 = (%274)(%275, min_leaf))
+└───        goto #23
+22 ─        (@_47 = false)
+23 ┄ %279 = @_47::Bool
+└───        goto #25 if not %279
+24 ─        goto #26
+25 ─        goto #41
+26 ─ %283 = i@_46::Int64
+│           (t = Base.getindex(xs, %283))
+│    %285 = LinearTrees.:-::Core.Const(-)
+│    %286 = nu::Int64
+│    %287 = uleft::Int64
+│           (uright = (%285)(%286, %287))
+│    %289 = LinearTrees.allowed::Core.Const(LinearTrees.allowed)
+│    %290 = LinearTrees.PCON::Core.Const(PCON)
+│    %291 = (%289)(rule, %290)::Core.Const(true)
+└───        goto #29 if not %291
+27 ─ %293 = LinearTrees.fit_con::Core.Const(LinearTrees.fit_con)
+│    %294 = left::LinearTrees.MomentSums{Float64}
+│    %295 = (%293)(%294)::Tuple{Float64, Float64}
+│    %296 = Base.indexed_iterate(%295, 1)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(2)])
+│           (bl = Core.getfield(%296, 1))
+│           (@_35 = Core.getfield(%296, 2))
+│    %299 = @_35::Core.Const(2)
+│    %300 = Base.indexed_iterate(%295, 2, %299)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(3)])
+│           (rl = Core.getfield(%300, 1))
+│    %302 = LinearTrees.fit_con::Core.Const(LinearTrees.fit_con)
+│    %303 = right::LinearTrees.MomentSums{Float64}
+│    %304 = (%302)(%303)::Tuple{Float64, Float64}
+│    %305 = Base.indexed_iterate(%304, 1)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(2)])
+│           (br = Core.getfield(%305, 1))
+│           (@_34 = Core.getfield(%305, 2))
+│    %308 = @_34::Core.Const(2)
+│    %309 = Base.indexed_iterate(%304, 2, %308)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(3)])
+│           (rr = Core.getfield(%309, 1))
+│    %311 = LinearTrees.:+::Core.Const(+)
+│    %312 = rl::Float64
+│    %313 = rr::Float64
+│           (rss = (%311)(%312, %313))
+│    %315 = LinearTrees.selection_score::Core.Const(LinearTrees.selection_score)
+│    %316 = LinearTrees.PCON::Core.Const(PCON)
+│    %317 = LinearTrees.sum::Core.Const(sum)
+│    %318 = rss::Float64
+│    %319 = (%317)(%318)::Float64
+│    %320 = n::Float64
+│    %321 = nc::Core.Const(1)
+│    %322 = logn::Float64
+│           (sc = (%315)(rule, %316, %319, %320, dmin, %321, %322))
+│    %324 = LinearTrees.:<::Core.Const(<)
+│    %325 = sc::Float64
+│    %326 = best::LinearTrees.Candidate{Float64, Float64}
+│    %327 = Base.getproperty(%326, :score)::Float64
+│    %328 = (%324)(%325, %327)::Bool
+└───        goto #29 if not %328
+28 ─ %330 = LinearTrees.Candidate::Core.Const(LinearTrees.Candidate)
+│    %331 = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %332 = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│    %333 = Core.apply_type(%330, %331, %332)::Core.Const(LinearTrees.Candidate{Float64, Float64})
+│    %334 = LinearTrees.PCON::Core.Const(PCON)
+│    %335 = t::Float64
+│    %336 = LinearTrees.zero::Core.Const(zero)
+│    %337 = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│    %338 = (%336)(%337)::Core.Const(0.0)
+│    %339 = bl::Float64
+│    %340 = LinearTrees.zero::Core.Const(zero)
+│    %341 = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│    %342 = (%340)(%341)::Core.Const(0.0)
+│    %343 = br::Float64
+│    %344 = rss::Float64
+│    %345 = sc::Float64
+│           (best = (%333)(%334, %335, %338, %339, %342, %343, %344, %345))
+└───        goto #29
+29 ┄ %348 = LinearTrees.allowed::Core.Const(LinearTrees.allowed)
+│    %349 = LinearTrees.BLIN::Core.Const(BLIN)
+│    %350 = (%348)(rule, %349)::Core.Const(true)
+└───        goto #34 if not %350
+30 ─ %352 = LinearTrees.:>=::Core.Const(>=)
+│    %353 = nu::Int64
+│    %354 = LinearTrees.MIN_UNIQUE_LIN::Core.Const(5)
+│    %355 = (%352)(%353, %354)::Bool
+└───        goto #34 if not %355
+31 ─ %357 = LinearTrees.fit_blin::Core.Const(LinearTrees.fit_blin)
+│    %358 = left::LinearTrees.MomentSums{Float64}
+│    %359 = right::LinearTrees.MomentSums{Float64}
+│    %360 = t::Float64
+│           (r = (%357)(%358, %359, %360))
+│    %362 = LinearTrees.:!==::Core.Const(!==)
+│    %363 = r::UNION{NOTHING, NTUPLE{5, FLOAT64}}
+│    %364 = LinearTrees.nothing::Core.Const(nothing)
+│    %365 = (%362)(%363, %364)::Bool
+└───        goto #34 if not %365
+32 ─ %367 = r::NTuple{5, Float64}
+│    %368 = Base.indexed_iterate(%367, 1)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(2)])
+│           (al = Core.getfield(%368, 1))
+│           (@_33 = Core.getfield(%368, 2))
+│    %371 = r::NTuple{5, Float64}
+│    %372 = @_33::Core.Const(2)
+│    %373 = Base.indexed_iterate(%371, 2, %372)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(3)])
+│           (bl = Core.getfield(%373, 1))
+│           (@_33 = Core.getfield(%373, 2))
+│    %376 = r::NTuple{5, Float64}
+│    %377 = @_33::Core.Const(3)
+│    %378 = Base.indexed_iterate(%376, 3, %377)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(4)])
+│           (ar = Core.getfield(%378, 1))
+│           (@_33 = Core.getfield(%378, 2))
+│    %381 = r::NTuple{5, Float64}
+│    %382 = @_33::Core.Const(4)
+│    %383 = Base.indexed_iterate(%381, 4, %382)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(5)])
+│           (br = Core.getfield(%383, 1))
+│           (@_33 = Core.getfield(%383, 2))
+│    %386 = r::NTuple{5, Float64}
+│    %387 = @_33::Core.Const(5)
+│    %388 = Base.indexed_iterate(%386, 5, %387)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(6)])
+│           (rss = Core.getfield(%388, 1))
+│    %390 = LinearTrees.selection_score::Core.Const(LinearTrees.selection_score)
+│    %391 = LinearTrees.BLIN::Core.Const(BLIN)
+│    %392 = LinearTrees.sum::Core.Const(sum)
+│    %393 = rss::Float64
+│    %394 = (%392)(%393)::Float64
+│    %395 = n::Float64
+│    %396 = nc::Core.Const(1)
+│    %397 = logn::Float64
+│           (sc = (%390)(rule, %391, %394, %395, dmin, %396, %397))
+│    %399 = LinearTrees.:<::Core.Const(<)
+│    %400 = sc::Float64
+│    %401 = best::LinearTrees.Candidate{Float64, Float64}
+│    %402 = Base.getproperty(%401, :score)::Float64
+│    %403 = (%399)(%400, %402)::Bool
+└───        goto #34 if not %403
+33 ─ %405 = LinearTrees.Candidate::Core.Const(LinearTrees.Candidate)
+│    %406 = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %407 = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│    %408 = Core.apply_type(%405, %406, %407)::Core.Const(LinearTrees.Candidate{Float64, Float64})
+│    %409 = LinearTrees.BLIN::Core.Const(BLIN)
+│    %410 = t::Float64
+│    %411 = al::Float64
+│    %412 = bl::Float64
+│    %413 = ar::Float64
+│    %414 = br::Float64
+│    %415 = rss::Float64
+│    %416 = sc::Float64
+│           (best = (%408)(%409, %410, %411, %412, %413, %414, %415, %416))
+└───        goto #34
+34 ┄ %419 = LinearTrees.allowed::Core.Const(LinearTrees.allowed)
+│    %420 = LinearTrees.PLIN::Core.Const(PLIN)
+│    %421 = (%419)(rule, %420)::Core.Const(true)
+└───        goto #41 if not %421
+35 ─ %423 = LinearTrees.:>=::Core.Const(>=)
+│    %424 = uleft::Int64
+│    %425 = LinearTrees.MIN_UNIQUE_LIN::Core.Const(5)
+│    %426 = (%423)(%424, %425)::Bool
+└───        goto #41 if not %426
+36 ─ %428 = LinearTrees.:>=::Core.Const(>=)
+│    %429 = uright::Int64
+│    %430 = LinearTrees.MIN_UNIQUE_LIN::Core.Const(5)
+│    %431 = (%428)(%429, %430)::Bool
+└───        goto #41 if not %431
+37 ─ %433 = LinearTrees.fit_lin::Core.Const(LinearTrees.fit_lin)
+│    %434 = left::LinearTrees.MomentSums{Float64}
+│           (rl = (%433)(%434))
+│    %436 = LinearTrees.fit_lin::Core.Const(LinearTrees.fit_lin)
+│    %437 = right::LinearTrees.MomentSums{Float64}
+│           (rr = (%436)(%437))
+│    %439 = LinearTrees.:!==::Core.Const(!==)
+│    %440 = rl::UNION{NOTHING, TUPLE{FLOAT64, FLOAT64, FLOAT64}}
+│    %441 = LinearTrees.nothing::Core.Const(nothing)
+│    %442 = (%439)(%440, %441)::Bool
+└───        goto #41 if not %442
+38 ─ %444 = LinearTrees.:!==::Core.Const(!==)
+│    %445 = rr::UNION{NOTHING, TUPLE{FLOAT64, FLOAT64, FLOAT64}}
+│    %446 = LinearTrees.nothing::Core.Const(nothing)
+│    %447 = (%444)(%445, %446)::Bool
+└───        goto #41 if not %447
+39 ─ %449 = rl::Tuple{Float64, Float64, Float64}
+│    %450 = Base.indexed_iterate(%449, 1)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(2)])
+│           (al = Core.getfield(%450, 1))
+│           (@_32 = Core.getfield(%450, 2))
+│    %453 = rl::Tuple{Float64, Float64, Float64}
+│    %454 = @_32::Core.Const(2)
+│    %455 = Base.indexed_iterate(%453, 2, %454)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(3)])
+│           (bl = Core.getfield(%455, 1))
+│           (@_32 = Core.getfield(%455, 2))
+│    %458 = rl::Tuple{Float64, Float64, Float64}
+│    %459 = @_32::Core.Const(3)
+│    %460 = Base.indexed_iterate(%458, 3, %459)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(4)])
+│           (rssl = Core.getfield(%460, 1))
+│    %462 = rr::Tuple{Float64, Float64, Float64}
+│    %463 = Base.indexed_iterate(%462, 1)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(2)])
+│           (ar = Core.getfield(%463, 1))
+│           (@_31 = Core.getfield(%463, 2))
+│    %466 = rr::Tuple{Float64, Float64, Float64}
+│    %467 = @_31::Core.Const(2)
+│    %468 = Base.indexed_iterate(%466, 2, %467)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(3)])
+│           (br = Core.getfield(%468, 1))
+│           (@_31 = Core.getfield(%468, 2))
+│    %471 = rr::Tuple{Float64, Float64, Float64}
+│    %472 = @_31::Core.Const(3)
+│    %473 = Base.indexed_iterate(%471, 3, %472)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(4)])
+│           (rssr = Core.getfield(%473, 1))
+│    %475 = LinearTrees.:+::Core.Const(+)
+│    %476 = rssl::Float64
+│    %477 = rssr::Float64
+│           (rss = (%475)(%476, %477))
+│    %479 = LinearTrees.selection_score::Core.Const(LinearTrees.selection_score)
+│    %480 = LinearTrees.PLIN::Core.Const(PLIN)
+│    %481 = LinearTrees.sum::Core.Const(sum)
+│    %482 = rss::Float64
+│    %483 = (%481)(%482)::Float64
+│    %484 = n::Float64
+│    %485 = nc::Core.Const(1)
+│    %486 = logn::Float64
+│           (sc = (%479)(rule, %480, %483, %484, dmin, %485, %486))
+│    %488 = LinearTrees.:<::Core.Const(<)
+│    %489 = sc::Float64
+│    %490 = best::LinearTrees.Candidate{Float64, Float64}
+│    %491 = Base.getproperty(%490, :score)::Float64
+│    %492 = (%488)(%489, %491)::Bool
+└───        goto #41 if not %492
+40 ─ %494 = LinearTrees.Candidate::Core.Const(LinearTrees.Candidate)
+│    %495 = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %496 = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│    %497 = Core.apply_type(%494, %495, %496)::Core.Const(LinearTrees.Candidate{Float64, Float64})
+│    %498 = LinearTrees.PLIN::Core.Const(PLIN)
+│    %499 = t::Float64
+│    %500 = al::Float64
+│    %501 = bl::Float64
+│    %502 = ar::Float64
+│    %503 = br::Float64
+│    %504 = rss::Float64
+│    %505 = sc::Float64
+│           (best = (%497)(%498, %499, %500, %501, %502, %503, %504, %505))
+└───        goto #41
+41 ┄        (@_9 = Base.iterate(%189, %212))
+│    %509 = @_9::UNION{NOTHING, TUPLE{INT64, INT64}}
+│    %510 = (%509 === nothing)::Bool
+│    %511 = Base.not_int(%510)::Bool
+└───        goto #43 if not %511
+42 ─        goto #13
+43 ┄ %514 = best::LinearTrees.Candidate{Float64, Float64}
+└───        return %514
+
+
+==============================================================================
+== scan_feature softmax
+==============================================================================
+MethodInstance for LinearTrees.scan_feature(::SubArray{Float64, 1, Matrix{Float64}, Tuple{UnitRange{Int64}, Int64}, true}, ::SubArray{SVector{2, Float64}, 1, Vector{SVector{2, Float64}}, Tuple{UnitRange{Int64}}, true}, ::SubArray{SVector{2, Float64}, 1, Vector{SVector{2, Float64}}, Tuple{UnitRange{Int64}}, true}, ::SubArray{Float64, 1, Matrix{Float64}, Tuple{UnitRange{Int64}, Int64}, true}, ::BIC, ::Float64, ::Float64)
+  from scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::AbstractVector{V}, ws::AbstractVector{T}, rule::LinearTrees.SelectionRule, min_leaf, dmin) where {T<:Real, V} @ LinearTrees ~/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/scan.jl:48
+Static Parameters
+  T = Float64
+  V = SVector{2, Float64}
+Arguments
+  #self#::Core.Const(LinearTrees.scan_feature)
+  xs::SubArray{Float64, 1, Matrix{Float64}, Tuple{UnitRange{Int64}, Int64}, true}
+  zs::SubArray{SVector{2, Float64}, 1, Vector{SVector{2, Float64}}, Tuple{UnitRange{Int64}}, true}
+  hs::SubArray{SVector{2, Float64}, 1, Vector{SVector{2, Float64}}, Tuple{UnitRange{Int64}}, true}
+  ws::SubArray{Float64, 1, Matrix{Float64}, Tuple{UnitRange{Int64}, Int64}, true}
+  rule::BIC
+  min_leaf::Float64
+  dmin::Float64
+Locals
+  @_9::UNION{NOTHING, TUPLE{INT64, INT64}}
+  @_10::Int64
+  @_11::Int64
+  @_12::UNION{NOTHING, TUPLE{INT64, INT64}}
+  uleft::Int64
+  wright::Float64
+  wleft::Float64
+  right::LinearTrees.MomentSums{SVector{2, Float64}}
+  left::LinearTrees.MomentSums{SVector{2, Float64}}
+  best::LinearTrees.Candidate{Float64, SVector{2, Float64}}
+  sc::Float64
+  rss::SVector{2, Float64}
+  b::SVector{2, Float64}
+  a::SVector{2, Float64}
+  r::UNION{NOTHING, TUPLE{SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}}, NTUPLE{5, SVECTOR{2, FLOAT64}}}
+  logn::Float64
+  nc::Int64
+  nu::Int64
+  total::LinearTrees.MomentSums{SVector{2, Float64}}
+  n::Float64
+  m::Int64
+  i@_30::Int64
+  @_31::Int64
+  @_32::Int64
+  @_33::Int64
+  @_34::Int64
+  @_35::Int64
+  rssr::SVector{2, Float64}
+  br::SVector{2, Float64}
+  ar::SVector{2, Float64}
+  rssl::SVector{2, Float64}
+  bl::SVector{2, Float64}
+  al::SVector{2, Float64}
+  rr::UNION{NOTHING, TUPLE{SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}}, SVECTOR{2, FLOAT64}}
+  rl::UNION{NOTHING, TUPLE{SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}}, SVECTOR{2, FLOAT64}}
+  uright::Int64
+  t::Float64
+  i@_46::Int64
+  @_47::Bool
+Body::LinearTrees.Candidate{Float64, SVector{2, Float64}}
+1 ──        Core.NewvarNode(:(@_9))
+│           Core.NewvarNode(:(@_10))
+│           Core.NewvarNode(:(@_11))
+│           Core.NewvarNode(:(uleft))
+│           Core.NewvarNode(:(wright))
+│           Core.NewvarNode(:(wleft))
+│           Core.NewvarNode(:(right))
+│           Core.NewvarNode(:(left))
+│           Core.NewvarNode(:(best))
+│           Core.NewvarNode(:(sc))
+│           Core.NewvarNode(:(rss))
+│           Core.NewvarNode(:(b))
+│           Core.NewvarNode(:(a))
+│           Core.NewvarNode(:(r))
+│           Core.NewvarNode(:(logn))
+│           Core.NewvarNode(:(nc))
+│           Core.NewvarNode(:(nu))
+│    %18  = LinearTrees.length::Core.Const(length)
+│           (m = (%18)(xs))
+│    %20  = LinearTrees.sum::Core.Const(sum)
+│           (n = (%20)(ws))
+│    %22  = LinearTrees.zero::Core.Const(zero)
+│    %23  = LinearTrees.MomentSums::Core.Const(LinearTrees.MomentSums)
+│    %24  = $(Expr(:static_parameter, 2))::Core.Const(SVector{2, Float64})
+│    %25  = Core.apply_type(%23, %24)::Core.Const(LinearTrees.MomentSums{SVector{2, Float64}})
+│           (total = (%22)(%25))
+│    %27  = LinearTrees.:(:)::Core.Const(Colon())
+│    %28  = m::Int64
+│    %29  = (%27)(1, %28)::Core.PartialStruct(UnitRange{Int64}, Any[Core.Const(1), Int64])
+│           (@_12 = Base.iterate(%29))
+│    %31  = @_12::UNION{NOTHING, TUPLE{INT64, INT64}}
+│    %32  = (%31 === nothing)::Bool
+│    %33  = Base.not_int(%32)::Bool
+└───        goto #4 if not %33
+2 ┄─ %35  = @_12::Tuple{Int64, Int64}
+│           (i@_30 = Core.getfield(%35, 1))
+│    %37  = Core.getfield(%35, 2)::Int64
+│    %38  = LinearTrees.addrow::Core.Const(LinearTrees.addrow)
+│    %39  = total::LinearTrees.MomentSums{SVector{2, Float64}}
+│    %40  = i@_30::Int64
+│    %41  = Base.getindex(xs, %40)::Float64
+│    %42  = i@_30::Int64
+│    %43  = Base.getindex(zs, %42)::SVector{2, Float64}
+│    %44  = i@_30::Int64
+│    %45  = Base.getindex(hs, %44)::SVector{2, Float64}
+│           (total = (%38)(%39, %41, %43, %45))
+│           (@_12 = Base.iterate(%29, %37))
+│    %48  = @_12::UNION{NOTHING, TUPLE{INT64, INT64}}
+│    %49  = (%48 === nothing)::Bool
+│    %50  = Base.not_int(%49)::Bool
+└───        goto #4 if not %50
+3 ──        goto #2
+4 ┄─ %53  = LinearTrees.nocandidate::Core.Const(LinearTrees.nocandidate)
+│    %54  = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %55  = $(Expr(:static_parameter, 2))::Core.Const(SVector{2, Float64})
+│           (best = (%53)(%54, %55))
+│    %57  = LinearTrees.nunique::Core.Const(LinearTrees.nunique)
+│           (nu = (%57)(xs))
+│    %59  = LinearTrees.ncoord::Core.Const(LinearTrees.ncoord)
+│    %60  = $(Expr(:static_parameter, 2))::Core.Const(SVector{2, Float64})
+│           (nc = (%59)(%60))
+│    %62  = LinearTrees.score_logn::Core.Const(LinearTrees.score_logn)
+│    %63  = n::Float64
+│           (logn = (%62)(rule, %63))
+│    %65  = LinearTrees.allowed::Core.Const(LinearTrees.allowed)
+│    %66  = LinearTrees.CON::Core.Const(CON)
+│    %67  = (%65)(rule, %66)::Core.Const(true)
+└───        goto #7 if not %67
+5 ── %69  = LinearTrees.fit_con::Core.Const(LinearTrees.fit_con)
+│    %70  = total::LinearTrees.MomentSums{SVector{2, Float64}}
+│    %71  = (%69)(%70)::Tuple{SVector{2, Float64}, SVector{2, Float64}}
+│    %72  = Base.indexed_iterate(%71, 1)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(2)])
+│           (b = Core.getfield(%72, 1))
+│           (@_11 = Core.getfield(%72, 2))
+│    %75  = @_11::Core.Const(2)
+│    %76  = Base.indexed_iterate(%71, 2, %75)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(3)])
+│           (rss = Core.getfield(%76, 1))
+│    %78  = LinearTrees.selection_score::Core.Const(LinearTrees.selection_score)
+│    %79  = LinearTrees.CON::Core.Const(CON)
+│    %80  = LinearTrees.sum::Core.Const(sum)
+│    %81  = rss::SVector{2, Float64}
+│    %82  = (%80)(%81)::Float64
+│    %83  = n::Float64
+│    %84  = nc::Core.Const(2)
+│           (sc = (%78)(rule, %79, %82, %83, dmin, %84))
+│    %86  = LinearTrees.:<::Core.Const(<)
+│    %87  = sc::Float64
+│    %88  = best::Core.Const(LinearTrees.Candidate{Float64, SVector{2, Float64}}(CON, NaN, [0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [Inf, Inf], Inf))
+│    %89  = Base.getproperty(%88, :score)::Core.Const(Inf)
+│    %90  = (%86)(%87, %89)::Bool
+└───        goto #7 if not %90
+6 ── %92  = LinearTrees.Candidate::Core.Const(LinearTrees.Candidate)
+│    %93  = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %94  = $(Expr(:static_parameter, 2))::Core.Const(SVector{2, Float64})
+│    %95  = Core.apply_type(%92, %93, %94)::Core.Const(LinearTrees.Candidate{Float64, SVector{2, Float64}})
+│    %96  = LinearTrees.CON::Core.Const(CON)
+│    %97  = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %98  = LinearTrees.NaN::Core.Const(NaN)
+│    %99  = (%97)(%98)::Core.Const(NaN)
+│    %100 = LinearTrees.zero::Core.Const(zero)
+│    %101 = $(Expr(:static_parameter, 2))::Core.Const(SVector{2, Float64})
+│    %102 = (%100)(%101)::Core.Const([0.0, 0.0])
+│    %103 = b::SVector{2, Float64}
+│    %104 = LinearTrees.zero::Core.Const(zero)
+│    %105 = $(Expr(:static_parameter, 2))::Core.Const(SVector{2, Float64})
+│    %106 = (%104)(%105)::Core.Const([0.0, 0.0])
+│    %107 = b::SVector{2, Float64}
+│    %108 = rss::SVector{2, Float64}
+│    %109 = sc::Float64
+│           (best = (%95)(%96, %99, %102, %103, %106, %107, %108, %109))
+└───        goto #7
+7 ┄─ %112 = LinearTrees.allowed::Core.Const(LinearTrees.allowed)
+│    %113 = LinearTrees.LIN::Core.Const(LIN)
+│    %114 = (%112)(rule, %113)::Core.Const(true)
+└───        goto #12 if not %114
+8 ── %116 = LinearTrees.:>=::Core.Const(>=)
+│    %117 = nu::Int64
+│    %118 = LinearTrees.MIN_UNIQUE_LIN::Core.Const(5)
+│    %119 = (%116)(%117, %118)::Bool
+└───        goto #12 if not %119
+9 ── %121 = LinearTrees.fit_lin::Core.Const(LinearTrees.fit_lin)
+│    %122 = total::LinearTrees.MomentSums{SVector{2, Float64}}
+│           (r = (%121)(%122))
+│    %124 = LinearTrees.:!==::Core.Const(!==)
+│    %125 = r::UNION{NOTHING, TUPLE{SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}}}
+│    %126 = LinearTrees.nothing::Core.Const(nothing)
+│    %127 = (%124)(%125, %126)::Bool
+└───        goto #12 if not %127
+10 ─ %129 = r::Tuple{SVector{2, Float64}, SVector{2, Float64}, SVector{2, Float64}}
+│    %130 = Base.indexed_iterate(%129, 1)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(2)])
+│           (a = Core.getfield(%130, 1))
+│           (@_10 = Core.getfield(%130, 2))
+│    %133 = r::Tuple{SVector{2, Float64}, SVector{2, Float64}, SVector{2, Float64}}
+│    %134 = @_10::Core.Const(2)
+│    %135 = Base.indexed_iterate(%133, 2, %134)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(3)])
+│           (b = Core.getfield(%135, 1))
+│           (@_10 = Core.getfield(%135, 2))
+│    %138 = r::Tuple{SVector{2, Float64}, SVector{2, Float64}, SVector{2, Float64}}
+│    %139 = @_10::Core.Const(3)
+│    %140 = Base.indexed_iterate(%138, 3, %139)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(4)])
+│           (rss = Core.getfield(%140, 1))
+│    %142 = LinearTrees.selection_score::Core.Const(LinearTrees.selection_score)
+│    %143 = LinearTrees.LIN::Core.Const(LIN)
+│    %144 = LinearTrees.sum::Core.Const(sum)
+│    %145 = rss::SVector{2, Float64}
+│    %146 = (%144)(%145)::Float64
+│    %147 = n::Float64
+│    %148 = nc::Core.Const(2)
+│           (sc = (%142)(rule, %143, %146, %147, dmin, %148))
+│    %150 = LinearTrees.:<::Core.Const(<)
+│    %151 = sc::Float64
+│    %152 = best::Core.PartialStruct(LinearTrees.Candidate{Float64, SVector{2, Float64}}, Any[Core.Const(CON), Core.Const(NaN), Core.Const([0.0, 0.0]), SVector{2, Float64}, Core.Const([0.0, 0.0]), SVector{2, Float64}, SVector{2, Float64}, Float64])
+│    %153 = Base.getproperty(%152, :score)::Float64
+│    %154 = (%150)(%151, %153)::Bool
+└───        goto #12 if not %154
+11 ─ %156 = LinearTrees.Candidate::Core.Const(LinearTrees.Candidate)
+│    %157 = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %158 = $(Expr(:static_parameter, 2))::Core.Const(SVector{2, Float64})
+│    %159 = Core.apply_type(%156, %157, %158)::Core.Const(LinearTrees.Candidate{Float64, SVector{2, Float64}})
+│    %160 = LinearTrees.LIN::Core.Const(LIN)
+│    %161 = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %162 = LinearTrees.NaN::Core.Const(NaN)
+│    %163 = (%161)(%162)::Core.Const(NaN)
+│    %164 = a::SVector{2, Float64}
+│    %165 = b::SVector{2, Float64}
+│    %166 = a::SVector{2, Float64}
+│    %167 = b::SVector{2, Float64}
+│    %168 = rss::SVector{2, Float64}
+│    %169 = sc::Float64
+│           (best = (%159)(%160, %163, %164, %165, %166, %167, %168, %169))
+└───        goto #12
+12 ┄ %172 = LinearTrees.zero::Core.Const(zero)
+│    %173 = LinearTrees.MomentSums::Core.Const(LinearTrees.MomentSums)
+│    %174 = $(Expr(:static_parameter, 2))::Core.Const(SVector{2, Float64})
+│    %175 = Core.apply_type(%173, %174)::Core.Const(LinearTrees.MomentSums{SVector{2, Float64}})
+│           (left = (%172)(%175))
+│    %177 = total::LinearTrees.MomentSums{SVector{2, Float64}}
+│           (right = %177)
+│    %179 = LinearTrees.zero::Core.Const(zero)
+│    %180 = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│           (wleft = (%179)(%180))
+│    %182 = n::Float64
+│           (wright = %182)
+│           (uleft = 0)
+│    %185 = LinearTrees.:(:)::Core.Const(Colon())
+│    %186 = LinearTrees.:-::Core.Const(-)
+│    %187 = m::Int64
+│    %188 = (%186)(%187, 1)::Int64
+│    %189 = (%185)(1, %188)::Core.PartialStruct(UnitRange{Int64}, Any[Core.Const(1), Int64])
+│           (@_9 = Base.iterate(%189))
+│    %191 = @_9::UNION{NOTHING, TUPLE{INT64, INT64}}
+│    %192 = (%191 === nothing)::Bool
+│    %193 = Base.not_int(%192)::Bool
+└───        goto #43 if not %193
+13 ┄        Core.NewvarNode(:(@_31))
+│           Core.NewvarNode(:(@_32))
+│           Core.NewvarNode(:(@_33))
+│           Core.NewvarNode(:(@_34))
+│           Core.NewvarNode(:(@_35))
+│           Core.NewvarNode(:(rssr))
+│           Core.NewvarNode(:(br))
+│           Core.NewvarNode(:(ar))
+│           Core.NewvarNode(:(rssl))
+│           Core.NewvarNode(:(bl))
+│           Core.NewvarNode(:(al))
+│           Core.NewvarNode(:(rr))
+│           Core.NewvarNode(:(rl))
+│           Core.NewvarNode(:(uright))
+│           Core.NewvarNode(:(t))
+│    %210 = @_9::Tuple{Int64, Int64}
+│           (i@_46 = Core.getfield(%210, 1))
+│    %212 = Core.getfield(%210, 2)::Int64
+│    %213 = LinearTrees.addrow::Core.Const(LinearTrees.addrow)
+│    %214 = left::LinearTrees.MomentSums{SVector{2, Float64}}
+│    %215 = i@_46::Int64
+│    %216 = Base.getindex(xs, %215)::Float64
+│    %217 = i@_46::Int64
+│    %218 = Base.getindex(zs, %217)::SVector{2, Float64}
+│    %219 = i@_46::Int64
+│    %220 = Base.getindex(hs, %219)::SVector{2, Float64}
+│           (left = (%213)(%214, %216, %218, %220))
+│    %222 = LinearTrees.subrow::Core.Const(LinearTrees.subrow)
+│    %223 = right::LinearTrees.MomentSums{SVector{2, Float64}}
+│    %224 = i@_46::Int64
+│    %225 = Base.getindex(xs, %224)::Float64
+│    %226 = i@_46::Int64
+│    %227 = Base.getindex(zs, %226)::SVector{2, Float64}
+│    %228 = i@_46::Int64
+│    %229 = Base.getindex(hs, %228)::SVector{2, Float64}
+│           (right = (%222)(%223, %225, %227, %229))
+│    %231 = LinearTrees.:+::Core.Const(+)
+│    %232 = wleft::Float64
+│    %233 = i@_46::Int64
+│    %234 = Base.getindex(ws, %233)::Float64
+│           (wleft = (%231)(%232, %234))
+│    %236 = LinearTrees.:-::Core.Const(-)
+│    %237 = wright::Float64
+│    %238 = i@_46::Int64
+│    %239 = Base.getindex(ws, %238)::Float64
+│           (wright = (%236)(%237, %239))
+│    %241 = LinearTrees.:(==)::Core.Const(==)
+│    %242 = i@_46::Int64
+│    %243 = (%241)(%242, 1)::Bool
+└───        goto #15 if not %243
+14 ─        goto #16
+15 ─ %246 = LinearTrees.:!=::Core.Const(!=)
+│    %247 = i@_46::Int64
+│    %248 = Base.getindex(xs, %247)::Float64
+│    %249 = LinearTrees.:-::Core.Const(-)
+│    %250 = i@_46::Int64
+│    %251 = (%249)(%250, 1)::Int64
+│    %252 = Base.getindex(xs, %251)::Float64
+│    %253 = (%246)(%248, %252)::Bool
+└───        goto #17 if not %253
+16 ┄ %255 = LinearTrees.:+::Core.Const(+)
+│    %256 = uleft::Int64
+│           (uleft = (%255)(%256, 1))
+└───        goto #17
+17 ┄ %259 = LinearTrees.:<::Core.Const(<)
+│    %260 = i@_46::Int64
+│    %261 = Base.getindex(xs, %260)::Float64
+│    %262 = LinearTrees.:+::Core.Const(+)
+│    %263 = i@_46::Int64
+│    %264 = (%262)(%263, 1)::Int64
+│    %265 = Base.getindex(xs, %264)::Float64
+│    %266 = (%259)(%261, %265)::Bool
+└───        goto #19 if not %266
+18 ─        goto #20
+19 ─        goto #41
+20 ─ %270 = LinearTrees.:>=::Core.Const(>=)
+│    %271 = wleft::Float64
+│    %272 = (%270)(%271, min_leaf)::Bool
+└───        goto #22 if not %272
+21 ─ %274 = LinearTrees.:>=::Core.Const(>=)
+│    %275 = wright::Float64
+│           (@_47 = (%274)(%275, min_leaf))
+└───        goto #23
+22 ─        (@_47 = false)
+23 ┄ %279 = @_47::Bool
+└───        goto #25 if not %279
+24 ─        goto #26
+25 ─        goto #41
+26 ─ %283 = i@_46::Int64
+│           (t = Base.getindex(xs, %283))
+│    %285 = LinearTrees.:-::Core.Const(-)
+│    %286 = nu::Int64
+│    %287 = uleft::Int64
+│           (uright = (%285)(%286, %287))
+│    %289 = LinearTrees.allowed::Core.Const(LinearTrees.allowed)
+│    %290 = LinearTrees.PCON::Core.Const(PCON)
+│    %291 = (%289)(rule, %290)::Core.Const(true)
+└───        goto #29 if not %291
+27 ─ %293 = LinearTrees.fit_con::Core.Const(LinearTrees.fit_con)
+│    %294 = left::LinearTrees.MomentSums{SVector{2, Float64}}
+│    %295 = (%293)(%294)::Tuple{SVector{2, Float64}, SVector{2, Float64}}
+│    %296 = Base.indexed_iterate(%295, 1)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(2)])
+│           (bl = Core.getfield(%296, 1))
+│           (@_35 = Core.getfield(%296, 2))
+│    %299 = @_35::Core.Const(2)
+│    %300 = Base.indexed_iterate(%295, 2, %299)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(3)])
+│           (rl = Core.getfield(%300, 1))
+│    %302 = LinearTrees.fit_con::Core.Const(LinearTrees.fit_con)
+│    %303 = right::LinearTrees.MomentSums{SVector{2, Float64}}
+│    %304 = (%302)(%303)::Tuple{SVector{2, Float64}, SVector{2, Float64}}
+│    %305 = Base.indexed_iterate(%304, 1)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(2)])
+│           (br = Core.getfield(%305, 1))
+│           (@_34 = Core.getfield(%305, 2))
+│    %308 = @_34::Core.Const(2)
+│    %309 = Base.indexed_iterate(%304, 2, %308)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(3)])
+│           (rr = Core.getfield(%309, 1))
+│    %311 = LinearTrees.:+::Core.Const(+)
+│    %312 = rl::SVector{2, Float64}
+│    %313 = rr::SVector{2, Float64}
+│           (rss = (%311)(%312, %313))
+│    %315 = LinearTrees.selection_score::Core.Const(LinearTrees.selection_score)
+│    %316 = LinearTrees.PCON::Core.Const(PCON)
+│    %317 = LinearTrees.sum::Core.Const(sum)
+│    %318 = rss::SVector{2, Float64}
+│    %319 = (%317)(%318)::Float64
+│    %320 = n::Float64
+│    %321 = nc::Core.Const(2)
+│    %322 = logn::Float64
+│           (sc = (%315)(rule, %316, %319, %320, dmin, %321, %322))
+│    %324 = LinearTrees.:<::Core.Const(<)
+│    %325 = sc::Float64
+│    %326 = best::LinearTrees.Candidate{Float64, SVector{2, Float64}}
+│    %327 = Base.getproperty(%326, :score)::Float64
+│    %328 = (%324)(%325, %327)::Bool
+└───        goto #29 if not %328
+28 ─ %330 = LinearTrees.Candidate::Core.Const(LinearTrees.Candidate)
+│    %331 = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %332 = $(Expr(:static_parameter, 2))::Core.Const(SVector{2, Float64})
+│    %333 = Core.apply_type(%330, %331, %332)::Core.Const(LinearTrees.Candidate{Float64, SVector{2, Float64}})
+│    %334 = LinearTrees.PCON::Core.Const(PCON)
+│    %335 = t::Float64
+│    %336 = LinearTrees.zero::Core.Const(zero)
+│    %337 = $(Expr(:static_parameter, 2))::Core.Const(SVector{2, Float64})
+│    %338 = (%336)(%337)::Core.Const([0.0, 0.0])
+│    %339 = bl::SVector{2, Float64}
+│    %340 = LinearTrees.zero::Core.Const(zero)
+│    %341 = $(Expr(:static_parameter, 2))::Core.Const(SVector{2, Float64})
+│    %342 = (%340)(%341)::Core.Const([0.0, 0.0])
+│    %343 = br::SVector{2, Float64}
+│    %344 = rss::SVector{2, Float64}
+│    %345 = sc::Float64
+│           (best = (%333)(%334, %335, %338, %339, %342, %343, %344, %345))
+└───        goto #29
+29 ┄ %348 = LinearTrees.allowed::Core.Const(LinearTrees.allowed)
+│    %349 = LinearTrees.BLIN::Core.Const(BLIN)
+│    %350 = (%348)(rule, %349)::Core.Const(true)
+└───        goto #34 if not %350
+30 ─ %352 = LinearTrees.:>=::Core.Const(>=)
+│    %353 = nu::Int64
+│    %354 = LinearTrees.MIN_UNIQUE_LIN::Core.Const(5)
+│    %355 = (%352)(%353, %354)::Bool
+└───        goto #34 if not %355
+31 ─ %357 = LinearTrees.fit_blin::Core.Const(LinearTrees.fit_blin)
+│    %358 = left::LinearTrees.MomentSums{SVector{2, Float64}}
+│    %359 = right::LinearTrees.MomentSums{SVector{2, Float64}}
+│    %360 = t::Float64
+│           (r = (%357)(%358, %359, %360))
+│    %362 = LinearTrees.:!==::Core.Const(!==)
+│    %363 = r::UNION{NOTHING, NTUPLE{5, SVECTOR{2, FLOAT64}}}
+│    %364 = LinearTrees.nothing::Core.Const(nothing)
+│    %365 = (%362)(%363, %364)::Bool
+└───        goto #34 if not %365
+32 ─ %367 = r::NTuple{5, SVector{2, Float64}}
+│    %368 = Base.indexed_iterate(%367, 1)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(2)])
+│           (al = Core.getfield(%368, 1))
+│           (@_33 = Core.getfield(%368, 2))
+│    %371 = r::NTuple{5, SVector{2, Float64}}
+│    %372 = @_33::Core.Const(2)
+│    %373 = Base.indexed_iterate(%371, 2, %372)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(3)])
+│           (bl = Core.getfield(%373, 1))
+│           (@_33 = Core.getfield(%373, 2))
+│    %376 = r::NTuple{5, SVector{2, Float64}}
+│    %377 = @_33::Core.Const(3)
+│    %378 = Base.indexed_iterate(%376, 3, %377)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(4)])
+│           (ar = Core.getfield(%378, 1))
+│           (@_33 = Core.getfield(%378, 2))
+│    %381 = r::NTuple{5, SVector{2, Float64}}
+│    %382 = @_33::Core.Const(4)
+│    %383 = Base.indexed_iterate(%381, 4, %382)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(5)])
+│           (br = Core.getfield(%383, 1))
+│           (@_33 = Core.getfield(%383, 2))
+│    %386 = r::NTuple{5, SVector{2, Float64}}
+│    %387 = @_33::Core.Const(5)
+│    %388 = Base.indexed_iterate(%386, 5, %387)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(6)])
+│           (rss = Core.getfield(%388, 1))
+│    %390 = LinearTrees.selection_score::Core.Const(LinearTrees.selection_score)
+│    %391 = LinearTrees.BLIN::Core.Const(BLIN)
+│    %392 = LinearTrees.sum::Core.Const(sum)
+│    %393 = rss::SVector{2, Float64}
+│    %394 = (%392)(%393)::Float64
+│    %395 = n::Float64
+│    %396 = nc::Core.Const(2)
+│    %397 = logn::Float64
+│           (sc = (%390)(rule, %391, %394, %395, dmin, %396, %397))
+│    %399 = LinearTrees.:<::Core.Const(<)
+│    %400 = sc::Float64
+│    %401 = best::LinearTrees.Candidate{Float64, SVector{2, Float64}}
+│    %402 = Base.getproperty(%401, :score)::Float64
+│    %403 = (%399)(%400, %402)::Bool
+└───        goto #34 if not %403
+33 ─ %405 = LinearTrees.Candidate::Core.Const(LinearTrees.Candidate)
+│    %406 = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %407 = $(Expr(:static_parameter, 2))::Core.Const(SVector{2, Float64})
+│    %408 = Core.apply_type(%405, %406, %407)::Core.Const(LinearTrees.Candidate{Float64, SVector{2, Float64}})
+│    %409 = LinearTrees.BLIN::Core.Const(BLIN)
+│    %410 = t::Float64
+│    %411 = al::SVector{2, Float64}
+│    %412 = bl::SVector{2, Float64}
+│    %413 = ar::SVector{2, Float64}
+│    %414 = br::SVector{2, Float64}
+│    %415 = rss::SVector{2, Float64}
+│    %416 = sc::Float64
+│           (best = (%408)(%409, %410, %411, %412, %413, %414, %415, %416))
+└───        goto #34
+34 ┄ %419 = LinearTrees.allowed::Core.Const(LinearTrees.allowed)
+│    %420 = LinearTrees.PLIN::Core.Const(PLIN)
+│    %421 = (%419)(rule, %420)::Core.Const(true)
+└───        goto #41 if not %421
+35 ─ %423 = LinearTrees.:>=::Core.Const(>=)
+│    %424 = uleft::Int64
+│    %425 = LinearTrees.MIN_UNIQUE_LIN::Core.Const(5)
+│    %426 = (%423)(%424, %425)::Bool
+└───        goto #41 if not %426
+36 ─ %428 = LinearTrees.:>=::Core.Const(>=)
+│    %429 = uright::Int64
+│    %430 = LinearTrees.MIN_UNIQUE_LIN::Core.Const(5)
+│    %431 = (%428)(%429, %430)::Bool
+└───        goto #41 if not %431
+37 ─ %433 = LinearTrees.fit_lin::Core.Const(LinearTrees.fit_lin)
+│    %434 = left::LinearTrees.MomentSums{SVector{2, Float64}}
+│           (rl = (%433)(%434))
+│    %436 = LinearTrees.fit_lin::Core.Const(LinearTrees.fit_lin)
+│    %437 = right::LinearTrees.MomentSums{SVector{2, Float64}}
+│           (rr = (%436)(%437))
+│    %439 = LinearTrees.:!==::Core.Const(!==)
+│    %440 = rl::UNION{NOTHING, TUPLE{SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}}}
+│    %441 = LinearTrees.nothing::Core.Const(nothing)
+│    %442 = (%439)(%440, %441)::Bool
+└───        goto #41 if not %442
+38 ─ %444 = LinearTrees.:!==::Core.Const(!==)
+│    %445 = rr::UNION{NOTHING, TUPLE{SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}}}
+│    %446 = LinearTrees.nothing::Core.Const(nothing)
+│    %447 = (%444)(%445, %446)::Bool
+└───        goto #41 if not %447
+39 ─ %449 = rl::Tuple{SVector{2, Float64}, SVector{2, Float64}, SVector{2, Float64}}
+│    %450 = Base.indexed_iterate(%449, 1)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(2)])
+│           (al = Core.getfield(%450, 1))
+│           (@_32 = Core.getfield(%450, 2))
+│    %453 = rl::Tuple{SVector{2, Float64}, SVector{2, Float64}, SVector{2, Float64}}
+│    %454 = @_32::Core.Const(2)
+│    %455 = Base.indexed_iterate(%453, 2, %454)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(3)])
+│           (bl = Core.getfield(%455, 1))
+│           (@_32 = Core.getfield(%455, 2))
+│    %458 = rl::Tuple{SVector{2, Float64}, SVector{2, Float64}, SVector{2, Float64}}
+│    %459 = @_32::Core.Const(3)
+│    %460 = Base.indexed_iterate(%458, 3, %459)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(4)])
+│           (rssl = Core.getfield(%460, 1))
+│    %462 = rr::Tuple{SVector{2, Float64}, SVector{2, Float64}, SVector{2, Float64}}
+│    %463 = Base.indexed_iterate(%462, 1)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(2)])
+│           (ar = Core.getfield(%463, 1))
+│           (@_31 = Core.getfield(%463, 2))
+│    %466 = rr::Tuple{SVector{2, Float64}, SVector{2, Float64}, SVector{2, Float64}}
+│    %467 = @_31::Core.Const(2)
+│    %468 = Base.indexed_iterate(%466, 2, %467)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(3)])
+│           (br = Core.getfield(%468, 1))
+│           (@_31 = Core.getfield(%468, 2))
+│    %471 = rr::Tuple{SVector{2, Float64}, SVector{2, Float64}, SVector{2, Float64}}
+│    %472 = @_31::Core.Const(3)
+│    %473 = Base.indexed_iterate(%471, 3, %472)::Core.PartialStruct(Tuple{SVector{2, Float64}, Int64}, Any[SVector{2, Float64}, Core.Const(4)])
+│           (rssr = Core.getfield(%473, 1))
+│    %475 = LinearTrees.:+::Core.Const(+)
+│    %476 = rssl::SVector{2, Float64}
+│    %477 = rssr::SVector{2, Float64}
+│           (rss = (%475)(%476, %477))
+│    %479 = LinearTrees.selection_score::Core.Const(LinearTrees.selection_score)
+│    %480 = LinearTrees.PLIN::Core.Const(PLIN)
+│    %481 = LinearTrees.sum::Core.Const(sum)
+│    %482 = rss::SVector{2, Float64}
+│    %483 = (%481)(%482)::Float64
+│    %484 = n::Float64
+│    %485 = nc::Core.Const(2)
+│    %486 = logn::Float64
+│           (sc = (%479)(rule, %480, %483, %484, dmin, %485, %486))
+│    %488 = LinearTrees.:<::Core.Const(<)
+│    %489 = sc::Float64
+│    %490 = best::LinearTrees.Candidate{Float64, SVector{2, Float64}}
+│    %491 = Base.getproperty(%490, :score)::Float64
+│    %492 = (%488)(%489, %491)::Bool
+└───        goto #41 if not %492
+40 ─ %494 = LinearTrees.Candidate::Core.Const(LinearTrees.Candidate)
+│    %495 = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %496 = $(Expr(:static_parameter, 2))::Core.Const(SVector{2, Float64})
+│    %497 = Core.apply_type(%494, %495, %496)::Core.Const(LinearTrees.Candidate{Float64, SVector{2, Float64}})
+│    %498 = LinearTrees.PLIN::Core.Const(PLIN)
+│    %499 = t::Float64
+│    %500 = al::SVector{2, Float64}
+│    %501 = bl::SVector{2, Float64}
+│    %502 = ar::SVector{2, Float64}
+│    %503 = br::SVector{2, Float64}
+│    %504 = rss::SVector{2, Float64}
+│    %505 = sc::Float64
+│           (best = (%497)(%498, %499, %500, %501, %502, %503, %504, %505))
+└───        goto #41
+41 ┄        (@_9 = Base.iterate(%189, %212))
+│    %509 = @_9::UNION{NOTHING, TUPLE{INT64, INT64}}
+│    %510 = (%509 === nothing)::Bool
+│    %511 = Base.not_int(%510)::Bool
+└───        goto #43 if not %511
+42 ─        goto #13
+43 ┄ %514 = best::LinearTrees.Candidate{Float64, SVector{2, Float64}}
+└───        return %514
+
+
+==============================================================================
+== gather! scalar
+==============================================================================
+MethodInstance for LinearTrees.gather!(::LinearTrees.FitState{Float64, Float64, MSE, BIC}, ::LinearTrees.Scratch{Float64, Float64}, ::UnitRange{Int64}, ::Int64)
+  from gather!(st::LinearTrees.FitState, sc::LinearTrees.Scratch, span::UnitRange{Int64}, j) @ LinearTrees ~/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:233
+Arguments
+  #self#::Core.Const(LinearTrees.gather!)
+  st::LinearTrees.FitState{Float64, Float64, MSE, BIC}
+  sc::LinearTrees.Scratch{Float64, Float64}
+  span::UnitRange{Int64}
+  j::Int64
+Locals
+  @_6::UNION{NOTHING, TUPLE{INT64, INT64}}
+  m::Int64
+  k::Int64
+  i::Int32
+Body::Int64
+1 ─       (m = 0)
+│   %2  = span::UnitRange{Int64}
+│         (@_6 = Base.iterate(%2))
+│   %4  = @_6::UNION{NOTHING, TUPLE{INT64, INT64}}
+│   %5  = (%4 === nothing)::Bool
+│   %6  = Base.not_int(%5)::Bool
+└──       goto #4 if not %6
+2 ┄ %8  = @_6::Tuple{Int64, Int64}
+│         (k = Core.getfield(%8, 1))
+│   %10 = Core.getfield(%8, 2)::Int64
+│   %11 = Base.getproperty(st, :idx)::Matrix{Int32}
+│   %12 = k::Int64
+│         (i = Base.getindex(%11, %12, j))
+│   %14 = LinearTrees.:+::Core.Const(+)
+│   %15 = m::Int64
+│         (m = (%14)(%15, 1))
+│   %17 = Base.getproperty(st, :X)::Matrix{Float64}
+│   %18 = i::Int32
+│   %19 = Base.getindex(%17, %18, j)::Float64
+│   %20 = Base.getproperty(sc, :xs)::Vector{Float64}
+│   %21 = m::Int64
+│         Base.setindex!(%20, %19, %21)
+│   %23 = Base.getproperty(st, :z)::Vector{Float64}
+│   %24 = i::Int32
+│   %25 = Base.getindex(%23, %24)::Float64
+│   %26 = Base.getproperty(sc, :zs)::Vector{Float64}
+│   %27 = m::Int64
+│         Base.setindex!(%26, %25, %27)
+│   %29 = Base.getproperty(st, :h)::Vector{Float64}
+│   %30 = i::Int32
+│   %31 = Base.getindex(%29, %30)::Float64
+│   %32 = Base.getproperty(sc, :hs)::Vector{Float64}
+│   %33 = m::Int64
+│         Base.setindex!(%32, %31, %33)
+│   %35 = Base.getproperty(st, :w)::Vector{Float64}
+│   %36 = i::Int32
+│   %37 = Base.getindex(%35, %36)::Float64
+│   %38 = Base.getproperty(sc, :ws)::Vector{Float64}
+│   %39 = m::Int64
+│         Base.setindex!(%38, %37, %39)
+│         (@_6 = Base.iterate(%2, %10))
+│   %42 = @_6::UNION{NOTHING, TUPLE{INT64, INT64}}
+│   %43 = (%42 === nothing)::Bool
+│   %44 = Base.not_int(%43)::Bool
+└──       goto #4 if not %44
+3 ─       goto #2
+4 ┄ %47 = m::Int64
+└──       return %47
+
+
+==============================================================================
+== gather! softmax
+==============================================================================
+MethodInstance for LinearTrees.gather!(::LinearTrees.FitState{Float64, SVector{2, Float64}, Softmax{3}, BIC}, ::LinearTrees.Scratch{Float64, SVector{2, Float64}}, ::UnitRange{Int64}, ::Int64)
+  from gather!(st::LinearTrees.FitState, sc::LinearTrees.Scratch, span::UnitRange{Int64}, j) @ LinearTrees ~/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:233
+Arguments
+  #self#::Core.Const(LinearTrees.gather!)
+  st::LinearTrees.FitState{Float64, SVector{2, Float64}, Softmax{3}, BIC}
+  sc::LinearTrees.Scratch{Float64, SVector{2, Float64}}
+  span::UnitRange{Int64}
+  j::Int64
+Locals
+  @_6::UNION{NOTHING, TUPLE{INT64, INT64}}
+  m::Int64
+  k::Int64
+  i::Int32
+Body::Int64
+1 ─       (m = 0)
+│   %2  = span::UnitRange{Int64}
+│         (@_6 = Base.iterate(%2))
+│   %4  = @_6::UNION{NOTHING, TUPLE{INT64, INT64}}
+│   %5  = (%4 === nothing)::Bool
+│   %6  = Base.not_int(%5)::Bool
+└──       goto #4 if not %6
+2 ┄ %8  = @_6::Tuple{Int64, Int64}
+│         (k = Core.getfield(%8, 1))
+│   %10 = Core.getfield(%8, 2)::Int64
+│   %11 = Base.getproperty(st, :idx)::Matrix{Int32}
+│   %12 = k::Int64
+│         (i = Base.getindex(%11, %12, j))
+│   %14 = LinearTrees.:+::Core.Const(+)
+│   %15 = m::Int64
+│         (m = (%14)(%15, 1))
+│   %17 = Base.getproperty(st, :X)::Matrix{Float64}
+│   %18 = i::Int32
+│   %19 = Base.getindex(%17, %18, j)::Float64
+│   %20 = Base.getproperty(sc, :xs)::Vector{Float64}
+│   %21 = m::Int64
+│         Base.setindex!(%20, %19, %21)
+│   %23 = Base.getproperty(st, :z)::Vector{SVector{2, Float64}}
+│   %24 = i::Int32
+│   %25 = Base.getindex(%23, %24)::SVector{2, Float64}
+│   %26 = Base.getproperty(sc, :zs)::Vector{SVector{2, Float64}}
+│   %27 = m::Int64
+│         Base.setindex!(%26, %25, %27)
+│   %29 = Base.getproperty(st, :h)::Vector{SVector{2, Float64}}
+│   %30 = i::Int32
+│   %31 = Base.getindex(%29, %30)::SVector{2, Float64}
+│   %32 = Base.getproperty(sc, :hs)::Vector{SVector{2, Float64}}
+│   %33 = m::Int64
+│         Base.setindex!(%32, %31, %33)
+│   %35 = Base.getproperty(st, :w)::Vector{Float64}
+│   %36 = i::Int32
+│   %37 = Base.getindex(%35, %36)::Float64
+│   %38 = Base.getproperty(sc, :ws)::Vector{Float64}
+│   %39 = m::Int64
+│         Base.setindex!(%38, %37, %39)
+│         (@_6 = Base.iterate(%2, %10))
+│   %42 = @_6::UNION{NOTHING, TUPLE{INT64, INT64}}
+│   %43 = (%42 === nothing)::Bool
+│   %44 = Base.not_int(%43)::Bool
+└──       goto #4 if not %44
+3 ─       goto #2
+4 ┄ %47 = m::Int64
+└──       return %47
+
+
+==============================================================================
+== partition_column!
+==============================================================================
+MethodInstance for LinearTrees.partition_column!(::SubArray{Int32, 1, Matrix{Int32}, Tuple{Base.Slice{Base.OneTo{Int64}}, Int64}, true}, ::UnitRange{Int64}, ::Vector{Bool}, ::Vector{Int32})
+  from partition_column!(idx::AbstractVector{Int32}, span::UnitRange{Int64}, isleft::Vector{Bool}, perm::Vector{Int32}) @ LinearTrees ~/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/fit.jl:248
+Arguments
+  #self#::Core.Const(LinearTrees.partition_column!)
+  idx::SubArray{Int32, 1, Matrix{Int32}, Tuple{Base.Slice{Base.OneTo{Int64}}, Int64}, true}
+  span::UnitRange{Int64}
+  isleft::Vector{Bool}
+  perm::Vector{Int32}
+Locals
+  @_6::UNION{NOTHING, TUPLE{INT64, INT64}}
+  @_7::UNION{NOTHING, TUPLE{INT64, INT64}}
+  b::Int64
+  a::Int64
+  nleft::Int64
+  k@_11::Int64
+  i::Int32
+  k@_13::Int64
+Body::Int64
+1 ──       Core.NewvarNode(:(@_6))
+│          Core.NewvarNode(:(b))
+│          Core.NewvarNode(:(a))
+│          (nleft = 0)
+│    %5  = span::UnitRange{Int64}
+│          (@_7 = Base.iterate(%5))
+│    %7  = @_7::UNION{NOTHING, TUPLE{INT64, INT64}}
+│    %8  = (%7 === nothing)::Bool
+│    %9  = Base.not_int(%8)::Bool
+└───       goto #4 if not %9
+2 ┄─ %11 = @_7::Tuple{Int64, Int64}
+│          (k@_11 = Core.getfield(%11, 1))
+│    %13 = Core.getfield(%11, 2)::Int64
+│    %14 = LinearTrees.:+::Core.Const(+)
+│    %15 = nleft::Int64
+│    %16 = k@_11::Int64
+│    %17 = Base.getindex(idx, %16)::Int32
+│    %18 = Base.getindex(isleft, %17)::Bool
+│          (nleft = (%14)(%15, %18))
+│          (@_7 = Base.iterate(%5, %13))
+│    %21 = @_7::UNION{NOTHING, TUPLE{INT64, INT64}}
+│    %22 = (%21 === nothing)::Bool
+│    %23 = Base.not_int(%22)::Bool
+└───       goto #4 if not %23
+3 ──       goto #2
+4 ┄─       (a = 0)
+│    %27 = nleft::Int64
+│          (b = %27)
+│    %29 = span::UnitRange{Int64}
+│          (@_6 = Base.iterate(%29))
+│    %31 = @_6::UNION{NOTHING, TUPLE{INT64, INT64}}
+│    %32 = (%31 === nothing)::Bool
+│    %33 = Base.not_int(%32)::Bool
+└───       goto #10 if not %33
+5 ┄─ %35 = @_6::Tuple{Int64, Int64}
+│          (k@_13 = Core.getfield(%35, 1))
+│    %37 = Core.getfield(%35, 2)::Int64
+│    %38 = k@_13::Int64
+│          (i = Base.getindex(idx, %38))
+│    %40 = i::Int32
+│    %41 = Base.getindex(isleft, %40)::Bool
+└───       goto #7 if not %41
+6 ── %43 = i::Int32
+│    %44 = LinearTrees.:+::Core.Const(+)
+│    %45 = a::Int64
+│    %46 = (%44)(%45, 1)::Int64
+│          (a = %46)
+│          Base.setindex!(perm, %43, %46)
+└───       goto #8
+7 ── %50 = i::Int32
+│    %51 = LinearTrees.:+::Core.Const(+)
+│    %52 = b::Int64
+│    %53 = (%51)(%52, 1)::Int64
+│          (b = %53)
+└───       Base.setindex!(perm, %50, %53)
+8 ┄─       (@_6 = Base.iterate(%29, %37))
+│    %57 = @_6::UNION{NOTHING, TUPLE{INT64, INT64}}
+│    %58 = (%57 === nothing)::Bool
+│    %59 = Base.not_int(%58)::Bool
+└───       goto #10 if not %59
+9 ──       goto #5
+10 ┄ %62 = LinearTrees.copyto!::Core.Const(copyto!)
+│    %63 = LinearTrees.first::Core.Const(first)
+│    %64 = (%63)(span)::Int64
+│    %65 = LinearTrees.length::Core.Const(length)
+│    %66 = (%65)(span)::Int64
+│          (%62)(idx, %64, perm, 1, %66)
+│    %68 = nleft::Int64
+└───       return %68
+
+
+==============================================================================
+== score_row scalar
+==============================================================================
+MethodInstance for LinearTrees.score_row(::LinearTree{Float64, Float64, MSE}, ::Matrix{Float64}, ::Int64, ::Bool)
+  from score_row(tree::LinearTree{T, V}, X::AbstractMatrix, i::Integer, clip::Bool) where {T, V} @ LinearTrees ~/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/predict.jl:12
+Static Parameters
+  T = Float64
+  V = Float64
+Arguments
+  #self#::Core.Const(LinearTrees.score_row)
+  tree::LinearTree{Float64, Float64, MSE}
+  X::Matrix{Float64}
+  i::Int64
+  clip::Bool
+Locals
+  k::UNION{INT32, INT64}
+  s::Float64
+  doclip::Bool
+  nodes::Vector{Node{Float64, Float64}}
+  x::Float64
+  goleft::Bool
+  xraw::Float64
+  n::Node{Float64, Float64}
+  @_14::Bool
+  @_15::Float64
+Body::Float64
+1 ──        nothing
+│           (nodes = Base.getproperty(tree, :nodes))
+│    %3   = LinearTrees.:&::Core.Const(&)
+│    %4   = Base.getproperty(tree, :truncate)::Bool
+│           (doclip = (%3)(clip, %4))
+│    %6   = LinearTrees.zero::Core.Const(zero)
+│    %7   = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│           (s = (%6)(%7))
+└───        (k = 1)
+2 ┄─        goto #22 if not true
+3 ──        Core.NewvarNode(:(x))
+│           Core.NewvarNode(:(goleft))
+│           Core.NewvarNode(:(xraw))
+│    %14  = nodes::Vector{Node{Float64, Float64}}
+│    %15  = k::UNION{INT32, INT64}
+│           (n = Base.getindex(%14, %15))
+│    %17  = LinearTrees.isleaf::Core.Const(LinearTrees.isleaf)
+│    %18  = n::Node{Float64, Float64}
+│    %19  = (%17)(%18)::Bool
+└───        goto #7 if not %19
+4 ── %21  = LinearTrees.:+::Core.Const(+)
+│    %22  = s::Float64
+│    %23  = n::Node{Float64, Float64}
+│    %24  = Base.getproperty(%23, :lintercept)::Float64
+│           (s = (%21)(%22, %24))
+│    %26  = doclip::Bool
+└───        goto #6 if not %26
+5 ── %28  = LinearTrees.clampscore::Core.Const(LinearTrees.clampscore)
+│    %29  = s::Float64
+│    %30  = Base.getproperty(tree, :lo)::Float64
+│    %31  = Base.getproperty(tree, :hi)::Float64
+│    %32  = (%28)(%29, %30, %31)::Float64
+└───        return %32
+6 ── %34  = s::Float64
+└───        return %34
+7 ── %36  = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %37  = n::Node{Float64, Float64}
+│    %38  = Base.getproperty(%37, :feature)::Int32
+│    %39  = Base.getindex(X, i, %38)::Float64
+│           (xraw = (%36)(%39))
+│    %41  = LinearTrees.iscategorical::Core.Const(LinearTrees.iscategorical)
+│    %42  = n::Node{Float64, Float64}
+│    %43  = (%41)(%42)::Bool
+└───        goto #12 if not %43
+8 ── %45  = LinearTrees.isfinite::Core.Const(isfinite)
+│    %46  = xraw::Float64
+│    %47  = (%45)(%46)::Bool
+└───        goto #10 if not %47
+9 ── %49  = LinearTrees.category_is_left::Core.Const(LinearTrees.category_is_left)
+│    %50  = n::Node{Float64, Float64}
+│    %51  = LinearTrees.round::Core.Const(round)
+│    %52  = LinearTrees.Int::Core.Const(Int64)
+│    %53  = xraw::Float64
+│    %54  = (%51)(%52, %53)::Int64
+│           (@_14 = (%49)(tree, %50, %54))
+└───        goto #11
+10 ─        (@_14 = false)
+11 ┄ %58  = @_14::Bool
+│           (goleft = %58)
+│    %60  = LinearTrees.zero::Core.Const(zero)
+│    %61  = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│           (x = (%60)(%61))
+└───        goto #16
+12 ─ %64  = Base.getproperty(tree, :truncate)::Bool
+└───        goto #14 if not %64
+13 ─ %66  = LinearTrees.min::Core.Const(min)
+│    %67  = LinearTrees.max::Core.Const(max)
+│    %68  = xraw::Float64
+│    %69  = n::Node{Float64, Float64}
+│    %70  = Base.getproperty(%69, :xmin)::Float64
+│    %71  = (%67)(%68, %70)::Float64
+│    %72  = n::Node{Float64, Float64}
+│    %73  = Base.getproperty(%72, :xmax)::Float64
+│           (@_15 = (%66)(%71, %73))
+└───        goto #15
+14 ─ %76  = xraw::Float64
+└───        (@_15 = %76)
+15 ┄ %78  = @_15::Float64
+│           (x = %78)
+│    %80  = LinearTrees.:<=::Core.Const(<=)
+│    %81  = x::Float64
+│    %82  = n::Node{Float64, Float64}
+│    %83  = Base.getproperty(%82, :threshold)::Float64
+└───        (goleft = (%80)(%81, %83))
+16 ┄ %85  = goleft::Bool
+└───        goto #18 if not %85
+17 ─ %87  = LinearTrees.:+::Core.Const(+)
+│    %88  = s::Float64
+│    %89  = LinearTrees.:+::Core.Const(+)
+│    %90  = LinearTrees.:*::Core.Const(*)
+│    %91  = n::Node{Float64, Float64}
+│    %92  = Base.getproperty(%91, :lcoef)::Float64
+│    %93  = x::Float64
+│    %94  = (%90)(%92, %93)::Float64
+│    %95  = n::Node{Float64, Float64}
+│    %96  = Base.getproperty(%95, :lintercept)::Float64
+│    %97  = (%89)(%94, %96)::Float64
+│           (s = (%87)(%88, %97))
+│    %99  = n::Node{Float64, Float64}
+│           (k = Base.getproperty(%99, :left))
+└───        goto #19
+18 ─ %102 = LinearTrees.:+::Core.Const(+)
+│    %103 = s::Float64
+│    %104 = LinearTrees.:+::Core.Const(+)
+│    %105 = LinearTrees.:*::Core.Const(*)
+│    %106 = n::Node{Float64, Float64}
+│    %107 = Base.getproperty(%106, :rcoef)::Float64
+│    %108 = x::Float64
+│    %109 = (%105)(%107, %108)::Float64
+│    %110 = n::Node{Float64, Float64}
+│    %111 = Base.getproperty(%110, :rintercept)::Float64
+│    %112 = (%104)(%109, %111)::Float64
+│           (s = (%102)(%103, %112))
+│    %114 = n::Node{Float64, Float64}
+└───        (k = Base.getproperty(%114, :right))
+19 ┄ %116 = doclip::Bool
+└───        goto #21 if not %116
+20 ─ %118 = LinearTrees.clampscore::Core.Const(LinearTrees.clampscore)
+│    %119 = s::Float64
+│    %120 = Base.getproperty(tree, :lo)::Float64
+│    %121 = Base.getproperty(tree, :hi)::Float64
+│           (s = (%118)(%119, %120, %121))
+└───        goto #21
+21 ┄        goto #2
+22 ─        Core.Const(:(return nothing))
+
+
+==============================================================================
+== score_row softmax
+==============================================================================
+MethodInstance for LinearTrees.score_row(::LinearTree{Float64, SVector{2, Float64}, Softmax{3}}, ::Matrix{Float64}, ::Int64, ::Bool)
+  from score_row(tree::LinearTree{T, V}, X::AbstractMatrix, i::Integer, clip::Bool) where {T, V} @ LinearTrees ~/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/predict.jl:12
+Static Parameters
+  T = Float64
+  V = SVector{2, Float64}
+Arguments
+  #self#::Core.Const(LinearTrees.score_row)
+  tree::LinearTree{Float64, SVector{2, Float64}, Softmax{3}}
+  X::Matrix{Float64}
+  i::Int64
+  clip::Bool
+Locals
+  k::UNION{INT32, INT64}
+  s::SVector{2, Float64}
+  doclip::Bool
+  nodes::Vector{Node{Float64, SVector{2, Float64}}}
+  x::Float64
+  goleft::Bool
+  xraw::Float64
+  n::Node{Float64, SVector{2, Float64}}
+  @_14::Bool
+  @_15::Float64
+Body::SVector{2, Float64}
+1 ──        nothing
+│           (nodes = Base.getproperty(tree, :nodes))
+│    %3   = LinearTrees.:&::Core.Const(&)
+│    %4   = Base.getproperty(tree, :truncate)::Bool
+│           (doclip = (%3)(clip, %4))
+│    %6   = LinearTrees.zero::Core.Const(zero)
+│    %7   = $(Expr(:static_parameter, 2))::Core.Const(SVector{2, Float64})
+│           (s = (%6)(%7))
+└───        (k = 1)
+2 ┄─        goto #22 if not true
+3 ──        Core.NewvarNode(:(x))
+│           Core.NewvarNode(:(goleft))
+│           Core.NewvarNode(:(xraw))
+│    %14  = nodes::Vector{Node{Float64, SVector{2, Float64}}}
+│    %15  = k::UNION{INT32, INT64}
+│           (n = Base.getindex(%14, %15))
+│    %17  = LinearTrees.isleaf::Core.Const(LinearTrees.isleaf)
+│    %18  = n::Node{Float64, SVector{2, Float64}}
+│    %19  = (%17)(%18)::Bool
+└───        goto #7 if not %19
+4 ── %21  = LinearTrees.:+::Core.Const(+)
+│    %22  = s::SVector{2, Float64}
+│    %23  = n::Node{Float64, SVector{2, Float64}}
+│    %24  = Base.getproperty(%23, :lintercept)::SVector{2, Float64}
+│           (s = (%21)(%22, %24))
+│    %26  = doclip::Bool
+└───        goto #6 if not %26
+5 ── %28  = LinearTrees.clampscore::Core.Const(LinearTrees.clampscore)
+│    %29  = s::SVector{2, Float64}
+│    %30  = Base.getproperty(tree, :lo)::SVector{2, Float64}
+│    %31  = Base.getproperty(tree, :hi)::SVector{2, Float64}
+│    %32  = (%28)(%29, %30, %31)::SVector{2, Float64}
+└───        return %32
+6 ── %34  = s::SVector{2, Float64}
+└───        return %34
+7 ── %36  = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %37  = n::Node{Float64, SVector{2, Float64}}
+│    %38  = Base.getproperty(%37, :feature)::Int32
+│    %39  = Base.getindex(X, i, %38)::Float64
+│           (xraw = (%36)(%39))
+│    %41  = LinearTrees.iscategorical::Core.Const(LinearTrees.iscategorical)
+│    %42  = n::Node{Float64, SVector{2, Float64}}
+│    %43  = (%41)(%42)::Bool
+└───        goto #12 if not %43
+8 ── %45  = LinearTrees.isfinite::Core.Const(isfinite)
+│    %46  = xraw::Float64
+│    %47  = (%45)(%46)::Bool
+└───        goto #10 if not %47
+9 ── %49  = LinearTrees.category_is_left::Core.Const(LinearTrees.category_is_left)
+│    %50  = n::Node{Float64, SVector{2, Float64}}
+│    %51  = LinearTrees.round::Core.Const(round)
+│    %52  = LinearTrees.Int::Core.Const(Int64)
+│    %53  = xraw::Float64
+│    %54  = (%51)(%52, %53)::Int64
+│           (@_14 = (%49)(tree, %50, %54))
+└───        goto #11
+10 ─        (@_14 = false)
+11 ┄ %58  = @_14::Bool
+│           (goleft = %58)
+│    %60  = LinearTrees.zero::Core.Const(zero)
+│    %61  = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│           (x = (%60)(%61))
+└───        goto #16
+12 ─ %64  = Base.getproperty(tree, :truncate)::Bool
+└───        goto #14 if not %64
+13 ─ %66  = LinearTrees.min::Core.Const(min)
+│    %67  = LinearTrees.max::Core.Const(max)
+│    %68  = xraw::Float64
+│    %69  = n::Node{Float64, SVector{2, Float64}}
+│    %70  = Base.getproperty(%69, :xmin)::Float64
+│    %71  = (%67)(%68, %70)::Float64
+│    %72  = n::Node{Float64, SVector{2, Float64}}
+│    %73  = Base.getproperty(%72, :xmax)::Float64
+│           (@_15 = (%66)(%71, %73))
+└───        goto #15
+14 ─ %76  = xraw::Float64
+└───        (@_15 = %76)
+15 ┄ %78  = @_15::Float64
+│           (x = %78)
+│    %80  = LinearTrees.:<=::Core.Const(<=)
+│    %81  = x::Float64
+│    %82  = n::Node{Float64, SVector{2, Float64}}
+│    %83  = Base.getproperty(%82, :threshold)::Float64
+└───        (goleft = (%80)(%81, %83))
+16 ┄ %85  = goleft::Bool
+└───        goto #18 if not %85
+17 ─ %87  = LinearTrees.:+::Core.Const(+)
+│    %88  = s::SVector{2, Float64}
+│    %89  = LinearTrees.:+::Core.Const(+)
+│    %90  = LinearTrees.:*::Core.Const(*)
+│    %91  = n::Node{Float64, SVector{2, Float64}}
+│    %92  = Base.getproperty(%91, :lcoef)::SVector{2, Float64}
+│    %93  = x::Float64
+│    %94  = (%90)(%92, %93)::SVector{2, Float64}
+│    %95  = n::Node{Float64, SVector{2, Float64}}
+│    %96  = Base.getproperty(%95, :lintercept)::SVector{2, Float64}
+│    %97  = (%89)(%94, %96)::SVector{2, Float64}
+│           (s = (%87)(%88, %97))
+│    %99  = n::Node{Float64, SVector{2, Float64}}
+│           (k = Base.getproperty(%99, :left))
+└───        goto #19
+18 ─ %102 = LinearTrees.:+::Core.Const(+)
+│    %103 = s::SVector{2, Float64}
+│    %104 = LinearTrees.:+::Core.Const(+)
+│    %105 = LinearTrees.:*::Core.Const(*)
+│    %106 = n::Node{Float64, SVector{2, Float64}}
+│    %107 = Base.getproperty(%106, :rcoef)::SVector{2, Float64}
+│    %108 = x::Float64
+│    %109 = (%105)(%107, %108)::SVector{2, Float64}
+│    %110 = n::Node{Float64, SVector{2, Float64}}
+│    %111 = Base.getproperty(%110, :rintercept)::SVector{2, Float64}
+│    %112 = (%104)(%109, %111)::SVector{2, Float64}
+│           (s = (%102)(%103, %112))
+│    %114 = n::Node{Float64, SVector{2, Float64}}
+└───        (k = Base.getproperty(%114, :right))
+19 ┄ %116 = doclip::Bool
+└───        goto #21 if not %116
+20 ─ %118 = LinearTrees.clampscore::Core.Const(LinearTrees.clampscore)
+│    %119 = s::SVector{2, Float64}
+│    %120 = Base.getproperty(tree, :lo)::SVector{2, Float64}
+│    %121 = Base.getproperty(tree, :hi)::SVector{2, Float64}
+│           (s = (%118)(%119, %120, %121))
+└───        goto #21
+21 ┄        goto #2
+22 ─        Core.Const(:(return nothing))
+
+
+==============================================================================
+== visit! scalar
+==============================================================================
+MethodInstance for LinearTrees.visit!(::Matrix{Float64}, ::LinearTree{Float64, Float64, MSE}, ::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}, true}, ::Int64, ::Int64, ::Vector{LinearTrees.PathElem}, ::LinearTrees.PathPool, ::Int64)
+  from visit!(φ, tree::LinearTree{T, V}, x, row, k, path::Vector{LinearTrees.PathElem}, pool::LinearTrees.PathPool, depth::Int64) where {T, V} @ LinearTrees ~/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/shap.jl:161
+Static Parameters
+  T = Float64
+  V = Float64
+Arguments
+  #self#::Core.Const(LinearTrees.visit!)
+  φ::Matrix{Float64}
+  tree::LinearTree{Float64, Float64, MSE}
+  x::SubArray{Float64, 1, Matrix{Float64}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}}, true}
+  row::Int64
+  k::Int64
+  path::Vector{LinearTrees.PathElem}
+  pool::LinearTrees.PathPool
+  depth::Int64
+Locals
+  @_10::Int64
+  @_11::Int64
+  @_12::Int64
+  #82::LinearTrees.var"#visit!##2#visit!##3"{Int32}
+  #81::LinearTrees.var"#visit!##0#visit!##1"{Int32}
+  coldpath::Vector{LinearTrees.PathElem}
+  ownpath::Vector{LinearTrees.PathElem}
+  hotpath::Vector{LinearTrees.PathElem}
+  hotown::Float64
+  coldval::Float64
+  hotval::Float64
+  coldcov::Float64
+  hotcov::Float64
+  cold::Int32
+  hot::Int32
+  ione::Float64
+  izero::Float64
+  prev::UNION{NOTHING, INT64}
+  ownr::Float64
+  ownl::Float64
+  rval::Float64
+  lval::Float64
+  goleft::Bool
+  xc::Float64
+  covr::Float64
+  covl::Float64
+  own::Float64
+  val::Float64
+  xraw::Float64
+  j::Int32
+  n::Node{Float64, Float64}
+  @_41::Float64
+  @_42::Bool
+  @_43::Float64
+  @_44::Tuple{Int32, Int32}
+  @_45::Tuple{Float64, Float64}
+  @_46::Tuple{Float64, Float64}
+  @_47::Float64
+Body::Nothing
+1 ──        Core.NewvarNode(:(@_10))
+│           Core.NewvarNode(:(@_11))
+│           Core.NewvarNode(:(@_12))
+│           Core.NewvarNode(:(#82))
+│           Core.NewvarNode(:(#81))
+│           Core.NewvarNode(:(coldpath))
+│           Core.NewvarNode(:(ownpath))
+│           Core.NewvarNode(:(hotpath))
+│           Core.NewvarNode(:(hotown))
+│           Core.NewvarNode(:(coldval))
+│           Core.NewvarNode(:(hotval))
+│           Core.NewvarNode(:(coldcov))
+│           Core.NewvarNode(:(hotcov))
+│           Core.NewvarNode(:(cold))
+│           Core.NewvarNode(:(hot))
+│           Core.NewvarNode(:(ione))
+│           Core.NewvarNode(:(izero))
+│           Core.NewvarNode(:(prev))
+│           Core.NewvarNode(:(ownr))
+│           Core.NewvarNode(:(ownl))
+│           Core.NewvarNode(:(rval))
+│           Core.NewvarNode(:(lval))
+│           Core.NewvarNode(:(goleft))
+│           Core.NewvarNode(:(xc))
+│           Core.NewvarNode(:(covr))
+│           Core.NewvarNode(:(covl))
+│           Core.NewvarNode(:(own))
+│           Core.NewvarNode(:(val))
+│           Core.NewvarNode(:(xraw))
+│           Core.NewvarNode(:(j))
+│    %31  = Base.getproperty(tree, :nodes)::Vector{Node{Float64, Float64}}
+│           (n = Base.getindex(%31, k))
+│    %33  = LinearTrees.isleaf::Core.Const(LinearTrees.isleaf)
+│    %34  = n::Node{Float64, Float64}
+│    %35  = (%33)(%34)::Bool
+└───        goto #3 if not %35
+2 ── %37  = LinearTrees.attribute_constant!::Core.Const(LinearTrees.attribute_constant!)
+│    %38  = n::Node{Float64, Float64}
+│    %39  = Base.getproperty(%38, :lintercept)::Float64
+│           (%37)(φ, path, %39, row)
+│    %41  = LinearTrees.nothing::Core.Const(nothing)
+└───        return %41
+3 ── %43  = LinearTrees.ensure_depth!::Core.Const(LinearTrees.ensure_depth!)
+│           (%43)(pool, depth)
+│    %45  = n::Node{Float64, Float64}
+│           (j = Base.getproperty(%45, :feature))
+│    %47  = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│    %48  = j::Int32
+│    %49  = Base.getindex(x, %48)::Float64
+│           (xraw = (%47)(%49))
+│    %51  = LinearTrees.:!::Core.Const(!)
+│    %52  = LinearTrees.iscategorical::Core.Const(LinearTrees.iscategorical)
+│    %53  = n::Node{Float64, Float64}
+│    %54  = (%52)(%53)::Bool
+│    %55  = (%51)(%54)::Bool
+└───        goto #12 if not %55
+4 ── %57  = LinearTrees.:(==)::Core.Const(==)
+│    %58  = n::Node{Float64, Float64}
+│    %59  = Base.getproperty(%58, :left)::Int32
+│    %60  = n::Node{Float64, Float64}
+│    %61  = Base.getproperty(%60, :right)::Int32
+│    %62  = (%57)(%59, %61)::Bool
+└───        goto #12 if not %62
+5 ── %64  = Base.getproperty(tree, :truncate)::Bool
+└───        goto #7 if not %64
+6 ── %66  = LinearTrees.min::Core.Const(min)
+│    %67  = LinearTrees.max::Core.Const(max)
+│    %68  = xraw::Float64
+│    %69  = n::Node{Float64, Float64}
+│    %70  = Base.getproperty(%69, :xmin)::Float64
+│    %71  = (%67)(%68, %70)::Float64
+│    %72  = n::Node{Float64, Float64}
+│    %73  = Base.getproperty(%72, :xmax)::Float64
+│           (@_41 = (%66)(%71, %73))
+└───        goto #8
+7 ── %76  = xraw::Float64
+└───        (@_41 = %76)
+8 ┄─ %78  = @_41::Float64
+│           (xc = %78)
+│    %80  = LinearTrees.:+::Core.Const(+)
+│    %81  = LinearTrees.:*::Core.Const(*)
+│    %82  = n::Node{Float64, Float64}
+│    %83  = Base.getproperty(%82, :lcoef)::Float64
+│    %84  = n::Node{Float64, Float64}
+│    %85  = Base.getproperty(%84, :xmean)::Float64
+│    %86  = (%81)(%83, %85)::Float64
+│    %87  = n::Node{Float64, Float64}
+│    %88  = Base.getproperty(%87, :lintercept)::Float64
+│           (val = (%80)(%86, %88))
+│    %90  = LinearTrees.:*::Core.Const(*)
+│    %91  = n::Node{Float64, Float64}
+│    %92  = Base.getproperty(%91, :lcoef)::Float64
+│    %93  = LinearTrees.:-::Core.Const(-)
+│    %94  = xc::Float64
+│    %95  = n::Node{Float64, Float64}
+│    %96  = Base.getproperty(%95, :xmean)::Float64
+│    %97  = (%93)(%94, %96)::Float64
+│           (own = (%90)(%92, %97))
+│    %99  = LinearTrees.attribute_constant!::Core.Const(LinearTrees.attribute_constant!)
+│    %100 = val::Float64
+│           (%99)(φ, path, %100, row)
+│    %102 = LinearTrees.findfirst::Core.Const(findfirst)
+│    %103 = LinearTrees.:(var"#visit!##0#visit!##1")::Core.Const(LinearTrees.var"#visit!##0#visit!##1")
+│    %104 = j::Int32
+│    %105 = Core._typeof_captured_variable(%104)::Core.Const(Int32)
+│    %106 = Core.apply_type(%103, %105)::Core.Const(LinearTrees.var"#visit!##0#visit!##1"{Int32})
+│    %107 = j::Int32
+│           (#81 = %new(%106, %107))
+│    %109 = #81::LinearTrees.var"#visit!##0#visit!##1"{Int32}
+│           (prev = (%102)(%109, path))
+│    %111 = LinearTrees.copyinto!::Core.Const(LinearTrees.copyinto!)
+│    %112 = Base.getproperty(pool, :own)::Vector{Vector{LinearTrees.PathElem}}
+│    %113 = Base.getindex(%112, depth)::Vector{LinearTrees.PathElem}
+│           (ownpath = (%111)(%113, path))
+│    %115 = LinearTrees.:(===)::Core.Const(===)
+│    %116 = prev::UNION{NOTHING, INT64}
+│    %117 = LinearTrees.nothing::Core.Const(nothing)
+│    %118 = (%115)(%116, %117)::Bool
+└───        goto #10 if not %118
+9 ── %120 = LinearTrees.extend!::Core.Const(LinearTrees.extend!)
+│    %121 = ownpath::Vector{LinearTrees.PathElem}
+│    %122 = j::Int32
+│           (%120)(%121, 0.0, 1.0, %122)
+└───        goto #11
+10 ─ %125 = LinearTrees.extend!::Core.Const(LinearTrees.extend!)
+│    %126 = LinearTrees.unwind!::Core.Const(LinearTrees.unwind!)
+│    %127 = ownpath::Vector{LinearTrees.PathElem}
+│    %128 = prev::Int64
+│    %129 = (%126)(%127, %128)::Vector{LinearTrees.PathElem}
+│    %130 = prev::Int64
+│    %131 = Base.getindex(path, %130)::LinearTrees.PathElem
+│    %132 = Base.getproperty(%131, :onefrac)::Float64
+│    %133 = j::Int32
+└───        (%125)(%129, 0.0, %132, %133)
+11 ┄ %135 = LinearTrees.attribute_constant!::Core.Const(LinearTrees.attribute_constant!)
+│    %136 = ownpath::Vector{LinearTrees.PathElem}
+│    %137 = own::Float64
+│           (%135)(φ, %136, %137, row)
+│    %139 = LinearTrees.visit!::Core.Const(LinearTrees.visit!)
+│    %140 = n::Node{Float64, Float64}
+│    %141 = Base.getproperty(%140, :left)::Int32
+│    %142 = LinearTrees.:+::Core.Const(+)
+│    %143 = (%142)(depth, 1)::Int64
+│           (%139)(φ, tree, x, row, %141, path, pool, %143)
+│    %145 = LinearTrees.nothing::Core.Const(nothing)
+└───        return %145
+12 ┄ %147 = LinearTrees.:/::Core.Const(/)
+│    %148 = Base.getproperty(tree, :nodes)::Vector{Node{Float64, Float64}}
+│    %149 = n::Node{Float64, Float64}
+│    %150 = Base.getproperty(%149, :left)::Int32
+│    %151 = Base.getindex(%148, %150)::Node{Float64, Float64}
+│    %152 = Base.getproperty(%151, :cover)::Float64
+│    %153 = n::Node{Float64, Float64}
+│    %154 = Base.getproperty(%153, :cover)::Float64
+│           (covl = (%147)(%152, %154))
+│    %156 = LinearTrees.:-::Core.Const(-)
+│    %157 = covl::Float64
+│           (covr = (%156)(1, %157))
+│    %159 = LinearTrees.iscategorical::Core.Const(LinearTrees.iscategorical)
+│    %160 = n::Node{Float64, Float64}
+│    %161 = (%159)(%160)::Bool
+└───        goto #17 if not %161
+13 ─ %163 = LinearTrees.isfinite::Core.Const(isfinite)
+│    %164 = xraw::Float64
+│    %165 = (%163)(%164)::Bool
+└───        goto #15 if not %165
+14 ─ %167 = LinearTrees.category_is_left::Core.Const(LinearTrees.category_is_left)
+│    %168 = n::Node{Float64, Float64}
+│    %169 = LinearTrees.round::Core.Const(round)
+│    %170 = LinearTrees.Int::Core.Const(Int64)
+│    %171 = xraw::Float64
+│    %172 = (%169)(%170, %171)::Int64
+│           (@_42 = (%167)(tree, %168, %172))
+└───        goto #16
+15 ─        (@_42 = false)
+16 ┄ %176 = @_42::Bool
+│           (goleft = %176)
+│    %178 = n::Node{Float64, Float64}
+│           (lval = Base.getproperty(%178, :lintercept))
+│    %180 = n::Node{Float64, Float64}
+│           (rval = Base.getproperty(%180, :rintercept))
+│    %182 = LinearTrees.zero::Core.Const(zero)
+│    %183 = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│           (ownl = (%182)(%183))
+│    %185 = LinearTrees.zero::Core.Const(zero)
+│    %186 = $(Expr(:static_parameter, 2))::Core.Const(Float64)
+│           (ownr = (%185)(%186))
+└───        goto #21
+17 ─ %189 = Base.getproperty(tree, :truncate)::Bool
+└───        goto #19 if not %189
+18 ─ %191 = LinearTrees.min::Core.Const(min)
+│    %192 = LinearTrees.max::Core.Const(max)
+│    %193 = xraw::Float64
+│    %194 = n::Node{Float64, Float64}
+│    %195 = Base.getproperty(%194, :xmin)::Float64
+│    %196 = (%192)(%193, %195)::Float64
+│    %197 = n::Node{Float64, Float64}
+│    %198 = Base.getproperty(%197, :xmax)::Float64
+│           (@_43 = (%191)(%196, %198))
+└───        goto #20
+19 ─ %201 = xraw::Float64
+└───        (@_43 = %201)
+20 ┄ %203 = @_43::Float64
+│           (xc = %203)
+│    %205 = LinearTrees.:<=::Core.Const(<=)
+│    %206 = xc::Float64
+│    %207 = n::Node{Float64, Float64}
+│    %208 = Base.getproperty(%207, :threshold)::Float64
+│           (goleft = (%205)(%206, %208))
+│    %210 = LinearTrees.:+::Core.Const(+)
+│    %211 = LinearTrees.:*::Core.Const(*)
+│    %212 = n::Node{Float64, Float64}
+│    %213 = Base.getproperty(%212, :lcoef)::Float64
+│    %214 = n::Node{Float64, Float64}
+│    %215 = Base.getproperty(%214, :xmean)::Float64
+│    %216 = (%211)(%213, %215)::Float64
+│    %217 = n::Node{Float64, Float64}
+│    %218 = Base.getproperty(%217, :lintercept)::Float64
+│           (lval = (%210)(%216, %218))
+│    %220 = LinearTrees.:+::Core.Const(+)
+│    %221 = LinearTrees.:*::Core.Const(*)
+│    %222 = n::Node{Float64, Float64}
+│    %223 = Base.getproperty(%222, :rcoef)::Float64
+│    %224 = n::Node{Float64, Float64}
+│    %225 = Base.getproperty(%224, :xmean)::Float64
+│    %226 = (%221)(%223, %225)::Float64
+│    %227 = n::Node{Float64, Float64}
+│    %228 = Base.getproperty(%227, :rintercept)::Float64
+│           (rval = (%220)(%226, %228))
+│    %230 = LinearTrees.:*::Core.Const(*)
+│    %231 = n::Node{Float64, Float64}
+│    %232 = Base.getproperty(%231, :lcoef)::Float64
+│    %233 = LinearTrees.:-::Core.Const(-)
+│    %234 = xc::Float64
+│    %235 = n::Node{Float64, Float64}
+│    %236 = Base.getproperty(%235, :xmean)::Float64
+│    %237 = (%233)(%234, %236)::Float64
+│           (ownl = (%230)(%232, %237))
+│    %239 = LinearTrees.:*::Core.Const(*)
+│    %240 = n::Node{Float64, Float64}
+│    %241 = Base.getproperty(%240, :rcoef)::Float64
+│    %242 = LinearTrees.:-::Core.Const(-)
+│    %243 = xc::Float64
+│    %244 = n::Node{Float64, Float64}
+│    %245 = Base.getproperty(%244, :xmean)::Float64
+│    %246 = (%242)(%243, %245)::Float64
+└───        (ownr = (%239)(%241, %246))
+21 ┄ %248 = LinearTrees.findfirst::Core.Const(findfirst)
+│    %249 = LinearTrees.:(var"#visit!##2#visit!##3")::Core.Const(LinearTrees.var"#visit!##2#visit!##3")
+│    %250 = j::Int32
+│    %251 = Core._typeof_captured_variable(%250)::Core.Const(Int32)
+│    %252 = Core.apply_type(%249, %251)::Core.Const(LinearTrees.var"#visit!##2#visit!##3"{Int32})
+│    %253 = j::Int32
+│           (#82 = %new(%252, %253))
+│    %255 = #82::LinearTrees.var"#visit!##2#visit!##3"{Int32}
+│           (prev = (%248)(%255, path))
+│           (izero = 1.0)
+│           (ione = 1.0)
+│    %259 = LinearTrees.:!==::Core.Const(!==)
+│    %260 = prev::UNION{NOTHING, INT64}
+│    %261 = LinearTrees.nothing::Core.Const(nothing)
+│    %262 = (%259)(%260, %261)::Bool
+└───        goto #23 if not %262
+22 ─ %264 = prev::Int64
+│    %265 = Base.getindex(path, %264)::LinearTrees.PathElem
+│           (izero = Base.getproperty(%265, :zerofrac))
+│    %267 = prev::Int64
+│    %268 = Base.getindex(path, %267)::LinearTrees.PathElem
+│           (ione = Base.getproperty(%268, :onefrac))
+│    %270 = LinearTrees.unwind!::Core.Const(LinearTrees.unwind!)
+│    %271 = prev::Int64
+└───        (%270)(path, %271)
+23 ┄ %273 = goleft::Bool
+└───        goto #25 if not %273
+24 ─ %275 = n::Node{Float64, Float64}
+│    %276 = Base.getproperty(%275, :left)::Int32
+│    %277 = n::Node{Float64, Float64}
+│    %278 = Base.getproperty(%277, :right)::Int32
+│           (@_44 = Core.tuple(%276, %278))
+└───        goto #26
+25 ─ %281 = n::Node{Float64, Float64}
+│    %282 = Base.getproperty(%281, :right)::Int32
+│    %283 = n::Node{Float64, Float64}
+│    %284 = Base.getproperty(%283, :left)::Int32
+└───        (@_44 = Core.tuple(%282, %284))
+26 ┄ %286 = @_44::Tuple{Int32, Int32}
+│    %287 = Base.indexed_iterate(%286, 1)::Core.PartialStruct(Tuple{Int32, Int64}, Any[Int32, Core.Const(2)])
+│           (hot = Core.getfield(%287, 1))
+│           (@_12 = Core.getfield(%287, 2))
+│    %290 = @_12::Core.Const(2)
+│    %291 = Base.indexed_iterate(%286, 2, %290)::Core.PartialStruct(Tuple{Int32, Int64}, Any[Int32, Core.Const(3)])
+│           (cold = Core.getfield(%291, 1))
+│    %293 = goleft::Bool
+└───        goto #28 if not %293
+27 ─ %295 = covl::Float64
+│    %296 = covr::Float64
+│           (@_45 = Core.tuple(%295, %296))
+└───        goto #29
+28 ─ %299 = covr::Float64
+│    %300 = covl::Float64
+└───        (@_45 = Core.tuple(%299, %300))
+29 ┄ %302 = @_45::Tuple{Float64, Float64}
+│    %303 = Base.indexed_iterate(%302, 1)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(2)])
+│           (hotcov = Core.getfield(%303, 1))
+│           (@_11 = Core.getfield(%303, 2))
+│    %306 = @_11::Core.Const(2)
+│    %307 = Base.indexed_iterate(%302, 2, %306)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(3)])
+│           (coldcov = Core.getfield(%307, 1))
+│    %309 = goleft::Bool
+└───        goto #31 if not %309
+30 ─ %311 = lval::Float64
+│    %312 = rval::Float64
+│           (@_46 = Core.tuple(%311, %312))
+└───        goto #32
+31 ─ %315 = rval::Float64
+│    %316 = lval::Float64
+└───        (@_46 = Core.tuple(%315, %316))
+32 ┄ %318 = @_46::Tuple{Float64, Float64}
+│    %319 = Base.indexed_iterate(%318, 1)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(2)])
+│           (hotval = Core.getfield(%319, 1))
+│           (@_10 = Core.getfield(%319, 2))
+│    %322 = @_10::Core.Const(2)
+│    %323 = Base.indexed_iterate(%318, 2, %322)::Core.PartialStruct(Tuple{Float64, Int64}, Any[Float64, Core.Const(3)])
+│           (coldval = Core.getfield(%323, 1))
+│    %325 = goleft::Bool
+└───        goto #34 if not %325
+33 ─ %327 = ownl::Float64
+│           (@_47 = %327)
+└───        goto #35
+34 ─ %330 = ownr::Float64
+└───        (@_47 = %330)
+35 ┄ %332 = @_47::Float64
+│           (hotown = %332)
+│    %334 = LinearTrees.extend!::Core.Const(LinearTrees.extend!)
+│    %335 = LinearTrees.copyinto!::Core.Const(LinearTrees.copyinto!)
+│    %336 = Base.getproperty(pool, :hot)::Vector{Vector{LinearTrees.PathElem}}
+│    %337 = Base.getindex(%336, depth)::Vector{LinearTrees.PathElem}
+│    %338 = (%335)(%337, path)::Vector{LinearTrees.PathElem}
+│    %339 = LinearTrees.:*::Core.Const(*)
+│    %340 = hotcov::Float64
+│    %341 = izero::Float64
+│    %342 = (%339)(%340, %341)::Float64
+│    %343 = ione::Float64
+│    %344 = j::Int32
+│           (hotpath = (%334)(%338, %342, %343, %344))
+│    %346 = LinearTrees.attribute_constant!::Core.Const(LinearTrees.attribute_constant!)
+│    %347 = hotpath::Vector{LinearTrees.PathElem}
+│    %348 = hotval::Float64
+│           (%346)(φ, %347, %348, row)
+│    %350 = LinearTrees.extend!::Core.Const(LinearTrees.extend!)
+│    %351 = LinearTrees.copyinto!::Core.Const(LinearTrees.copyinto!)
+│    %352 = Base.getproperty(pool, :own)::Vector{Vector{LinearTrees.PathElem}}
+│    %353 = Base.getindex(%352, depth)::Vector{LinearTrees.PathElem}
+│    %354 = (%351)(%353, path)::Vector{LinearTrees.PathElem}
+│    %355 = ione::Float64
+│    %356 = j::Int32
+│           (ownpath = (%350)(%354, 0.0, %355, %356))
+│    %358 = LinearTrees.attribute_constant!::Core.Const(LinearTrees.attribute_constant!)
+│    %359 = ownpath::Vector{LinearTrees.PathElem}
+│    %360 = hotown::Float64
+│           (%358)(φ, %359, %360, row)
+│    %362 = LinearTrees.extend!::Core.Const(LinearTrees.extend!)
+│    %363 = LinearTrees.copyinto!::Core.Const(LinearTrees.copyinto!)
+│    %364 = Base.getproperty(pool, :cold)::Vector{Vector{LinearTrees.PathElem}}
+│    %365 = Base.getindex(%364, depth)::Vector{LinearTrees.PathElem}
+│    %366 = (%363)(%365, path)::Vector{LinearTrees.PathElem}
+│    %367 = LinearTrees.:*::Core.Const(*)
+│    %368 = coldcov::Float64
+│    %369 = izero::Float64
+│    %370 = (%367)(%368, %369)::Float64
+│    %371 = j::Int32
+│           (coldpath = (%362)(%366, %370, 0.0, %371))
+│    %373 = LinearTrees.attribute_constant!::Core.Const(LinearTrees.attribute_constant!)
+│    %374 = coldpath::Vector{LinearTrees.PathElem}
+│    %375 = coldval::Float64
+│           (%373)(φ, %374, %375, row)
+│    %377 = LinearTrees.visit!::Core.Const(LinearTrees.visit!)
+│    %378 = hot::Int32
+│    %379 = hotpath::Vector{LinearTrees.PathElem}
+│    %380 = LinearTrees.:+::Core.Const(+)
+│    %381 = (%380)(depth, 1)::Int64
+│           (%377)(φ, tree, x, row, %378, %379, pool, %381)
+│    %383 = LinearTrees.visit!::Core.Const(LinearTrees.visit!)
+│    %384 = cold::Int32
+│    %385 = coldpath::Vector{LinearTrees.PathElem}
+│    %386 = LinearTrees.:+::Core.Const(+)
+│    %387 = (%386)(depth, 1)::Int64
+│           (%383)(φ, tree, x, row, %384, %385, pool, %387)
+│    %389 = LinearTrees.nothing::Core.Const(nothing)
+└───        return %389
+
+
+==============================================================================
+== addrow scalar
+==============================================================================
+MethodInstance for LinearTrees.addrow(::LinearTrees.MomentSums{Float64}, ::Float64, ::Float64, ::Float64)
+  from addrow(s::LinearTrees.MomentSums{V}, x, z, h) where V @ LinearTrees ~/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:29
+Static Parameters
+  V = Float64
+Arguments
+  #self#::Core.Const(LinearTrees.addrow)
+  s::LinearTrees.MomentSums{Float64}
+  x::Float64
+  z::Float64
+  h::Float64
+Locals
+  hx::Float64
+Body::LinearTrees.MomentSums{Float64}
+1 ─       nothing
+│   %2  = LinearTrees.:*::Core.Const(*)
+│         (hx = (%2)(h, x))
+│   %4  = LinearTrees.MomentSums::Core.Const(LinearTrees.MomentSums)
+│   %5  = $(Expr(:static_parameter, 1))::Core.Const(Float64)
+│   %6  = Core.apply_type(%4, %5)::Core.Const(LinearTrees.MomentSums{Float64})
+│   %7  = LinearTrees.:+::Core.Const(+)
+│   %8  = Base.getproperty(s, :sw)::Float64
+│   %9  = (%7)(%8, h)::Float64
+│   %10 = LinearTrees.:+::Core.Const(+)
+│   %11 = Base.getproperty(s, :sx)::Float64
+│   %12 = hx::Float64
+│   %13 = (%10)(%11, %12)::Float64
+│   %14 = LinearTrees.:+::Core.Const(+)
+│   %15 = Base.getproperty(s, :sxx)::Float64
+│   %16 = LinearTrees.:*::Core.Const(*)
+│   %17 = hx::Float64
+│   %18 = (%16)(%17, x)::Float64
+│   %19 = (%14)(%15, %18)::Float64
+│   %20 = LinearTrees.:+::Core.Const(+)
+│   %21 = Base.getproperty(s, :sz)::Float64
+│   %22 = LinearTrees.:*::Core.Const(*)
+│   %23 = Base.broadcasted(%22, h, z)::Base.Broadcast.Broadcasted{Base.Broadcast.DefaultArrayStyle{0}, Nothing, typeof(*), Tuple{Float64, Float64}}
+│   %24 = Base.materialize(%23)::Float64
+│   %25 = (%20)(%21, %24)::Float64
+│   %26 = LinearTrees.:+::Core.Const(+)
+│   %27 = Base.getproperty(s, :sxz)::Float64
+│   %28 = LinearTrees.:*::Core.Const(*)
+│   %29 = hx::Float64
+│   %30 = Base.broadcasted(%28, %29, z)::Base.Broadcast.Broadcasted{Base.Broadcast.DefaultArrayStyle{0}, Nothing, typeof(*), Tuple{Float64, Float64}}
+│   %31 = Base.materialize(%30)::Float64
+│   %32 = (%26)(%27, %31)::Float64
+│   %33 = LinearTrees.:+::Core.Const(+)
+│   %34 = Base.getproperty(s, :szz)::Float64
+│   %35 = LinearTrees.:*::Core.Const(*)
+│   %36 = LinearTrees.:*::Core.Const(*)
+│   %37 = Base.broadcasted(%36, h, z)::Base.Broadcast.Broadcasted{Base.Broadcast.DefaultArrayStyle{0}, Nothing, typeof(*), Tuple{Float64, Float64}}
+│   %38 = Base.broadcasted(%35, %37, z)::Base.Broadcast.Broadcasted{Base.Broadcast.DefaultArrayStyle{0}, Nothing, typeof(*), Tuple{Base.Broadcast.Broadcasted{Base.Broadcast.DefaultArrayStyle{0}, Nothing, typeof(*), Tuple{Float64, Float64}}, Float64}}
+│   %39 = Base.materialize(%38)::Float64
+│   %40 = (%33)(%34, %39)::Float64
+│   %41 = (%6)(%9, %13, %19, %25, %32, %40)::LinearTrees.MomentSums{Float64}
+└──       return %41
+
+
+==============================================================================
+== addrow softmax
+==============================================================================
+MethodInstance for LinearTrees.addrow(::LinearTrees.MomentSums{SVector{2, Float64}}, ::Float64, ::SVector{2, Float64}, ::SVector{2, Float64})
+  from addrow(s::LinearTrees.MomentSums{V}, x, z, h) where V @ LinearTrees ~/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:29
+Static Parameters
+  V = SVector{2, Float64}
+Arguments
+  #self#::Core.Const(LinearTrees.addrow)
+  s::LinearTrees.MomentSums{SVector{2, Float64}}
+  x::Float64
+  z::SVector{2, Float64}
+  h::SVector{2, Float64}
+Locals
+  hx::SVector{2, Float64}
+Body::LinearTrees.MomentSums{SVector{2, Float64}}
+1 ─       nothing
+│   %2  = LinearTrees.:*::Core.Const(*)
+│         (hx = (%2)(h, x))
+│   %4  = LinearTrees.MomentSums::Core.Const(LinearTrees.MomentSums)
+│   %5  = $(Expr(:static_parameter, 1))::Core.Const(SVector{2, Float64})
+│   %6  = Core.apply_type(%4, %5)::Core.Const(LinearTrees.MomentSums{SVector{2, Float64}})
+│   %7  = LinearTrees.:+::Core.Const(+)
+│   %8  = Base.getproperty(s, :sw)::SVector{2, Float64}
+│   %9  = (%7)(%8, h)::SVector{2, Float64}
+│   %10 = LinearTrees.:+::Core.Const(+)
+│   %11 = Base.getproperty(s, :sx)::SVector{2, Float64}
+│   %12 = hx::SVector{2, Float64}
+│   %13 = (%10)(%11, %12)::SVector{2, Float64}
+│   %14 = LinearTrees.:+::Core.Const(+)
+│   %15 = Base.getproperty(s, :sxx)::SVector{2, Float64}
+│   %16 = LinearTrees.:*::Core.Const(*)
+│   %17 = hx::SVector{2, Float64}
+│   %18 = (%16)(%17, x)::SVector{2, Float64}
+│   %19 = (%14)(%15, %18)::SVector{2, Float64}
+│   %20 = LinearTrees.:+::Core.Const(+)
+│   %21 = Base.getproperty(s, :sz)::SVector{2, Float64}
+│   %22 = LinearTrees.:*::Core.Const(*)
+│   %23 = Base.broadcasted(%22, h, z)::Base.Broadcast.Broadcasted{StaticArraysCore.StaticArrayStyle{1}, Nothing, typeof(*), Tuple{SVector{2, Float64}, SVector{2, Float64}}}
+│   %24 = Base.materialize(%23)::SVector{2, Float64}
+│   %25 = (%20)(%21, %24)::SVector{2, Float64}
+│   %26 = LinearTrees.:+::Core.Const(+)
+│   %27 = Base.getproperty(s, :sxz)::SVector{2, Float64}
+│   %28 = LinearTrees.:*::Core.Const(*)
+│   %29 = hx::SVector{2, Float64}
+│   %30 = Base.broadcasted(%28, %29, z)::Base.Broadcast.Broadcasted{StaticArraysCore.StaticArrayStyle{1}, Nothing, typeof(*), Tuple{SVector{2, Float64}, SVector{2, Float64}}}
+│   %31 = Base.materialize(%30)::SVector{2, Float64}
+│   %32 = (%26)(%27, %31)::SVector{2, Float64}
+│   %33 = LinearTrees.:+::Core.Const(+)
+│   %34 = Base.getproperty(s, :szz)::SVector{2, Float64}
+│   %35 = LinearTrees.:*::Core.Const(*)
+│   %36 = LinearTrees.:*::Core.Const(*)
+│   %37 = Base.broadcasted(%36, h, z)::Base.Broadcast.Broadcasted{StaticArraysCore.StaticArrayStyle{1}, Nothing, typeof(*), Tuple{SVector{2, Float64}, SVector{2, Float64}}}
+│   %38 = Base.broadcasted(%35, %37, z)::Base.Broadcast.Broadcasted{StaticArraysCore.StaticArrayStyle{1}, Nothing, typeof(*), Tuple{Base.Broadcast.Broadcasted{StaticArraysCore.StaticArrayStyle{1}, Nothing, typeof(*), Tuple{SVector{2, Float64}, SVector{2, Float64}}}, SVector{2, Float64}}}
+│   %39 = Base.materialize(%38)::SVector{2, Float64}
+│   %40 = (%33)(%34, %39)::SVector{2, Float64}
+│   %41 = (%6)(%9, %13, %19, %25, %32, %40)::LinearTrees.MomentSums{SVector{2, Float64}}
+└──       return %41
+
+
+==============================================================================
+== fit_lin scalar
+==============================================================================
+MethodInstance for LinearTrees.fit_lin(::LinearTrees.MomentSums{Float64})
+  from fit_lin(s::LinearTrees.MomentSums; tol) @ LinearTrees ~/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:55
+Arguments
+  #self#::Core.Const(LinearTrees.fit_lin)
+  s::LinearTrees.MomentSums{Float64}
+Body::UNION{NOTHING, TUPLE{FLOAT64, FLOAT64, FLOAT64}}
+1 ─      nothing
+│   %2 = LinearTrees.:(var"#fit_lin#25")::Core.Const(LinearTrees.var"#fit_lin#25")
+│   %3 = LinearTrees.SINGULAR_TOL::Core.Const(1.0e-12)
+│   %4 = (%2)(%3, #self#, s)::UNION{NOTHING, TUPLE{FLOAT64, FLOAT64, FLOAT64}}
+└──      return %4
+
+
+==============================================================================
+== fit_lin softmax
+==============================================================================
+MethodInstance for LinearTrees.fit_lin(::LinearTrees.MomentSums{SVector{2, Float64}})
+  from fit_lin(s::LinearTrees.MomentSums; tol) @ LinearTrees ~/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:55
+Arguments
+  #self#::Core.Const(LinearTrees.fit_lin)
+  s::LinearTrees.MomentSums{SVector{2, Float64}}
+Body::UNION{NOTHING, TUPLE{SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}}}
+1 ─      nothing
+│   %2 = LinearTrees.:(var"#fit_lin#25")::Core.Const(LinearTrees.var"#fit_lin#25")
+│   %3 = LinearTrees.SINGULAR_TOL::Core.Const(1.0e-12)
+│   %4 = (%2)(%3, #self#, s)::UNION{NOTHING, TUPLE{SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}, SVECTOR{2, FLOAT64}}}
+└──      return %4
+
+
+==============================================================================
+== fit_blin scalar
+==============================================================================
+MethodInstance for LinearTrees.fit_blin(::LinearTrees.MomentSums{Float64}, ::LinearTrees.MomentSums{Float64}, ::Float64)
+  from fit_blin(sl::LinearTrees.MomentSums{T}, sr::LinearTrees.MomentSums{T}, t; tol) where T<:Real @ LinearTrees ~/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:69
+Static Parameters
+  T = Float64
+Arguments
+  #self#::Core.Const(LinearTrees.fit_blin)
+  sl::LinearTrees.MomentSums{Float64}
+  sr::LinearTrees.MomentSums{Float64}
+  t::Float64
+Body::UNION{NOTHING, NTUPLE{5, FLOAT64}}
+1 ─      nothing
+│   %2 = LinearTrees.:(var"#fit_blin#26")::Core.Const(LinearTrees.var"#fit_blin#26")
+│   %3 = LinearTrees.SINGULAR_TOL::Core.Const(1.0e-12)
+│   %4 = (%2)(%3, #self#, sl, sr, t)::UNION{NOTHING, NTUPLE{5, FLOAT64}}
+└──      return %4
+
+
+==============================================================================
+== fit_blin softmax
+==============================================================================
+MethodInstance for LinearTrees.fit_blin(::LinearTrees.MomentSums{SVector{2, Float64}}, ::LinearTrees.MomentSums{SVector{2, Float64}}, ::Float64)
+  from fit_blin(sl::LinearTrees.MomentSums{V}, sr::LinearTrees.MomentSums{V}, t; tol) where {Km1, T, V<:SVector{Km1, T}} @ LinearTrees ~/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/src/accumulate.jl:96
+Static Parameters
+  Km1 = 2
+  T = Float64
+  V = SVector{2, Float64}
+Arguments
+  #self#::Core.Const(LinearTrees.fit_blin)
+  sl::LinearTrees.MomentSums{SVector{2, Float64}}
+  sr::LinearTrees.MomentSums{SVector{2, Float64}}
+  t::Float64
+Body::UNION{NOTHING, NTUPLE{5, SVECTOR{2, FLOAT64}}}
+1 ─      nothing
+│   %2 = LinearTrees.:(var"#fit_blin#27")::Core.Const(LinearTrees.var"#fit_blin#27")
+│   %3 = LinearTrees.SINGULAR_TOL::Core.Const(1.0e-12)
+│   %4 = (%2)(%3, #self#, sl, sr, t)::UNION{NOTHING, NTUPLE{5, SVECTOR{2, FLOAT64}}}
+└──      return %4
+

@@ -1,0 +1,7 @@
+# case6-shap  threads=10  sampled allocs=15  sampled bytes=1640  rate=0.01
+         752 B         5 allocs  shap.jl:60 copyinto!
+         560 B         1 allocs  shap.jl:66 extend!
+         152 B         3 allocs  shap.jl:53 ensure_depth!
+          96 B         3 allocs  shap.jl:52 ensure_depth!
+          48 B         2 allocs  predict.jl:146 #row_blocks#75
+          32 B         1 allocs  shap.jl:51 ensure_depth!

@@ -1,0 +1,18 @@
+# case4-table  threads=1  sampled allocs=1257  sampled bytes=474320  rate=0.01
+      400000 B         1 allocs  fit.jl:173 #presort!##0
+       30264 B        55 allocs  fit.jl:541 grow_subtree
+       20304 B       486 allocs  fit.jl:320 scan_categorical
+        9536 B       298 allocs  fit.jl:396 best_split_serial
+        7272 B       210 allocs  fit.jl:327 scan_categorical
+        2080 B        65 allocs  fit.jl:328 scan_categorical
+        1408 B        44 allocs  fit.jl:540 grow_subtree
+        1216 B        38 allocs  fit.jl:388 best_split_serial
+         800 B        25 allocs  fit.jl:665 update_score!
+         320 B         8 allocs  fit.jl:338 scan_categorical
+         272 B         8 allocs  fit.jl:334 scan_categorical
+         272 B         1 allocs  statsapi.jl:100 encode_column!
+         200 B         6 allocs  fit.jl:365 scan_categorical
+         176 B         5 allocs  fit.jl:349 scan_categorical
+          96 B         3 allocs  fit.jl:350 scan_categorical
+          72 B         3 allocs  fit.jl:378 push_mask!
+          32 B         1 allocs  fit.jl:347 scan_categorical

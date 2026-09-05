@@ -1,0 +1,24 @@
+# case4-table  threads=10  sampled allocs=1280  sampled bytes=880884  rate=0.01
+      800000 B         1 allocs  fit.jl:17 Scratch
+       36120 B        51 allocs  fit.jl:541 grow_subtree
+       19568 B       475 allocs  fit.jl:320 scan_categorical
+       10240 B       320 allocs  fit.jl:396 best_split_serial
+        6760 B       198 allocs  fit.jl:327 scan_categorical
+        1984 B        62 allocs  fit.jl:328 scan_categorical
+        1696 B        53 allocs  fit.jl:540 grow_subtree
+        1248 B        39 allocs  fit.jl:388 best_split_serial
+         800 B        25 allocs  fit.jl:665 update_score!
+         496 B         8 allocs  fit.jl:193 refresh!
+         416 B         5 allocs  fit.jl:160 column_blocks
+         328 B        10 allocs  fit.jl:349 scan_categorical
+         272 B         6 allocs  fit.jl:338 scan_categorical
+         256 B         7 allocs  fit.jl:365 scan_categorical
+         192 B         6 allocs  fit.jl:334 scan_categorical
+         132 B         4 allocs  fit.jl:350 scan_categorical
+         128 B         3 allocs  statsapi.jl:76 #encode#92
+          96 B         1 allocs  gc-alloc-profiler.h:43 maybe_record_alloc_to_profile
+          56 B         2 allocs  fit.jl:192 refresh!
+          32 B         1 allocs  fit.jl:173 #presort!##0
+          24 B         1 allocs  fit.jl:497 grow_subtree
+          24 B         1 allocs  fit.jl:378 push_mask!
+          16 B         1 allocs  statsapi.jl:45 TableEncoder

@@ -1,0 +1,22 @@
+# case2-softmax  threads=10  sampled allocs=115  sampled bytes=1046264  rate=0.01
+      400032 B         2 allocs  fit.jl:17 Scratch
+      400000 B         1 allocs  fit.jl:173 #presort!##0
+      170128 B         1 allocs  fit.jl:541 grow_subtree
+       70176 B         6 allocs  fit.jl:192 refresh!
+        1568 B        14 allocs  fit.jl:320 scan_categorical
+         688 B        10 allocs  fit.jl:193 refresh!
+         512 B        16 allocs  fit.jl:396 best_split_serial
+         480 B        12 allocs  fit.jl:350 scan_categorical
+         424 B         8 allocs  fit.jl:338 scan_categorical
+         384 B        10 allocs  fit.jl:349 scan_categorical
+         328 B         5 allocs  fit.jl:334 scan_categorical
+         304 B         5 allocs  fit.jl:419 best_split
+         224 B         1 allocs  fit.jl:551 grow_subtree
+         216 B         6 allocs  fit.jl:327 scan_categorical
+         192 B         6 allocs  fit.jl:388 best_split_serial
+         160 B         3 allocs  fit.jl:160 column_blocks
+         128 B         1 allocs  gc-alloc-profiler.h:43 maybe_record_alloc_to_profile
+         128 B         2 allocs  fit.jl:418 best_split
+          64 B         2 allocs  fit.jl:665 update_score!
+          64 B         2 allocs  fit.jl:365 scan_categorical
+          64 B         2 allocs  fit.jl:347 scan_categorical

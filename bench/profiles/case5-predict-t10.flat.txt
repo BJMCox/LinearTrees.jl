@@ -1,0 +1,36 @@
+# case5-predict  threads=10  samples=80  mincount=2 (2%), sorted by cumulative count
+ Count  Overhead File                          Line Function
+ =====  ======== ====                          ==== ========
+     2         0 @LinearTrees/src/predict.jl    23 score_row
+     2         0 @Base/abstractarray.jl       1345 getindex
+     2         0 @Base/array.jl                929 getindex
+     2         2 @Base/essentials.jl           920 getindex
+     4         0 @LinearTrees/src/predict.jl    39 score_row
+     9         9 @LinearTrees/src/predict.jl    35 score_row
+    15         0 @LinearTrees/src/predict.jl    36 score_row
+    19        19 @Base/float.jl                497 *
+    34         0 @LinearTrees/src/predict.jl    99 (::LinearTrees.var"#67#68"{Vector{Float64}, LinearTree{Float64, Float64, MSE}, Matrix{Float64}})(rs::UnitRange{Int64})
+    35         0 @Base/threadingconstructs.jl  178 (::Base.Threads.var"#threading_run##0#threading_run##1"{LinearTrees.var"#77#78"{LinearTrees.var"#79#80"{LinearTrees.var"#67#68"{Vector{Float64}, LinearTre…
+    35         0 @Base/threadingconstructs.jl  246 #77
+    35         0 @Base/threadingconstructs.jl  279 (::LinearTrees.var"#77#78"{LinearTrees.var"#79#80"{LinearTrees.var"#67#68"{Vector{Float64}, LinearTree{Float64, Float64, MSE}, Matrix{Float64}}, Int64, In…
+    35         0 @LinearTrees/src/predict.jl   149 macro expansion
+Total snapshots: 80. Utilization: 91% across all threads and tasks. Use the `groupby` kwarg to break down by thread and/or task.
+
+
+# same profile, sorted by self time (Overhead)
+ Count  Overhead File                          Line Function
+ =====  ======== ====                          ==== ========
+    35         0 @Base/threadingconstructs.jl  178 (::Base.Threads.var"#threading_run##0#threading_run##1"{LinearTrees.var"#77#78"{LinearTrees.var"#79#80"{LinearTrees.var"#67#68"{Vector{Float64}, LinearTre…
+    35         0 @Base/threadingconstructs.jl  246 #77
+    35         0 @Base/threadingconstructs.jl  279 (::LinearTrees.var"#77#78"{LinearTrees.var"#79#80"{LinearTrees.var"#67#68"{Vector{Float64}, LinearTree{Float64, Float64, MSE}, Matrix{Float64}}, Int64, In…
+    35         0 @LinearTrees/src/predict.jl   149 macro expansion
+    34         0 @LinearTrees/src/predict.jl    99 (::LinearTrees.var"#67#68"{Vector{Float64}, LinearTree{Float64, Float64, MSE}, Matrix{Float64}})(rs::UnitRange{Int64})
+    15         0 @LinearTrees/src/predict.jl    36 score_row
+     4         0 @LinearTrees/src/predict.jl    39 score_row
+     2         0 @LinearTrees/src/predict.jl    23 score_row
+     2         0 @Base/abstractarray.jl       1345 getindex
+     2         0 @Base/array.jl                929 getindex
+     2         2 @Base/essentials.jl           920 getindex
+     9         9 @LinearTrees/src/predict.jl    35 score_row
+    19        19 @Base/float.jl                497 *
+Total snapshots: 80. Utilization: 91% across all threads and tasks. Use the `groupby` kwarg to break down by thread and/or task.

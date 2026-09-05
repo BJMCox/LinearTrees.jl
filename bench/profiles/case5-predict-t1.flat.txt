@@ -1,0 +1,112 @@
+# case5-predict  threads=1  samples=59  mincount=1 (2%), sorted by cumulative count
+ Count  Overhead File                                                                                                  Line Function
+ =====  ======== ====                                                                                                  ==== ========
+     1         0 @Base/array.jl                                                                                        986 setindex!
+     1         0 @Base/array.jl                                                                                        990 _setindex!
+     1         1 @Base/essentials.jl                                                                                    11 length
+     1         0 @LinearTrees/src/node.jl                                                                               94 category_is_left
+     1         0 @LinearTrees/src/node.jl                                                                               88 category_is_left
+     1         1 @Base/int.jl                                                                                           86 -
+     1         0 @LinearTrees/src/predict.jl                                                                            98 (::LinearTrees.var"#67#68"{Vector{Float64}, LinearTree{Float64, Float64, MSE}, Matrix{Float64}})(rs::UnitRange{Int64})
+     1         1 @Base/range.jl                                                                                        917 iterate
+     2         2 @Base/float.jl                                                                                          ? score_row
+     2         0 @Base/indices.jl                                                                                      366 to_indices
+     2         0 @Base/indices.jl                                                                                      369 to_indices
+     2         0 @Base/indices.jl                                                                                      293 to_index
+     2         0 @Base/indices.jl                                                                                      308 to_index
+     2         0 @Base/number.jl                                                                                         7 convert
+     2         0 @Base/boot.jl                                                                                         957 Int64
+     2         2 @Base/boot.jl                                                                                         876 toInt64
+     2         2 @LinearTrees/src/predict.jl                                                                             ? score_row
+     2         0 @Base/float.jl                                                                                        712 isfinite
+     2         2 @Base/float.jl                                                                                        496 -
+     2         2 @Base/essentials.jl                                                                                   919 getindex
+     3         0 @LinearTrees/src/predict.jl                                                                            26 score_row
+     4         0 @LinearTrees/src/predict.jl                                                                            18 score_row
+     4         0 @LinearTrees/src/predict.jl                                                                            23 score_row
+     4         0 @Base/array.jl                                                                                        928 getindex
+     4         0 @Base/abstractarray.jl                                                                                699 checkbounds
+     4         0 @Base/abstractarray.jl                                                                                681 checkbounds
+     4         0 @Base/abstractarray.jl                                                                                 98 axes
+     4         4 @Base/array.jl                                                                                        194 size
+     7         0 @LinearTrees/src/predict.jl                                                                            39 score_row
+     7         0 @Base/abstractarray.jl                                                                               1345 getindex
+     7         7 @LinearTrees/src/predict.jl                                                                            35 score_row
+    28         0 @LinearTrees/src/predict.jl                                                                            36 score_row
+    35        34 @Base/float.jl                                                                                        497 *
+    58         0 @LinearTrees/src/predict.jl                                                                            99 (::LinearTrees.var"#67#68"{Vector{Float64}, LinearTree{Float64, Float64, MSE}, Matrix{Float64}})(rs::UnitRange{Int64})
+    59         0 @Base/client.jl                                                                                       550 _start()
+    59         0 @Base/client.jl                                                                                       317 exec_options(opts::Base.JLOptions)
+    59         0 @Base/Base.jl                                                                                         306 include(mod::Module, _path::String)
+    59         0 @Base/loading.jl                                                                                     3012 _include(mapexpr::Function, mod::Module, _path::String)
+    59         0 @Base/loading.jl                                                                                     2952 include_string(mapexpr::typeof(identity), mod::Module, code::String, filename::String)
+    59         0 @Base/boot.jl                                                                                         489 eval(m::Module, e::Any)
+    59         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   105 run_case(name::String, f::Function)
+    59         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   108 run_case(name::String, f::var"#29#30"; label::String)
+    59         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl    53 cpu_profile(name::String, f::var"#29#30")
+    59         0 @Profile/src/Profile.jl                                                                                60 macro expansion
+    59         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   141 (::var"#29#30")()
+    59         0 @LinearTrees/src/predict.jl                                                                            92 predict(tree::LinearTree{Float64, Float64, MSE}, X::Matrix{Float64})
+    59         0 @LinearTrees/src/predict.jl                                                                            92 #predict#64
+    59         0 @LinearTrees/src/predict.jl                                                                            95 predict!
+    59         0 @LinearTrees/src/predict.jl                                                                            97 #predict!#65
+    59         0 @LinearTrees/src/predict.jl                                                                           140 row_blocks
+    59         0 @LinearTrees/src/predict.jl                                                                           143 row_blocks(f::LinearTrees.var"#67#68"{Vector{Float64}, LinearTree{Float64, Float64, MSE}, Matrix{Float64}}, n::Int64, nthreads::Int64; minrows::Int64)
+Total snapshots: 59. Utilization: 100% across all threads and tasks. Use the `groupby` kwarg to break down by thread and/or task.
+
+
+# same profile, sorted by self time (Overhead)
+ Count  Overhead File                                                                                                  Line Function
+ =====  ======== ====                                                                                                  ==== ========
+    59         0 @Base/client.jl                                                                                       550 _start()
+    59         0 @Base/client.jl                                                                                       317 exec_options(opts::Base.JLOptions)
+    59         0 @Base/Base.jl                                                                                         306 include(mod::Module, _path::String)
+    59         0 @Base/loading.jl                                                                                     3012 _include(mapexpr::Function, mod::Module, _path::String)
+    59         0 @Base/loading.jl                                                                                     2952 include_string(mapexpr::typeof(identity), mod::Module, code::String, filename::String)
+    59         0 @Base/boot.jl                                                                                         489 eval(m::Module, e::Any)
+    59         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   105 run_case(name::String, f::Function)
+    59         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   108 run_case(name::String, f::var"#29#30"; label::String)
+    59         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl    53 cpu_profile(name::String, f::var"#29#30")
+    59         0 @Profile/src/Profile.jl                                                                                60 macro expansion
+    59         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   141 (::var"#29#30")()
+    59         0 @LinearTrees/src/predict.jl                                                                            92 predict(tree::LinearTree{Float64, Float64, MSE}, X::Matrix{Float64})
+    59         0 @LinearTrees/src/predict.jl                                                                            92 #predict#64
+    59         0 @LinearTrees/src/predict.jl                                                                            95 predict!
+    59         0 @LinearTrees/src/predict.jl                                                                            97 #predict!#65
+    59         0 @LinearTrees/src/predict.jl                                                                           140 row_blocks
+    59         0 @LinearTrees/src/predict.jl                                                                           143 row_blocks(f::LinearTrees.var"#67#68"{Vector{Float64}, LinearTree{Float64, Float64, MSE}, Matrix{Float64}}, n::Int64, nthreads::Int64; minrows::Int64)
+    58         0 @LinearTrees/src/predict.jl                                                                            99 (::LinearTrees.var"#67#68"{Vector{Float64}, LinearTree{Float64, Float64, MSE}, Matrix{Float64}})(rs::UnitRange{Int64})
+    28         0 @LinearTrees/src/predict.jl                                                                            36 score_row
+     7         0 @LinearTrees/src/predict.jl                                                                            39 score_row
+     4         0 @LinearTrees/src/predict.jl                                                                            18 score_row
+     7         0 @Base/abstractarray.jl                                                                               1345 getindex
+     2         0 @Base/indices.jl                                                                                      366 to_indices
+     2         0 @Base/indices.jl                                                                                      369 to_indices
+     2         0 @Base/indices.jl                                                                                      293 to_index
+     2         0 @Base/indices.jl                                                                                      308 to_index
+     2         0 @Base/number.jl                                                                                         7 convert
+     2         0 @Base/boot.jl                                                                                         957 Int64
+     1         0 @Base/array.jl                                                                                        986 setindex!
+     1         0 @Base/array.jl                                                                                        990 _setindex!
+     3         0 @LinearTrees/src/predict.jl                                                                            26 score_row
+     1         0 @LinearTrees/src/node.jl                                                                               94 category_is_left
+     1         0 @LinearTrees/src/node.jl                                                                               88 category_is_left
+     4         0 @LinearTrees/src/predict.jl                                                                            23 score_row
+     4         0 @Base/array.jl                                                                                        928 getindex
+     4         0 @Base/abstractarray.jl                                                                                699 checkbounds
+     4         0 @Base/abstractarray.jl                                                                                681 checkbounds
+     4         0 @Base/abstractarray.jl                                                                                 98 axes
+     2         0 @Base/float.jl                                                                                        712 isfinite
+     1         0 @LinearTrees/src/predict.jl                                                                            98 (::LinearTrees.var"#67#68"{Vector{Float64}, LinearTree{Float64, Float64, MSE}, Matrix{Float64}})(rs::UnitRange{Int64})
+     1         1 @Base/essentials.jl                                                                                    11 length
+     1         1 @Base/int.jl                                                                                           86 -
+     1         1 @Base/range.jl                                                                                        917 iterate
+     2         2 @Base/float.jl                                                                                          ? score_row
+     2         2 @Base/boot.jl                                                                                         876 toInt64
+     2         2 @LinearTrees/src/predict.jl                                                                             ? score_row
+     2         2 @Base/float.jl                                                                                        496 -
+     2         2 @Base/essentials.jl                                                                                   919 getindex
+     4         4 @Base/array.jl                                                                                        194 size
+     7         7 @LinearTrees/src/predict.jl                                                                            35 score_row
+    35        34 @Base/float.jl                                                                                        497 *
+Total snapshots: 59. Utilization: 100% across all threads and tasks. Use the `groupby` kwarg to break down by thread and/or task.

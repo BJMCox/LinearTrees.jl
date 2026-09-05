@@ -1,0 +1,1 @@
+# case5-predict  threads=1  sampled allocs=0  sampled bytes=0  rate=0.01

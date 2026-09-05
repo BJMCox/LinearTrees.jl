@@ -1,0 +1,8 @@
+Julia 1.12.7  threads=1  CPU=Apple M4 Pro
+case1-mse  threads= 1  median= 2100.946 ms  allocs=    70453  bytes=   102069136  cpu_samples=  1470  sampled_alloc_bytes=81660
+case2-softmax threads= 1  median= 1062.164 ms  allocs=     9529  bytes=    35144240  cpu_samples=   711  sampled_alloc_bytes=403808
+case3-mad  threads= 1  median=  926.208 ms  allocs=    20229  bytes=    34834880  cpu_samples=   625  sampled_alloc_bytes=815368
+case4-table threads= 1  median=  414.871 ms  allocs=   123917  bytes=    49145552  cpu_samples=   275  sampled_alloc_bytes=474320
+case5-predict threads= 1  median=   86.999 ms  allocs=        3  bytes=     8011840  cpu_samples=    59  sampled_alloc_bytes=0
+case5-predict! threads= 1  median=   86.807 ms  allocs=        0  bytes=           0  cpu_samples=    57  sampled_alloc_bytes=0
+case6-shap threads= 1  median= 3798.981 ms  allocs=      154  bytes=      845712  cpu_samples=  2524  sampled_alloc_bytes=120

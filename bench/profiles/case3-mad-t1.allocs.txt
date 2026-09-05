@@ -1,0 +1,9 @@
+# case3-mad  threads=1  sampled allocs=193  sampled bytes=815368  rate=0.01
+      800000 B         1 allocs  fit.jl:126 #_fit_tree#38
+        9520 B         9 allocs  fit.jl:541 grow_subtree
+        4064 B       127 allocs  fit.jl:396 best_split_serial
+         512 B        16 allocs  fit.jl:665 update_score!
+         480 B        15 allocs  fit.jl:540 grow_subtree
+         384 B        12 allocs  fit.jl:388 best_split_serial
+         384 B        12 allocs  loss.jl:276 refit_node
+          24 B         1 allocs  fit.jl:173 #presort!##0

@@ -1,0 +1,202 @@
+# case1-mse  threads=1  samples=1470  mincount=29 (2%), sorted by cumulative count
+ Count  Overhead File                                                                                                  Line Function
+ =====  ======== ====                                                                                                  ==== ========
+    29        29 @LinearTrees/src/accumulate.jl                                                                          ? scan_feature(xs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}, zs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{I…
+    36         0 @Base/special/log.jl                                                                                  179 log_proc1
+    36         0 @Base/operators.jl                                                                                    642 *
+    36         0 @Base/abstractarray.jl                                                                                681 checkbounds
+    37         0 @LinearTrees/src/accumulate.jl                                                                         81 #fit_blin#26
+    37         0 @StaticArrays/src/solve.jl                                                                              1 \
+    37         0 @StaticArrays/src/solve.jl                                                                             17 _solve
+    38         0 @Base/array.jl                                                                                        928 getindex
+    38         3 @Base/array.jl                                                                                        990 _setindex!
+    40         0 @LinearTrees/src/fit.jl                                                                               257 partition_column!(idx::SubArray{Int32, 1, Matrix{Int32}, Tuple{Base.Slice{Base.OneTo{Int64}}, Int64}, true}, span::UnitRange{Int64}, isleft::Vecto…
+    41        41 @LinearTrees/src/scan.jl                                                                               99 scan_feature(xs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}, zs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{I…
+    43         0 @Base/special/log.jl                                                                                  178 log_proc1
+    48         8 @Base/abstractarray.jl                                                                                699 checkbounds
+    50         0 @Base/float.jl                                                                                        709 isnan
+    50        50 @Base/float.jl                                                                                        622 !=
+    51         0 @Base/float.jl                                                                                        712 isfinite
+    54         0 @Base/special/log.jl                                                                                  163 log_proc1
+    54         0 @Base/sort.jl                                                                                        2484 sort!(v::Vector{Int64}, lo::Int64, hi::Int64, a::Base.Sort.MergeSortAlg, o::Base.Order.Perm{Base.Order.ForwardOrdering, Base.ReinterpretArray{UInt…
+    56         0 @Base/subarray.jl                                                                                     339 getindex
+    58         5 @Base/essentials.jl                                                                                   919 getindex
+    66         0 @Base/sort.jl                                                                                        2487 sort!(v::Vector{Int64}, lo::Int64, hi::Int64, a::Base.Sort.MergeSortAlg, o::Base.Order.Perm{Base.Order.ForwardOrdering, Base.ReinterpretArray{UInt…
+    69         0 @Base/special/log.jl                                                                                  279 _log
+    70         0 @Base/abstractarray.jl                                                                                820 similar
+    70         0 @Base/abstractarray.jl                                                                                821 similar
+    70         0 @Base/abstractarray.jl                                                                                832 similar
+    71         0 @Base/sort.jl                                                                                        1978 _sortperm(A::SubArray{Float64, 1, Matrix{Float64}, Tuple{Base.Slice{Base.OneTo{Int64}}, Int64}, true}; alg::Base.Sort.MergeSortAlg, order::Base.Or…
+    71         0 @Base/abstractarray.jl                                                                               1201 copymutable
+    71         0 @Base/boot.jl                                                                                         660 Array
+    72        72 @Base/int.jl                                                                                           87 +
+    73        73 @Base/essentials.jl                                                                                   733 reinterpret
+    75         0 @LinearTrees/src/scan.jl                                                                              100 scan_feature(xs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}, zs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{I…
+    75         0 @LinearTrees/src/accumulate.jl                                                                         69 fit_blin
+    78        27 @LinearTrees/src/select.jl                                                                             56 selection_score
+    78         0 @Base/boot.jl                                                                                         647 Array
+    79        79 @Base/boot.jl                                                                                         588 GenericMemory
+    88        88 @Base/essentials.jl                                                                                    11 length
+    89         0 @LinearTrees/src/fit.jl                                                                               285 partition!(idx::Matrix{Int32}, span::UnitRange{Int64}, leftrows::Vector{Int32}, isleft::Vector{Bool}, scratch::Vector{LinearTrees.Scratch{Float64,…
+    89         0 @LinearTrees/src/fit.jl                                                                               288 #partition!##0
+    91         0 @LinearTrees/src/fit.jl                                                                               545 grow_subtree(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, depth::Int64, linchain::Int64, tid…
+    96        96 @Base/essentials.jl                                                                                   920 getindex
+   108       108 @Base/float.jl                                                                                        495 +
+   117         0 @LinearTrees/src/scan.jl                                                                              112 scan_feature(xs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}, zs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{I…
+   118         0 @Base/abstractarray.jl                                                                               1345 getindex
+   152         0 @Base/sort.jl                                                                                        2472 sort!(v::Vector{Int64}, lo::Int64, hi::Int64, a::Base.Sort.MergeSortAlg, o::Base.Order.Perm{Base.Order.ForwardOrdering, Base.ReinterpretArray{UInt…
+   153         0 @Base/sort.jl                                                                                        2471 sort!(v::Vector{Int64}, lo::Int64, hi::Int64, a::Base.Sort.MergeSortAlg, o::Base.Order.Perm{Base.Order.ForwardOrdering, Base.ReinterpretArray{UInt…
+   154         0 @LinearTrees/src/fit.jl                                                                               238 gather!(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, sc::LinearTrees.Scratch{Float64, Float64}, span::UnitRange{Int64}, j::Int64)
+   154       154 @Base/array.jl                                                                                        991 _setindex!
+   157         0 @Base/sort.jl                                                                                        2458 sort!(v::Vector{Int64}, lo::Int64, hi::Int64, a::Base.Sort.MergeSortAlg, o::Base.Order.Perm{Base.Order.ForwardOrdering, Base.ReinterpretArray{UInt…
+   166         0 @Base/sort.jl                                                                                        2458 sort!
+   171         0 @Base/special/log.jl                                                                                  289 _log
+   172       172 @Base/float.jl                                                                                        497 *
+   175         0 @LinearTrees/src/fit.jl                                                                               393 best_split_serial(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, dmin::Float64, features::Unit…
+   188         0 @Base/sort.jl                                                                                         726 _sort!(v::Vector{Int64}, a::Base.Sort.IEEEFloatOptimization{Base.Sort.MergeSortAlg}, o::Base.Order.Perm{Base.Order.ForwardOrdering, SubArray{Float…
+   188         0 @Base/sort.jl                                                                                        2550 _sort!
+   188         0 @Base/sort.jl                                                                                        2462 sort!
+   189         0 @Base/sort.jl                                                                                        1979 _sortperm(A::SubArray{Float64, 1, Matrix{Float64}, Tuple{Base.Slice{Base.OneTo{Int64}}, Int64}, true}; alg::Base.Sort.MergeSortAlg, order::Base.Or…
+   189         0 @Base/sort.jl                                                                                        1733 sort!
+   189         0 @Base/sort.jl                                                                                        1740 #sort!#23
+   189         0 @Base/sort.jl                                                                                         561 _sort!
+   189         0 @Base/sort.jl                                                                                         686 _sort!
+   189         0 @Base/sort.jl                                                                                         747 _sort!
+   189         0 @Base/sort.jl                                                                                         802 _sort!
+   192         0 @Base/array.jl                                                                                        986 setindex!
+   199         0 @LinearTrees/src/scan.jl                                                                              103 scan_feature(xs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}, zs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{I…
+   250         0 @LinearTrees/src/scan.jl                                                                               96 scan_feature(xs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}, zs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{I…
+   260         0 @LinearTrees/src/fit.jl                                                                               125 _fit_tree(Xm::Matrix{Float64}, yv::Vector{Float64}, w::Vector{Float64}, loss::MSE, rule::BIC, ::Type{Float64}, iscat::Vector{Bool}, nlevels::Vecto…
+   260         0 @LinearTrees/src/fit.jl                                                                               171 presort!
+   260         0 @LinearTrees/src/fit.jl                                                                               173 (::LinearTrees.var"#presort!##0#presort!##1"{Matrix{Int32}, Matrix{Float64}})(cols::UnitRange{Int64}, ::Int64)
+   260         0 @Base/sort.jl                                                                                        1952 sortperm
+   260         0 @Base/sort.jl                                                                                        1963 #sortperm#28
+   260         0 @Base/sort.jl                                                                                        1966 _sortperm
+   339         0 @LinearTrees/src/fit.jl                                                                               519 grow_subtree(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, depth::Int64, linchain::Int64, tid…
+   349         0 @LinearTrees/src/fit.jl                                                                               157 column_blocks(f::LinearTrees.var"#partition!##0#partition!##1"{Matrix{Int32}, UnitRange{Int64}, Vector{Bool}, Vector{LinearTrees.Scratch{Float64, …
+   397        90 @Base/special/log.jl                                                                                  261 log(x::Float64)
+   489        27 @LinearTrees/src/select.jl                                                                             58 selection_score
+   875         0 @LinearTrees/src/fit.jl                                                                               394 best_split_serial(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, dmin::Float64, features::Unit…
+   948         0 @LinearTrees/src/fit.jl                                                                               559 grow_subtree(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, depth::Int64, linchain::Int64, tid…
+  1051         0 @LinearTrees/src/fit.jl                                                                               490 grow_subtree(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, depth::Int64, linchain::Int64, tid…
+  1051         0 @LinearTrees/src/fit.jl                                                                               415 best_split(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, dmin::Float64, tids::UnitRange{Int64…
+  1060         0 @LinearTrees/src/fit.jl                                                                               561 grow_subtree(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, depth::Int64, linchain::Int64, tid…
+  1174         0 @LinearTrees/src/fit.jl                                                                               134 _fit_tree(Xm::Matrix{Float64}, yv::Vector{Float64}, w::Vector{Float64}, loss::MSE, rule::BIC, ::Type{Float64}, iscat::Vector{Bool}, nlevels::Vecto…
+  1436         0 @LinearTrees/src/fit.jl                                                                               102 fit_tree(X::Matrix{Float64}, y::Vector{Float64}, loss::MSE; weights::Nothing, categorical::Vector{Int64}, rule::BIC, max_depth::Int64, min_fit::In…
+  1436         0 @LinearTrees/src/fit.jl                                                                               114 _fit_tree
+  1437         0 @Base/client.jl                                                                                       550 _start()
+  1437         0 @Base/client.jl                                                                                       317 exec_options(opts::Base.JLOptions)
+  1437         0 @Base/Base.jl                                                                                         306 include(mod::Module, _path::String)
+  1437         0 @Base/loading.jl                                                                                     3012 _include(mapexpr::Function, mod::Module, _path::String)
+  1437         0 @Base/loading.jl                                                                                     2952 include_string(mapexpr::typeof(identity), mod::Module, code::String, filename::String)
+  1437         0 @Base/boot.jl                                                                                         489 eval(m::Module, e::Any)
+  1437         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   105 run_case(name::String, f::Function)
+  1437         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   108 run_case(name::String, f::var"#15#16"; label::String)
+  1437         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl    53 cpu_profile(name::String, f::var"#15#16")
+  1437         0 @Profile/src/Profile.jl                                                                                60 macro expansion
+  1437         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   123 (::var"#15#16")()
+  1437         0 @LinearTrees/src/fit.jl                                                                                61 kwcall(::@NamedTuple{max_depth::Int64}, ::typeof(fit_tree), X::Matrix{Float64}, y::Vector{Float64})
+  1437         0 @LinearTrees/src/fit.jl                                                                                61 fit_tree
+Total snapshots: 1470. Utilization: 100% across all threads and tasks. Use the `groupby` kwarg to break down by thread and/or task.
+
+
+# same profile, sorted by self time (Overhead)
+ Count  Overhead File                                                                                                  Line Function
+ =====  ======== ====                                                                                                  ==== ========
+  1437         0 @Base/client.jl                                                                                       550 _start()
+  1437         0 @Base/client.jl                                                                                       317 exec_options(opts::Base.JLOptions)
+  1437         0 @Base/Base.jl                                                                                         306 include(mod::Module, _path::String)
+  1437         0 @Base/loading.jl                                                                                     3012 _include(mapexpr::Function, mod::Module, _path::String)
+  1437         0 @Base/loading.jl                                                                                     2952 include_string(mapexpr::typeof(identity), mod::Module, code::String, filename::String)
+  1437         0 @Base/boot.jl                                                                                         489 eval(m::Module, e::Any)
+  1437         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   105 run_case(name::String, f::Function)
+  1437         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   108 run_case(name::String, f::var"#15#16"; label::String)
+  1437         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl    53 cpu_profile(name::String, f::var"#15#16")
+  1437         0 @Profile/src/Profile.jl                                                                                60 macro expansion
+  1437         0 /Users/bcox/Code/JuliaOSS/LinearTrees.jl/.claude/worktrees/agent-a5ff5f67a640881ac/bench/profile.jl   123 (::var"#15#16")()
+  1437         0 @LinearTrees/src/fit.jl                                                                                61 kwcall(::@NamedTuple{max_depth::Int64}, ::typeof(fit_tree), X::Matrix{Float64}, y::Vector{Float64})
+  1437         0 @LinearTrees/src/fit.jl                                                                                61 fit_tree
+  1436         0 @LinearTrees/src/fit.jl                                                                               102 fit_tree(X::Matrix{Float64}, y::Vector{Float64}, loss::MSE; weights::Nothing, categorical::Vector{Int64}, rule::BIC, max_depth::Int64, min_fit::In…
+  1436         0 @LinearTrees/src/fit.jl                                                                               114 _fit_tree
+  1174         0 @LinearTrees/src/fit.jl                                                                               134 _fit_tree(Xm::Matrix{Float64}, yv::Vector{Float64}, w::Vector{Float64}, loss::MSE, rule::BIC, ::Type{Float64}, iscat::Vector{Bool}, nlevels::Vecto…
+  1060         0 @LinearTrees/src/fit.jl                                                                               561 grow_subtree(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, depth::Int64, linchain::Int64, tid…
+   339         0 @LinearTrees/src/fit.jl                                                                               519 grow_subtree(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, depth::Int64, linchain::Int64, tid…
+   948         0 @LinearTrees/src/fit.jl                                                                               559 grow_subtree(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, depth::Int64, linchain::Int64, tid…
+  1051         0 @LinearTrees/src/fit.jl                                                                               490 grow_subtree(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, depth::Int64, linchain::Int64, tid…
+  1051         0 @LinearTrees/src/fit.jl                                                                               415 best_split(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, dmin::Float64, tids::UnitRange{Int64…
+   875         0 @LinearTrees/src/fit.jl                                                                               394 best_split_serial(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, dmin::Float64, features::Unit…
+   199         0 @LinearTrees/src/scan.jl                                                                              103 scan_feature(xs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}, zs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{I…
+   171         0 @Base/special/log.jl                                                                                  289 _log
+    36         0 @Base/special/log.jl                                                                                  179 log_proc1
+    36         0 @Base/operators.jl                                                                                    642 *
+   250         0 @LinearTrees/src/scan.jl                                                                               96 scan_feature(xs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}, zs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{I…
+   175         0 @LinearTrees/src/fit.jl                                                                               393 best_split_serial(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, dmin::Float64, features::Unit…
+   154         0 @LinearTrees/src/fit.jl                                                                               238 gather!(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, sc::LinearTrees.Scratch{Float64, Float64}, span::UnitRange{Int64}, j::Int64)
+   118         0 @Base/abstractarray.jl                                                                               1345 getindex
+    38         0 @Base/array.jl                                                                                        928 getindex
+    36         0 @Base/abstractarray.jl                                                                                681 checkbounds
+    75         0 @LinearTrees/src/scan.jl                                                                              100 scan_feature(xs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}, zs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{I…
+    75         0 @LinearTrees/src/accumulate.jl                                                                         69 fit_blin
+    37         0 @LinearTrees/src/accumulate.jl                                                                         81 #fit_blin#26
+    37         0 @StaticArrays/src/solve.jl                                                                              1 \
+    37         0 @StaticArrays/src/solve.jl                                                                             17 _solve
+    91         0 @LinearTrees/src/fit.jl                                                                               545 grow_subtree(st::LinearTrees.FitState{Float64, Float64, MSE, BIC}, rows::Vector{Int32}, span::UnitRange{Int64}, depth::Int64, linchain::Int64, tid…
+    89         0 @LinearTrees/src/fit.jl                                                                               285 partition!(idx::Matrix{Int32}, span::UnitRange{Int64}, leftrows::Vector{Int32}, isleft::Vector{Bool}, scratch::Vector{LinearTrees.Scratch{Float64,…
+   349         0 @LinearTrees/src/fit.jl                                                                               157 column_blocks(f::LinearTrees.var"#partition!##0#partition!##1"{Matrix{Int32}, UnitRange{Int64}, Vector{Bool}, Vector{LinearTrees.Scratch{Float64, …
+    89         0 @LinearTrees/src/fit.jl                                                                               288 #partition!##0
+    69         0 @Base/special/log.jl                                                                                  279 _log
+    54         0 @Base/special/log.jl                                                                                  163 log_proc1
+    40         0 @LinearTrees/src/fit.jl                                                                               257 partition_column!(idx::SubArray{Int32, 1, Matrix{Int32}, Tuple{Base.Slice{Base.OneTo{Int64}}, Int64}, true}, span::UnitRange{Int64}, isleft::Vecto…
+   117         0 @LinearTrees/src/scan.jl                                                                              112 scan_feature(xs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}, zs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{I…
+    56         0 @Base/subarray.jl                                                                                     339 getindex
+    51         0 @Base/float.jl                                                                                        712 isfinite
+    50         0 @Base/float.jl                                                                                        709 isnan
+   192         0 @Base/array.jl                                                                                        986 setindex!
+    43         0 @Base/special/log.jl                                                                                  178 log_proc1
+   260         0 @LinearTrees/src/fit.jl                                                                               125 _fit_tree(Xm::Matrix{Float64}, yv::Vector{Float64}, w::Vector{Float64}, loss::MSE, rule::BIC, ::Type{Float64}, iscat::Vector{Bool}, nlevels::Vecto…
+   260         0 @LinearTrees/src/fit.jl                                                                               171 presort!
+   260         0 @LinearTrees/src/fit.jl                                                                               173 (::LinearTrees.var"#presort!##0#presort!##1"{Matrix{Int32}, Matrix{Float64}})(cols::UnitRange{Int64}, ::Int64)
+   260         0 @Base/sort.jl                                                                                        1952 sortperm
+   260         0 @Base/sort.jl                                                                                        1963 #sortperm#28
+   260         0 @Base/sort.jl                                                                                        1966 _sortperm
+   189         0 @Base/sort.jl                                                                                        1979 _sortperm(A::SubArray{Float64, 1, Matrix{Float64}, Tuple{Base.Slice{Base.OneTo{Int64}}, Int64}, true}; alg::Base.Sort.MergeSortAlg, order::Base.Or…
+   189         0 @Base/sort.jl                                                                                        1733 sort!
+   189         0 @Base/sort.jl                                                                                        1740 #sort!#23
+   189         0 @Base/sort.jl                                                                                         561 _sort!
+   189         0 @Base/sort.jl                                                                                         686 _sort!
+   189         0 @Base/sort.jl                                                                                         747 _sort!
+   189         0 @Base/sort.jl                                                                                         802 _sort!
+   188         0 @Base/sort.jl                                                                                         726 _sort!(v::Vector{Int64}, a::Base.Sort.IEEEFloatOptimization{Base.Sort.MergeSortAlg}, o::Base.Order.Perm{Base.Order.ForwardOrdering, SubArray{Float…
+   188         0 @Base/sort.jl                                                                                        2550 _sort!
+   188         0 @Base/sort.jl                                                                                        2462 sort!
+    66         0 @Base/sort.jl                                                                                        2487 sort!(v::Vector{Int64}, lo::Int64, hi::Int64, a::Base.Sort.MergeSortAlg, o::Base.Order.Perm{Base.Order.ForwardOrdering, Base.ReinterpretArray{UInt…
+   152         0 @Base/sort.jl                                                                                        2472 sort!(v::Vector{Int64}, lo::Int64, hi::Int64, a::Base.Sort.MergeSortAlg, o::Base.Order.Perm{Base.Order.ForwardOrdering, Base.ReinterpretArray{UInt…
+   166         0 @Base/sort.jl                                                                                        2458 sort!
+   157         0 @Base/sort.jl                                                                                        2458 sort!(v::Vector{Int64}, lo::Int64, hi::Int64, a::Base.Sort.MergeSortAlg, o::Base.Order.Perm{Base.Order.ForwardOrdering, Base.ReinterpretArray{UInt…
+   153         0 @Base/sort.jl                                                                                        2471 sort!(v::Vector{Int64}, lo::Int64, hi::Int64, a::Base.Sort.MergeSortAlg, o::Base.Order.Perm{Base.Order.ForwardOrdering, Base.ReinterpretArray{UInt…
+    54         0 @Base/sort.jl                                                                                        2484 sort!(v::Vector{Int64}, lo::Int64, hi::Int64, a::Base.Sort.MergeSortAlg, o::Base.Order.Perm{Base.Order.ForwardOrdering, Base.ReinterpretArray{UInt…
+    71         0 @Base/sort.jl                                                                                        1978 _sortperm(A::SubArray{Float64, 1, Matrix{Float64}, Tuple{Base.Slice{Base.OneTo{Int64}}, Int64}, true}; alg::Base.Sort.MergeSortAlg, order::Base.Or…
+    71         0 @Base/abstractarray.jl                                                                               1201 copymutable
+    70         0 @Base/abstractarray.jl                                                                                820 similar
+    70         0 @Base/abstractarray.jl                                                                                821 similar
+    70         0 @Base/abstractarray.jl                                                                                832 similar
+    71         0 @Base/boot.jl                                                                                         660 Array
+    78         0 @Base/boot.jl                                                                                         647 Array
+    38         3 @Base/array.jl                                                                                        990 _setindex!
+    58         5 @Base/essentials.jl                                                                                   919 getindex
+    48         8 @Base/abstractarray.jl                                                                                699 checkbounds
+   489        27 @LinearTrees/src/select.jl                                                                             58 selection_score
+    78        27 @LinearTrees/src/select.jl                                                                             56 selection_score
+    29        29 @LinearTrees/src/accumulate.jl                                                                          ? scan_feature(xs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}, zs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{I…
+    41        41 @LinearTrees/src/scan.jl                                                                               99 scan_feature(xs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}, zs::SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{I…
+    50        50 @Base/float.jl                                                                                        622 !=
+    72        72 @Base/int.jl                                                                                           87 +
+    73        73 @Base/essentials.jl                                                                                   733 reinterpret
+    79        79 @Base/boot.jl                                                                                         588 GenericMemory
+    88        88 @Base/essentials.jl                                                                                    11 length
+   397        90 @Base/special/log.jl                                                                                  261 log(x::Float64)
+    96        96 @Base/essentials.jl                                                                                   920 getindex
+   108       108 @Base/float.jl                                                                                        495 +
+   154       154 @Base/array.jl                                                                                        991 _setindex!
+   172       172 @Base/float.jl                                                                                        497 *
+Total snapshots: 1470. Utilization: 100% across all threads and tasks. Use the `groupby` kwarg to break down by thread and/or task.
