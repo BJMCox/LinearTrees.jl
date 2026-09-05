@@ -39,8 +39,9 @@ blocked on a sibling never denies a runnable one its buffers, and exactly one
 set at `nthreads = 1`. A set's vectors start empty and grow only to the
 largest node that set is used on, which is what keeps the second set per
 worker affordable: on a 200_000-row, 20-column `MSE` fit at ten threads the
-live scratch measures 80 MiB, against 137 MiB if all twenty sets were sized
-to `n` up front and 69 MiB for one eagerly sized set per worker. The `n × p`
+live scratch measures about 80 MiB, varying with the borrow pattern, against
+137 MiB if all twenty sets were sized to `n` up front and 69 MiB for one
+eagerly sized set per worker. The `n × p`
 `Int32` presort sits next to it. For `Softmax(K)` two of the four vectors hold
 `K-1` coordinates per row, so their share grows by that factor.
 

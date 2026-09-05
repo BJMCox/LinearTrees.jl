@@ -516,9 +516,10 @@ gates, and the eight static subtrees were unbalanced 4:1.
 has at least `SUBTREE_MIN_ROWS = 256` rows tries to take one and spawns that
 sibling, and `best_split` and `partition!` borrow spare ids for the duration
 of one call. `SCRATCH_PER_THREAD = 2` sets per worker keep a task blocked on a
-sibling from starving a runnable one. Case 1 at 10 threads went from 2.51x to
-6.49x against the same one-thread time, the wide (`p = 60`) case from 2.54x to
-6.25x, both min of five.
+sibling from starving a runnable one. Against the same one-thread time, case 1
+at 10 threads went from 2.71x to 6.8x and the wide (`p = 60`) case from 2.72x
+to 7.1x, each the median of five runs of a min-of-five benchmark; ten-thread
+timings spread about 15% run to run.
 
 ### 8. `score_row`'s column-major loads
 

@@ -104,31 +104,73 @@ function LinearTrees.gradhess!(g::AbstractVector, h::AbstractVector, l::ThrowSma
     return g
 end
 
-# Fails if any `give!`, `giveback!` or spawned-id return in `grow_subtree` sits
-# outside a `finally`: the ids held by the tasks unwinding would stay out of the
-# pool. Also fails if a spawned sibling's error is swallowed by `wait`.
-@testset "an exception during growth strands no scratch id" begin
+"""
+A rule that throws from `allowed` on its `nth` call and every call after it.
+`allowed` is reached only from `scan_feature`, so the throw lands inside
+`best_split`'s spawned scan, at the root, while the node holds every id it
+borrowed.
+"""
+struct ThrowNth <: LinearTrees.SelectionRule
+    inner::BIC
+    nth::Int
+    calls::Threads.Atomic{Int}
+end
+ThrowNth(nth::Int) = ThrowNth(BIC(), nth, Threads.Atomic{Int}(0))
+
+function LinearTrees.allowed(r::ThrowNth, k::LinearTrees.ModelKind)
+    Threads.atomic_add!(r.calls, 1) + 1 >= r.nth && error("ThrowNth fired")
+    return LinearTrees.allowed(r.inner, k)
+end
+LinearTrees.score_logn(r::ThrowNth, n) = LinearTrees.score_logn(r.inner, n)
+LinearTrees.devkey(r::ThrowNth, surrogate, dmin) = LinearTrees.devkey(r.inner, surrogate, dmin)
+LinearTrees.selection_score(r::ThrowNth, k, s, n, dmin, ncoord::Integer = 1,
+    logn = LinearTrees.score_logn(r, n)) = LinearTrees.selection_score(r.inner, k, s, n, dmin, ncoord, logn)
+
+"""
+A `FitState` over a step target with `nt` workers and `SCRATCH_PER_THREAD * nt`
+scratch sets, ready for `grow_subtree`. Returns it with its row vector and the
+set count. `grow_subtree` is the only way to reach the pool guards, and it is
+not called by any public entry point that also hands back `st`.
+"""
+function poolstate(loss, rule, nt)
     rng = StableRNG(37)
     n, p = 20_000, 4
     X = rand(rng, n, p)
     # a step target, so BIC keeps splitting down to nodes small enough to throw
     y = sum(floor.(4 .* X[:, j]) for j in 1:3) .+ 0.1 .* randn(rng, n)
-    nt = min(4, Threads.nthreads())
     nsets = nt == 1 ? 1 : LinearTrees.SCRATCH_PER_THREAD * nt
-    loss = ThrowSmall(2_000)
     idx = Matrix{Int32}(undef, n, p)
     LinearTrees.presort!(idx, X, nt)
-    pool = LinearTrees.ScratchPool(nsets:-1:2)
-    st = LinearTrees.FitState{Float64,Float64,typeof(loss),BIC}(; X, y, w = ones(n),
+    st = LinearTrees.FitState{Float64,Float64,typeof(loss),typeof(rule)}(; X, y, w = ones(n),
         f = zeros(n), g = zeros(n), h = zeros(n), z = zeros(n), idx, isleft = zeros(Bool, n),
-        scratch = [LinearTrees.Scratch{Float64,Float64}() for _ in 1:nsets], pool,
+        scratch = [LinearTrees.Scratch{Float64,Float64}() for _ in 1:nsets],
+        pool = LinearTrees.ScratchPool(nsets:-1:2),
         nodes = LinearTrees.Node{Float64,Float64}[], catmasks = UInt64[],
-        iscat = zeros(Bool, p), nlevels = zeros(Int, p), loss, rule = BIC(), lo = -Inf, hi = Inf,
+        iscat = zeros(Bool, p), nlevels = zeros(Int, p), loss, rule, lo = -Inf, hi = Inf,
         max_depth = 12, min_fit = 10.0, min_leaf = 5.0, min_sum_hessian = 1.0, max_lin_chain = 10,
         truncate = false, nthreads = nt, niter = 5, unith = false)
     rows = collect(Int32(1):Int32(n))
-    LinearTrees.refresh!(st, rows, 1)   # 20_000 rows in chunks of 5_000, all above the throw
-    @test_throws Exception LinearTrees.grow_subtree(st, rows, 1:n, 0, 0, 1, pool, st.nodes, st.catmasks)
-    @test length(pool.free) == nsets - 1
-    @test sort(pool.free) == collect(2:nsets)
+    LinearTrees.refresh!(st, rows, 1)   # 20_000 rows in chunks of 5_000, all above any throw below
+    return st, rows, nsets
+end
+
+# Fails if the spawned sibling's `give!` leaves its `finally`: the ids held by
+# the tasks unwinding would stay out of the pool. Also fails if the sibling's
+# error is swallowed rather than raised by `fetch`. The throw fires from
+# `refresh!` at a node below `PARALLEL_MIN_ROWS`, where nothing is borrowed, so
+# this covers the spawned-sibling guard alone.
+@testset "an exception in a spawned sibling returns its scratch id" begin
+    st, rows, nsets = poolstate(ThrowSmall(2_000), BIC(), min(4, Threads.nthreads()))
+    @test_throws Exception LinearTrees.grow_subtree(st, rows, 1:20_000, 0, 0, 1, st.nodes, st.catmasks)
+    @test sort(st.pool.free) == collect(2:nsets)
+end
+
+# Fails if `giveback!` leaves its `finally` at the `best_split` call site: the
+# throw fires inside the root's threaded scan, which is the only node deep
+# enough in the fit to have borrowed anything.
+@testset "an exception in the threaded split search returns the borrowed ids" begin
+    # at four workers the root borrows min(p, nt) - 1 = 3 of the 7 free ids
+    st, rows, nsets = poolstate(MSE(), ThrowNth(1), min(4, Threads.nthreads()))
+    @test_throws Exception LinearTrees.grow_subtree(st, rows, 1:20_000, 0, 0, 1, st.nodes, st.catmasks)
+    @test sort(st.pool.free) == collect(2:nsets)
 end
