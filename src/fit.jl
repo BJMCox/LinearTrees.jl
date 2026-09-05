@@ -280,11 +280,132 @@ function column_blocks(f, p::Integer, n::Integer, nthreads::Integer)
     return nothing
 end
 
-"Stable per-feature sort orders. Features are independent, so this threads over columns."
-function presort!(idx::Matrix{Int32}, X::Matrix, nthreads)
+"Unsigned integer as wide as `T`, or `nothing` for an element type with no radix key, which then keeps the comparison sort."
+radix_uint(::Type{Float16}) = UInt16
+radix_uint(::Type{Float32}) = UInt32
+radix_uint(::Type{Float64}) = UInt64
+radix_uint(::Type) = nothing
+
+"""
+Order-preserving map from a float to an unsigned integer of the same width:
+flip the sign bit of a non-negative value, every bit of a negative one. The
+result orders as `isless` does over finite values, `-0.0` below `0.0`
+included. `fit_tree` rejects a non-finite `X`, so the one case this does not
+reproduce -- `isless` puts a negative `NaN` last, the key puts it first -- is
+unreachable from a fit.
+"""
+@inline function radix_key(x::T) where {T<:Union{Float16,Float32,Float64}}
+    u = reinterpret(radix_uint(T), x)
+    top = one(u) << (8 * sizeof(u) - 1)
+    return ifelse(u & top == 0, u | top, ~u)
+end
+
+"""
+One worker's radix-sort buffers: the two key arrays and the two index arrays
+its passes alternate between, the per-byte histogram, and the list of bytes
+worth a pass. Built once per column block and reused for every column in it,
+which is the whole point -- `sortperm` allocated a permutation and a merge
+buffer per column.
+"""
+struct RadixBuffers{U<:Unsigned}
+    keys::Vector{U}
+    kbuf::Vector{U}
+    ibuf::Vector{Int32}
+    jbuf::Vector{Int32}
+    hist::Matrix{Int}
+    active::Vector{Int}
+end
+RadixBuffers(::Type{U}, n::Integer) where {U<:Unsigned} = RadixBuffers{U}(
+    Vector{U}(undef, n), Vector{U}(undef, n), Vector{Int32}(undef, n), Vector{Int32}(undef, n),
+    Matrix{Int}(undef, 256, sizeof(U)), Vector{Int}(undef, sizeof(U)))
+
+"""
+Write into `out` the permutation that sorts `x` stably, by a least-significant
+byte first radix sort over `radix_key`. Each pass is a counting sort, so equal
+keys keep the order they arrived in and, since the first pass starts from
+`1:n`, equal values keep ascending row index -- the order `st.idx` promises the
+scan. A byte that takes one value on every row cannot reorder anything and is
+skipped, which on real data removes most of the exponent's high bytes.
+"""
+function radix_sortperm!(out::AbstractVector{Int32}, x::AbstractVector, buf::RadixBuffers{U}) where {U}
+    n = length(x)
+    nbytes = sizeof(U)
+    kv = buf.keys; hist = buf.hist
+    fill!(hist, 0)
+    # one pass builds every byte's histogram, so the skip test below is free
+    for i in 1:n
+        k = radix_key(x[i])
+        kv[i] = k
+        for b in 1:nbytes
+            hist[Int((k >> (8 * (b - 1))) & 0xff) + 1, b] += 1
+        end
+    end
+    npass = 0
+    for b in 1:nbytes
+        # a byte that takes one value on every row cannot reorder anything
+        constant = false
+        for c in 1:256
+            if hist[c, b] == n
+                constant = true
+                break
+            end
+        end
+        if !constant
+            npass += 1
+            buf.active[npass] = b
+        end
+    end
+    ksrc = kv; kdst = buf.kbuf
+    isrc = buf.ibuf; idst = buf.jbuf
+    for i in 1:n
+        isrc[i] = Int32(i)
+    end
+    npass == 0 && return copyto!(out, 1, isrc, 1, n)
+    for pass in 1:npass
+        b = buf.active[pass]
+        sh = 8 * (b - 1)
+        cursor = 1
+        for c in 1:256
+            cnt = hist[c, b]
+            hist[c, b] = cursor      # the histogram column doubles as the write cursor
+            cursor += cnt
+        end
+        for i in 1:n
+            k = ksrc[i]
+            c = Int((k >> sh) & 0xff) + 1
+            t = hist[c, b]; hist[c, b] = t + 1
+            kdst[t] = k
+            idst[t] = isrc[i]
+        end
+        ksrc, kdst = kdst, ksrc
+        isrc, idst = idst, isrc
+    end
+    # `out` is a column of `idx`, so it is not one of the two arrays the passes
+    # alternate between: keeping it out of them keeps their element type concrete
+    return copyto!(out, 1, isrc, 1, n)
+end
+
+"Stable per-feature sort orders. Features are independent, so this threads over columns; `radix_uint` picks the sort."
+presort!(idx::Matrix{Int32}, X::Matrix{T}, nthreads) where {T<:Real} =
+    presort!(idx, X, nthreads, radix_uint(T))
+
+"Comparison sort, for an element type with no radix key."
+function presort!(idx::Matrix{Int32}, X::Matrix, nthreads, ::Nothing)
     column_blocks(size(X, 2), size(X, 1), nthreads) do cols, _
         for j in cols
             idx[:, j] .= Int32.(sortperm(view(X, :, j); alg = MergeSort))
+        end
+    end
+    return idx
+end
+
+"Radix sort, with one buffer set per column block rather than a permutation and a merge buffer per column."
+function presort!(idx::Matrix{Int32}, X::Matrix, nthreads, ::Type{U}) where {U<:Unsigned}
+    n = size(X, 1)
+    column_blocks(size(X, 2), n, nthreads) do cols, _
+        buf = RadixBuffers(U, n)
+        for j in cols
+            radix_sortperm!(view(idx, :, j), view(X, :, j), buf)
         end
     end
     return idx

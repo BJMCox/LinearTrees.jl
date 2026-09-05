@@ -4,6 +4,27 @@ using StableRNGs, JSON3
 # include would redefine `partition_cases` and warn
 @isdefined(partition_cases) || include(joinpath(@__DIR__, "fixtures", "partition", "cases.jl"))
 
+# The scan reads `st.idx` as "sorted by feature j, ties in ascending row order",
+# so `presort!` owes each column exactly the permutation `sortperm` with a stable
+# algorithm gives. A radix key that folded `-0.0` into `0.0`, mishandled the sign
+# of negative values, or an unstable pass, would break that here.
+@testset "presort! matches a stable comparison sort per feature" begin
+    rng = StableRNG(23)
+    n = 400
+    X = Matrix{Float64}(undef, n, 4)
+    X[:, 1] = rand(rng, n)
+    X[:, 2] = Float64.(rand(rng, 1:3, n))               # one value per ~133 rows: ties everywhere
+    X[:, 3] = [iseven(i) ? -0.0 : 0.0 for i in 1:n]     # signed zeros only
+    X[:, 4] = randn(rng, n) .* 1e300                    # both signs, wide exponent range
+    for M in (X, Float32.(X))                           # the key is per float width
+        idx = Matrix{Int32}(undef, n, 4)
+        LinearTrees.presort!(idx, M, 1)
+        for j in 1:4
+            @test idx[:, j] == Int32.(sortperm(view(M, :, j); alg = MergeSort))
+        end
+    end
+end
+
 @testset "partition_column! is a stable partition of the span" begin
     # idx column: rows 1..12 in some sorted order; span covers positions 3:10
     idx = Int32[7, 2, 9, 4, 1, 11, 6, 3, 12, 8, 5, 10]
