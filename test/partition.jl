@@ -1,8 +1,7 @@
 using StableRNGs, JSON3
 
-# guarded: test/loss.jl (Q2's fit-identity check) also includes this file and
-# runs first in runtests.jl, so an unconditional include here would overwrite
-# its `partition_cases` method and print a spurious redefinition warning
+# test/loss.jl includes this file first for its fit-identity check; a second
+# include would redefine `partition_cases` and warn
 @isdefined(partition_cases) || include(joinpath(@__DIR__, "fixtures", "partition", "cases.jl"))
 
 @testset "partition_column! is a stable partition of the span" begin

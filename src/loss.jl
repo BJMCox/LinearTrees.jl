@@ -220,23 +220,15 @@ these buffers are per-task scratch reused while sibling subtrees grow
 concurrently, and a shared RNG would race across them.
 
 A zero-weight row contributes no copies to the duplicated sample `wquantile`
-means to match, so it is moved out of `o`'s active range up front. This is
-not a rare correction: on the sort-based code this replaced (`wquantile_sorted`
-on `main`, walking the *unfiltered* order), whenever the cumulative weight
-lands exactly on target, the boundary average uses whatever row sorts next --
-including a zero-weight row, and the two rows need *not* share a value. E.g.
-`y = [1, 2, 3]`, `w = [1, 0, 1]`, `τ = 0.5`: the cumulative weight after row 1
-already equals half the total, so `main` averages it with row 2's value
-regardless of row 2's zero weight, returning `1.5`; this function excludes row
-2 and returns `2.0`, `Statistics.median` of the duplicated sample `[1, 3]`.
-That trigger -- an exact weight boundary immediately followed, in ascending
-order, by a zero-weight row -- is common, not a corner case: with integer
-weights it fires whenever the node's total weight is even, measured at 26% of
-`irls_epsilon!` calls with `{0, 1}` weights on fully distinct, continuous
-residuals. Once zero-weight rows are excluded up front, every remaining run
-has positive total weight, so a run's total landing exactly on target is the
-only way it can happen: the boundary is between *runs*, never inside one, and
-no row's exclusion depends on where in `o` it happens to sit.
+means to match, so it is moved out of `o`'s active range up front. Walking it
+at zero weight instead would make the exact-boundary rule depend on sort order:
+with `y = [1, 2, 3]`, `w = [1, 0, 1]`, `τ = 0.5` the cumulative weight after
+row 1 already hits half the total, and a walk that averages with whatever row
+sorts next returns `1.5`, while the duplicated sample `[1, 3]` has median
+`2.0`. With integer weights that boundary is hit whenever the total weight is
+even, so the case is common. Once zero-weight rows are excluded every
+remaining run has positive weight, the boundary falls between runs, never
+inside one, and no row's exclusion depends on where in `o` it sits.
 """
 function wquantile_select!(y::AbstractVector, w::AbstractVector, o::AbstractVector{<:Integer}, τ)
     n = length(o)
