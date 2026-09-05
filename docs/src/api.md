@@ -19,7 +19,6 @@ LIN
 PCON
 BLIN
 PLIN
-MomentSums
 ```
 
 ## Selection rules
@@ -51,7 +50,6 @@ deviance
 scorebound
 validate_target
 issmooth
-irls_weights!
 ```
 
 ## The LossFunctions.jl adapter
