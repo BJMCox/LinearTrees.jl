@@ -1,11 +1,28 @@
 # Tree growth: node splitting and stopping rules.
 
+"""
+One worker's buffers, all of length `n`. A worker index (`tid`) picks the set
+a task owns, and no two concurrent tasks are ever given the same one, so
+nothing here needs a lock. Each buffer is reused for several unrelated
+purposes over a node's life; the docstring of every user says why its own use
+is free at that point.
+"""
 struct Scratch{T,V}
-    xs::Vector{T}; zs::Vector{V}; hs::Vector{V}; ws::Vector{T}
+    xs::Vector{T}
+    zs::Vector{V}
+    hs::Vector{V}
+    ws::Vector{T}
+    perm::Vector{Int32}
 end
-Scratch{T,V}(n) where {T,V} = Scratch{T,V}(Vector{T}(undef, n), Vector{V}(undef, n), Vector{V}(undef, n), Vector{T}(undef, n))
+Scratch{T,V}(n) where {T,V} = Scratch{T,V}(Vector{T}(undef, n), Vector{V}(undef, n), Vector{V}(undef, n),
+    Vector{T}(undef, n), Vector{Int32}(undef, n))
 
-mutable struct FitState{T,V,L<:Loss,R<:SelectionRule}
+"""
+Everything one `fit_tree` call carries through growth. Built by keyword
+(`Base.@kwdef`) because the positional form is twenty arguments wide and a
+field reorder in it would corrupt a fit silently.
+"""
+Base.@kwdef mutable struct FitState{T,V,L<:Loss,R<:SelectionRule}
     X::Matrix{T}
     y::Vector{T}
     w::Vector{T}
@@ -16,17 +33,19 @@ mutable struct FitState{T,V,L<:Loss,R<:SelectionRule}
     idx::Matrix{Int32}          # n × p, column j = row order sorted by feature j, partitioned node by node
     isleft::Vector{Bool}        # n, per-row left marker used by `partition!`; each node touches only its own rows
     scratch::Vector{Scratch{T,V}}   # one per worker
-    perms::Vector{Vector{Int32}}    # one per worker, `partition_column!` buffer
     nodes::Vector{Node{T,V}}
     catmasks::Vector{UInt64}
-    categorical::Vector{Int}
-    iscat::Vector{Bool}         # length p, iscat[j] == (j in categorical), a lookup for the per-feature scan
+    iscat::Vector{Bool}         # length p, true for the columns `fit_tree` was given as categorical
     nlevels::Vector{Int}
     loss::L
     rule::R
-    lo::V; hi::V
-    max_depth::Int; min_fit::T; min_leaf::T
-    min_sum_hessian::T; max_lin_chain::Int
+    lo::V
+    hi::V
+    max_depth::Int
+    min_fit::T
+    min_leaf::T
+    min_sum_hessian::T
+    max_lin_chain::Int
     truncate::Bool
     nthreads::Int
     niter::Int
@@ -44,7 +63,15 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         max_depth = 12, min_fit = 10, min_leaf = 5, min_sum_hessian = 1.0,
         max_lin_chain = 10, truncate = true, truncation_factor = 3,
         nthreads = Threads.nthreads(), niter = 5)
-    niter >= 1 || throw(ArgumentError("niter must be >= 1, got $niter"))
+    # `niter` reaches an `Int` field, so a non-integer would surface as an
+    # `InexactError` from deep inside the fit rather than as a rejected argument
+    isinteger(niter) && niter >= 1 || throw(ArgumentError("niter must be an integer >= 1, got $niter"))
+    max_depth >= 0 || throw(ArgumentError("max_depth must be >= 0, got $max_depth"))
+    min_fit >= 1 || throw(ArgumentError("min_fit must be >= 1, got $min_fit"))
+    min_leaf >= 1 || throw(ArgumentError("min_leaf must be >= 1, got $min_leaf"))
+    # below 1 the padding term goes negative, so the clamp band closes inside the
+    # observed range of `y` and every extreme score is pulled toward the middle
+    truncation_factor >= 1 || throw(ArgumentError("truncation_factor must be >= 1, got $truncation_factor"))
     nthreads = clamp(nthreads, 1, Threads.nthreads())
     T = float(promote_type(eltype(X), eltype(y)))
     n, p = size(X)
@@ -54,12 +81,14 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     all(v -> isfinite(v) && v >= 0, w) || throw(ArgumentError("weights must be finite and non-negative"))
     keep = findall(>(0), w)
     isempty(keep) && throw(ArgumentError("total weight must be positive"))
-    Xm = Matrix{T}(X[keep, :]); yv = Vector{T}(y[keep]); w = w[keep]
+    # No row is dropped and the caller already has the working element type, so
+    # the copy would be pure cost. `st.X` is read-only for the whole fit, so the
+    # tree holds a reference to the caller's matrix only until `fit_tree` returns.
+    Xm = length(keep) == n && X isa Matrix{T} ? X : Matrix{T}(X[keep, :])
+    yv = Vector{T}(y[keep]); w = w[keep]
     all(isfinite, Xm) || throw(ArgumentError("X contains NaN or Inf"))
-    n = length(keep)
-    V = coeftype(loss, T)
     nlevels = zeros(Int, p)
-    iscat = falses(p)
+    iscat = zeros(Bool, p)
     for j in categorical
         1 <= j <= p || throw(ArgumentError("categorical column $j is outside 1:$p"))
         col = view(Xm, :, j)
@@ -68,6 +97,23 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         nlevels[j] = Int(maximum(col))
         iscat[j] = true
     end
+    return _fit_tree(Xm, yv, w, loss, rule, coeftype(loss, T), iscat, nlevels;
+        max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
+        nthreads, niter)
+end
+
+"""
+The body of `fit_tree` once every argument is concrete: `Xm::Matrix{T}`,
+`yv`/`w::Vector{T}`, a concrete loss and rule, and the coefficient type `V`.
+A function barrier, so growth specializes on those types instead of
+re-dispatching on them at run time in every node. `fit_tree` stays the
+validating front end.
+"""
+function _fit_tree(Xm::Matrix{T}, yv::Vector{T}, w::Vector{T}, loss::L, rule::R, ::Type{V},
+        iscat::Vector{Bool}, nlevels::Vector{Int};
+        max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
+        nthreads, niter) where {T,V,L<:Loss,R<:SelectionRule}
+    n, p = size(Xm)
     f0 = V(initscore(loss, yv, w))
     # every `scorebound` method returns bounds in its own working type (often
     # `Float64`, regardless of `V`), so convert here rather than trust each method
@@ -75,13 +121,15 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     f = fill(clampscore(f0, lo, hi), n)
     idx = Matrix{Int32}(undef, n, p)
     presort!(idx, Xm, nthreads)
-    st = FitState{T,V,typeof(loss),typeof(rule)}(Xm, yv, w, f, zeros(V, n), zeros(V, n), zeros(V, n), idx, zeros(Bool, n),
-        [Scratch{T,V}(n) for _ in 1:nthreads], [Vector{Int32}(undef, n) for _ in 1:nthreads],
-        Node{T,V}[], UInt64[], collect(Int, categorical), iscat, nlevels, loss, rule, lo, hi, max_depth, T(min_fit), T(min_leaf),
-        T(min_sum_hessian), max_lin_chain, truncate, nthreads, niter)
+    st = FitState{T,V,L,R}(; X = Xm, y = yv, w, f, g = zeros(V, n), h = zeros(V, n), z = zeros(V, n),
+        idx, isleft = zeros(Bool, n), scratch = [Scratch{T,V}(n) for _ in 1:nthreads],
+        nodes = Node{T,V}[], catmasks = UInt64[], iscat, nlevels, loss, rule, lo, hi,
+        max_depth = Int(max_depth), min_fit = T(min_fit), min_leaf = T(min_leaf),
+        min_sum_hessian = T(min_sum_hessian), max_lin_chain = Int(max_lin_chain),
+        truncate = Bool(truncate), nthreads = Int(nthreads), niter = Int(niter))
     rows = collect(Int32(1):Int32(n))
-    refresh!(st, rows)
-    st.nodes, st.catmasks = grow_subtree(st, rows, 1:n, 0, 0, 1:nthreads)
+    refresh!(st, rows, 1)
+    grow_subtree(st, rows, 1:n, 0, 0, 1:nthreads, st.nodes, st.catmasks)
     # Fold the clamped start score into the root node: training accumulates it in
     # st.f before any node is fit, but prediction starts score_row at zero, so the
     # root's own intercepts must carry it. Exact for every loss, clamped or not.
@@ -90,20 +138,36 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         rintercept = st.nodes[1].rintercept + f0c)
     # `expected_score` only reads `nodes`/`catmasks` (see shap.jl), so build once with
     # a placeholder base to get the real one, the empty-coalition value (spec line 669-670)
-    prelim = LinearTree{T,V,typeof(loss)}(st.nodes, st.catmasks, loss, lo, hi, zero(V), p, truncate)
+    prelim = LinearTree{T,V,L}(st.nodes, st.catmasks, loss, lo, hi, zero(V), p, truncate)
     base = expected_score(prelim)
-    return LinearTree{T,V,typeof(loss)}(st.nodes, st.catmasks, loss, lo, hi, base, p, truncate)
+    return LinearTree{T,V,L}(st.nodes, st.catmasks, loss, lo, hi, base, p, truncate)
+end
+
+"""
+Run `f(cols, t)` over `nthreads` contiguous column blocks of `1:p`, threaded
+only when a column is long enough (`n` rows) to pay for the tasks. `t` is the
+block's index in `1:nthreads`, for callers that keep one buffer per worker.
+The row-shaped analogue is `row_blocks`.
+"""
+function column_blocks(f, p::Integer, n::Integer, nthreads::Integer)
+    nthreads = clamp(nthreads, 1, Threads.nthreads())
+    if nthreads == 1 || n < PARALLEL_MIN_ROWS || p == 1
+        f(1:p, 1)
+    else
+        chunk = cld(p, nthreads)
+        Threads.@threads for t in 1:nthreads
+            lo = (t - 1) * chunk + 1
+            hi = min(t * chunk, p)
+            lo <= hi && f(lo:hi, t)
+        end
+    end
+    return nothing
 end
 
 "Stable per-feature sort orders. Features are independent, so this threads over columns."
 function presort!(idx::Matrix{Int32}, X::Matrix, nthreads)
-    p = size(X, 2)
-    if nthreads == 1 || size(X, 1) < PARALLEL_MIN_ROWS
-        for j in 1:p
-            idx[:, j] .= Int32.(sortperm(view(X, :, j); alg = MergeSort))
-        end
-    else
-        Threads.@threads for j in 1:p
+    column_blocks(size(X, 2), size(X, 1), nthreads) do cols, _
+        for j in cols
             idx[:, j] .= Int32.(sortperm(view(X, :, j); alg = MergeSort))
         end
     end
@@ -116,11 +180,11 @@ weight. Rows are independent, so large row sets are processed in chunks on
 separate threads; there is no cross-row reduction, so the result is identical
 to the serial pass.
 """
-function refresh!(st::FitState, rows)
+function refresh!(st::FitState, rows, tid)
+    ε = node_epsilon(st, rows, tid)
     if st.nthreads == 1 || length(rows) < PARALLEL_MIN_ROWS
-        refresh_chunk!(st, rows, node_epsilon(st, rows))
+        refresh_chunk!(st, rows, ε)
     else
-        ε = node_epsilon(st, rows)
         chunks = collect(Iterators.partition(rows, cld(length(rows), st.nthreads)))
         Threads.@threads for ch in chunks
             refresh_chunk!(st, ch, ε)
@@ -129,11 +193,24 @@ function refresh!(st::FitState, rows)
     return st
 end
 
-# `ε` for IRLS is computed once over the whole `rows` set so a chunked pass
-# matches the serial one exactly; smooth losses ignore it.
-node_epsilon(st::FitState{T}, rows) where {T} = issmooth(st.loss) ? zero(T) :
-    max(irls_epsilon(view(st.y, rows) .- view(st.f, rows), view(st.w, rows)),
+"""
+`ε` for IRLS, computed once over the whole `rows` set so a chunked pass
+matches the serial one exactly; smooth losses ignore it. Runs on worker
+`tid`'s scratch: the residual goes in `.ws`, `median_abs!`'s abs-value buffer
+is `.xs` and its sort order is `.perm`. All three are free here for the
+same reason they are free in `irls_refit` -- `best_split` has returned and
+`partition!` has not yet run -- so the node's ε costs no allocation.
+"""
+function node_epsilon(st::FitState{T}, rows, tid) where {T}
+    issmooth(st.loss) && return zero(T)
+    sc = st.scratch[tid]
+    resid = view(sc.ws, 1:length(rows))
+    for (k, i) in enumerate(rows)
+        resid[k] = st.y[i] - st.f[i]
+    end
+    return max(irls_epsilon!(sc.xs, sc.perm, resid, view(st.w, rows)),
         sqrt(eps(T)) * max(maximum(abs, view(st.y, rows)), one(T)))
+end
 
 function refresh_chunk!(st::FitState, rows, ε)
     yv = view(st.y, rows); fv = view(st.f, rows)
@@ -186,33 +263,25 @@ end
 Partition every column of `idx` over `span` so that `leftrows` come first, in
 place and stable, so each child's rows stay sorted by every feature. Columns
 are independent: with at least `PARALLEL_MIN_ROWS` rows they split across
-`tids`, each task using its own `perms[tid]` buffer. `isleft` is marked for
+`tids`, each task using its own `scratch[tid].perm` buffer. `isleft` is marked for
 `leftrows` on entry and cleared on exit, so concurrent sibling subtrees, which
 own disjoint rows, never see each other's marks. Returns the left count.
 """
 function partition!(idx::Matrix{Int32}, span::UnitRange{Int}, leftrows::AbstractVector{Int32}, isleft::Vector{Bool},
-        perms, tids::UnitRange{Int})
+        scratch, tids::UnitRange{Int})
     for i in leftrows
         isleft[i] = true
     end
-    p = size(idx, 2)
+    # every column returns the same left count, so take it here rather than from
+    # whichever task happens to finish last
     nleft = 0
-    if length(span) >= PARALLEL_MIN_ROWS && length(tids) > 1 && p > 1
-        chunks = collect(Iterators.partition(1:p, cld(p, length(tids))))
-        tasks = [Threads.@spawn begin
-                nl = 0
-                for j in ch
-                    nl = partition_column!(view(idx, :, j), span, isleft, perms[tid])
-                end
-                nl
-            end for (tid, ch) in zip(tids, chunks)]
-        for t in tasks
-            nleft = fetch(t)
-        end
-    else
-        perm = perms[first(tids)]
-        for j in 1:p
-            nleft = partition_column!(view(idx, :, j), span, isleft, perm)
+    for k in span
+        nleft += isleft[idx[k, 1]]
+    end
+    column_blocks(size(idx, 2), length(span), length(tids)) do cols, t
+        perm = scratch[first(tids) + t - 1].perm
+        for j in cols
+            partition_column!(view(idx, :, j), span, isleft, perm)
         end
     end
     for i in leftrows
@@ -239,31 +308,29 @@ candidate order per coordinate `k`; each is scanned in turn and the
 lowest-scoring candidate wins. A scalar `V` has exactly one coordinate, so
 this reduces to the original single-order scan.
 """
-function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin) where {T,V}
+function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin, tid) where {T,V}
     L = st.nlevels[j]
-    sz = zeros(V, L); sw = zeros(V, L); nrows = zeros(Int, L)
+    # `counts` is offset by one so it doubles as the counting sort's histogram
+    sz = zeros(V, L); sw = zeros(V, L); counts = zeros(Int, L + 1)
     for i in rows
         c = Int(st.X[i, j])
         sz[c] += st.h[i] .* st.z[i]
         sw[c] += st.h[i]
-        nrows[c] += 1
+        counts[c + 1] += 1
     end
-    present = findall(>(0), nrows)
+    present = [c for c in 1:L if counts[c + 1] > 0]
     length(present) < 2 && return nocandidate(T, V), Int[]
     # Bucket rows by level in one O(L + |rows|) counting-sort pass, then walk
     # the buckets in rank order to fill the scratch. No O(L · |rows|) rescans.
     # The bucketing itself doesn't depend on level order, so it is built once
-    # and reused for every coordinate's ordering below.
-    counts = zeros(Int, L + 1)
-    for i in rows
-        counts[Int(st.X[i, j]) + 1] += 1
-    end
+    # and reused for every coordinate's ordering below. `sc.perm` is free until
+    # `partition!` runs, well after the scan.
     cumoffset = zeros(Int, L + 1)
     for c in 1:L
         cumoffset[c + 1] = cumoffset[c] + counts[c + 1]
     end
     cursor = copy(cumoffset)
-    bucketed = Vector{Int32}(undef, length(rows))
+    bucketed = sc.perm
     for i in rows
         c = Int(st.X[i, j])
         cursor[c] += 1
@@ -296,10 +363,8 @@ function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin) wh
 end
 
 """
-Append a packed left-level mask to a subtree-local mask pool `masks`.
-Returns its `(catstart, catwords)`, local to `masks`. The parent splice
-offsets `catstart` by the number of mask words already placed ahead of it,
-exactly like it offsets node indices.
+Append a packed left-level mask to the mask pool `masks` the growing subtree
+writes into, and return its `(catstart, catwords)` in that pool.
 """
 function push_mask!(masks::Vector{UInt64}, leftcodes, L)
     words = (L + 63) >> 6
@@ -317,7 +382,7 @@ function best_split_serial(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, 
     best = nocandidate(T, V); bestj = 0; bestleft = Int[]
     for j in features
         if st.iscat[j]
-            c, leftcodes = scan_categorical(st, sc, rows, j, dmin)
+            c, leftcodes = scan_categorical(st, sc, rows, j, dmin, tid)
         else
             m = gather!(st, sc, span, j)
             c = scan_feature(view(sc.xs, 1:m), view(sc.zs, 1:m), view(sc.hs, 1:m), view(sc.ws, 1:m),
@@ -348,7 +413,9 @@ function best_split(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, tids::U
     tasks = [Threads.@spawn best_split_serial(st, rows, span, dmin, ch, tid) for (tid, ch) in zip(tids, chunks)]
     best = nocandidate(T, V); bestj = 0; bestleft = Int[]
     for t in tasks
-        c, j, lc = fetch(t)
+        # `fetch` infers `Any`; without this the winning candidate stays boxed and
+        # `grow_subtree`'s whole body dispatches on it once per node
+        c, j, lc = fetch(t)::Tuple{Candidate{T,V},Int,Vector{Int}}
         if c.score < best.score || (c.score == best.score && j != 0 && (bestj == 0 || j < bestj))
             best = c; bestj = j; bestleft = lc
         end
@@ -356,13 +423,13 @@ function best_split(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, tids::U
     return best, bestj, bestleft
 end
 
-function dmin_for(st::FitState{T,V}, rows) where {T,V}
+"`nw` is the node's total weight, which `grow_subtree` already holds; recomputing it here would be a second O(|rows|) pass."
+function dmin_for(st::FitState{T,V}, rows, nw) where {T,V}
     s = zero(T)
     for i in rows
         s += sum(st.h[i] .* st.z[i] .^ 2)   # sum over coordinates for vector V; a no-op for scalar V
     end
-    n = sum(view(st.w, rows))
-    return eps(T) * max(s, n)
+    return eps(T) * max(s, nw)
 end
 
 leafnode(st::FitState{T,V}, rows, b) where {T,V} =
@@ -373,8 +440,8 @@ const SUBTREE_PARALLEL_DEPTH = 3
 
 """
 Add `idxoff` to every non-zero child index and `maskoff` to every non-zero
-`catstart` in `nodes`. Used by the splice step to relocate a subtree's local
-node vector and mask words into the parent's growing ones.
+`catstart` in `nodes`. Used once per spawned sibling subtree, to relocate the
+local node vector and mask words it grew concurrently into the parent's.
 """
 function shift_subtree(nodes::Vector{Node{T,V}}, idxoff::Int32, maskoff::Int32) where {T,V}
     return [Node{T,V}(n; left = n.left == 0 ? Int32(0) : n.left + idxoff,
@@ -383,21 +450,26 @@ function shift_subtree(nodes::Vector{Node{T,V}}, idxoff::Int32, maskoff::Int32) 
 end
 
 """
-Grow the subtree for `rows` into a fresh local node vector and mask pool.
+Grow the subtree for `rows`, appending its nodes to `nodes` in preorder and
+its level masks to `masks`. The subtree root lands at `length(nodes) + 1` and
+child indices and `catstart` values are absolute in those two vectors, so the
+caller has nothing to splice: a node is written once and moved never.
+
 `span` is the range of `st.idx` this node owns: `st.idx[span, j]` holds
 exactly `rows`, sorted by feature `j`, for every `j`. A split partitions the
-span in place, so children own disjoint sub-ranges and no other node reads
-or writes them.
-Returns `(nodes, masks)` with the subtree root at local index 1. `linchain`
-counts consecutive `lin` fits in this node position. `tids` is the range of
-`st.scratch` sets this subtree, and only this subtree, may use; a spawned
-sibling gets a disjoint sub-range, so no two concurrent subtrees ever touch
-the same scratch set. `st.nodes` and `st.catmasks` are written only once, by
-the splice at the root call in `fit_tree`, so the recursion itself never
-touches them.
+span in place, so children own disjoint sub-ranges and no other node reads or
+writes them. `linchain` counts consecutive `lin` fits in this node position.
+`tids` is the range of `st.scratch` sets this subtree, and only this subtree,
+may use; a spawned sibling gets a disjoint sub-range, so no two concurrent
+subtrees ever touch the same scratch set.
+
+Only the calling task appends to `nodes` and `masks`. A spawned sibling grows
+into its own pair and is shifted and appended once when it returns, so that
+subtree is the one and only case where a node is copied.
 """
 function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{Int}, depth::Int, linchain::Int,
-        tids::UnitRange{Int}) where {T,V}
+        tids::UnitRange{Int}, nodes::Vector{Node{T,V}}, masks::Vector{UInt64}) where {T,V}
+    mine = length(nodes) + 1
     nw = sum(view(st.w, rows))
     sumh = sum(sum(h) for h in view(st.h, rows))   # sum over coordinates too, for vector V
     if nw < st.min_fit || depth >= st.max_depth || sumh < st.min_sum_hessian || linchain >= st.max_lin_chain
@@ -405,17 +477,19 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
         me = leafnode(st, rows, b)
         me = refit_node(st, me, rows, first(tids))
         update_score!(st, rows, me)
-        return Node{T,V}[me], UInt64[]
+        push!(nodes, me)
+        return nothing
     end
-    dmin = dmin_for(st, rows)
+    dmin = dmin_for(st, rows, nw)
     best, bestj, leftcodes = best_split(st, rows, span, dmin, tids)
-    con_surrogate = fit_con(node_sums(st, rows))[2]
+    con_intercept, con_surrogate = fit_con(node_sums(st, rows))
     gain = T(sum(con_surrogate) - sum(best.surrogate))
     if best.kind == CON || bestj == 0
-        me = leafnode(st, rows, best.kind == CON ? best.lintercept : fit_con(node_sums(st, rows))[1])
+        me = leafnode(st, rows, best.kind == CON ? best.lintercept : con_intercept)
         me = refit_node(st, me, rows, first(tids))
         update_score!(st, rows, me)
-        return Node{T,V}[me], UInt64[]
+        push!(nodes, me)
+        return nothing
     end
     iscat = st.iscat[bestj]
     if iscat
@@ -426,16 +500,19 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
         xmean = sum(st.w[i] * st.X[i, bestj] for i in rows) / nw
     end
     if best.kind == LIN
+        # A LIN node stores `threshold = NaN`, so `x <= n.threshold` is false for
+        # every row and the routing falls to the right branch. That is harmless
+        # only because both branches are the same fit: `rcoef == lcoef`,
+        # `rintercept == lintercept` and, below, `right == left`. `score_row`
+        # (predict.jl) and `coeftable`'s walk (importance.jl) both rely on it.
         me = Node{T,V}(; feature = bestj, threshold = T(NaN), lcoef = best.lcoef, lintercept = best.lintercept,
             rcoef = best.lcoef, rintercept = best.lintercept, xmin, xmax, cover = nw, xmean, gain, model = LIN)
         me = refit_node(st, me, rows, first(tids))
-        update_score!(st, rows, me); refresh!(st, rows)
-        cnodes, cmasks = grow_subtree(st, rows, span, depth, linchain + 1, tids)
-        me = Node{T,V}(me; left = Int32(2), right = Int32(2))
-        nodes = vcat(Node{T,V}[me], shift_subtree(cnodes, Int32(1), Int32(0)))
-        return nodes, cmasks
+        update_score!(st, rows, me); refresh!(st, rows, first(tids))
+        push!(nodes, Node{T,V}(me; left = Int32(mine + 1), right = Int32(mine + 1)))
+        grow_subtree(st, rows, span, depth, linchain + 1, tids, nodes, masks)
+        return nothing
     end
-    masks = UInt64[]
     catstart = Int32(0); catwords = Int32(0); threshold = best.threshold
     if iscat
         catstart, catwords = push_mask!(masks, leftcodes, st.nlevels[bestj])
@@ -446,37 +523,47 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
         catstart, catwords)
     me = refit_node(st, me, rows, first(tids), masks)
     update_score!(st, rows, me, masks)
-    refresh!(st, rows)
+    refresh!(st, rows, first(tids))
+    # count first so both sides are sized exactly: growing them from empty costs
+    # about 2·log2(|rows|) reallocations per split node. The push order is the
+    # parent's row order, which every downstream sum depends on, so it stays.
+    nleftrows = 0
+    for i in rows
+        nleftrows += goes_left(st, me, i, masks)
+    end
     leftrows = Int32[]; rightrows = Int32[]
+    sizehint!(leftrows, nleftrows); sizehint!(rightrows, length(rows) - nleftrows)
     for i in rows
         (goes_left(st, me, i, masks) ? push!(leftrows, i) : push!(rightrows, i))
     end
-    nl = partition!(st.idx, span, leftrows, st.isleft, st.perms, tids)
+    nl = partition!(st.idx, span, leftrows, st.isleft, st.scratch, tids)
     lspan = first(span):(first(span) + nl - 1); rspan = (first(span) + nl):last(span)
+    push!(nodes, me)   # placeholder: the child indices are only known once both children have grown
     if st.nthreads > 1 && depth < SUBTREE_PARALLEL_DEPTH && length(tids) >= 2
         mid = first(tids) + length(tids) ÷ 2 - 1
-        task = Threads.@spawn grow_subtree(st, rightrows, rspan, depth + 1, 0, (mid + 1):last(tids))
-        lnodes, lmasks = grow_subtree(st, leftrows, lspan, depth + 1, 0, first(tids):mid)
-        rnodes, rmasks = fetch(task)
+        rnodes = Node{T,V}[]; rmasks = UInt64[]
+        task = Threads.@spawn grow_subtree(st, rightrows, rspan, depth + 1, 0, (mid + 1):last(tids), rnodes, rmasks)
+        grow_subtree(st, leftrows, lspan, depth + 1, 0, first(tids):mid, nodes, masks)
+        wait(task)
+        # the sibling grew local indices from 1, so shift by what now precedes it
+        rightidx = length(nodes) + 1
+        append!(nodes, shift_subtree(rnodes, Int32(length(nodes)), Int32(length(masks))))
+        append!(masks, rmasks)
     else
-        lnodes, lmasks = grow_subtree(st, leftrows, lspan, depth + 1, 0, tids)
-        rnodes, rmasks = grow_subtree(st, rightrows, rspan, depth + 1, 0, tids)
+        grow_subtree(st, leftrows, lspan, depth + 1, 0, tids, nodes, masks)
+        rightidx = length(nodes) + 1
+        grow_subtree(st, rightrows, rspan, depth + 1, 0, tids, nodes, masks)
     end
-    nleft = Int32(length(lnodes)); nmine = Int32(length(masks)); nlmasks = Int32(length(lmasks))
-    me = Node{T,V}(me; left = Int32(2), right = Int32(2) + nleft)
-    # `masks` (this node's own mask, if any) lands first in `allmasks`, so lnodes'
-    # and rnodes' catstart values shift by however many mask words precede them.
-    nodes = vcat(Node{T,V}[me], shift_subtree(lnodes, Int32(1), nmine), shift_subtree(rnodes, Int32(1) + nleft, nmine + nlmasks))
-    allmasks = vcat(masks, lmasks, rmasks)
-    return nodes, allmasks
+    nodes[mine] = Node{T,V}(me; left = Int32(mine + 1), right = Int32(rightidx))
+    return nothing
 end
 
 """
 True when row `i` is routed left by node `n`. Categorical nodes route by
 mask; others by threshold. `masks` must be the mask pool `n.catstart`
-indexes into: during growth that is the growing subtree's own local mask
-vector, since `st.catmasks` is not assembled until the root splice; after
-fitting it is `tree.catmasks`. Non-categorical nodes never touch `masks`,
+indexes into: during growth that is the pool the subtree is appending to
+(`st.catmasks` on the main chain, a local vector inside a spawned sibling);
+after fitting it is `tree.catmasks`. Non-categorical nodes never touch `masks`,
 so the empty default is safe wherever the node cannot be categorical.
 """
 function goes_left(st::FitState, n::Node, i, masks::Vector{UInt64} = UInt64[])
@@ -494,7 +581,7 @@ growing subtree, before it has a place in `st.nodes`. `masks` is the pool
 `n.catstart` indexes into (see `goes_left`); irrelevant, so omitted, for a
 node that cannot be categorical. `tid` is this subtree's own worker index
 (`first(tids)` at the call site): `st.scratch[tid].zs` (the residual buffer)
-and `.xs` (`median_abs`'s abs-value buffer) and `st.perms[tid]` (its sort
+and `.xs` (`median_abs`'s abs-value buffer) and `.perm` (its sort
 permutation) are all free at this point -- `best_split` has already returned
 its winning candidate, and `partition!` has not yet run for this node -- so
 reusing them here avoids a fresh allocation on every call.
@@ -504,7 +591,7 @@ function irls_refit(st::FitState{T,V}, n::Node{T,V}, rows, tid, niter, masks::Ve
     m = length(rows)
     sc = st.scratch[tid]
     resid = view(sc.zs, 1:m)
-    permbuf = st.perms[tid]
+    permbuf = sc.perm
     yscale = max(maximum(abs, view(st.y, rows)), one(T))
     for _ in 1:niter
         for (k, i) in enumerate(rows)

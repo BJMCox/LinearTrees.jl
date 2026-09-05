@@ -10,7 +10,7 @@ end
 @testset "moment sums closed forms" begin
     rng = StableRNG(2)
     x = sort(randn(rng, 12)); z = 0.5 .* x .+ 0.1 .* randn(rng, 12); h = rand(rng, 12) .+ 0.5
-    s = zero(MomentSums{Float64})
+    s = zero(LinearTrees.MomentSums{Float64})
     for i in eachindex(x); s = LinearTrees.addrow(s, x[i], z[i], h[i]); end
     @test s.sw ≈ sum(h) && s.sxz ≈ sum(h .* x .* z)
 
@@ -24,10 +24,10 @@ end
 
     # blin with knot t between rows 5 and 6
     t = (x[5] + x[6]) / 2
-    sl = zero(MomentSums{Float64}); sr = zero(MomentSums{Float64})
+    sl = zero(LinearTrees.MomentSums{Float64}); sr = zero(LinearTrees.MomentSums{Float64})
     for i in 1:5; sl = LinearTrees.addrow(sl, x[i], z[i], h[i]); end
     for i in 6:12; sr = LinearTrees.addrow(sr, x[i], z[i], h[i]); end
-    @test sl + sr ≈ s
+    @test all(getfield(sl + sr, k) ≈ getfield(s, k) for k in fieldnames(LinearTrees.MomentSums))
     al, bl, ar, br, rss = LinearTrees.fit_blin(sl, sr, t)
     u = max.(x .- t, 0)
     β, rss0 = wls([x ones(12) u], z, h)
@@ -39,7 +39,7 @@ end
     @test s2.sxx ≈ sum(h[2:end] .* x[2:end] .^ 2)
 
     # singular guard: constant feature
-    sc = zero(MomentSums{Float64})
+    sc = zero(LinearTrees.MomentSums{Float64})
     for i in 1:6; sc = LinearTrees.addrow(sc, 1.0, z[i], h[i]); end
     @test LinearTrees.fit_lin(sc) === nothing
 end
@@ -47,7 +47,7 @@ end
 @testset "fit_blin guard is scale invariant" begin
     x = collect(range(-1, 1, length = 12)); z = 0.5 .* x .+ 0.01 .* sin.(7 .* x); t = 0.05
     function sums(hscale)
-        sl = zero(MomentSums{Float64}); sr = zero(MomentSums{Float64})
+        sl = zero(LinearTrees.MomentSums{Float64}); sr = zero(LinearTrees.MomentSums{Float64})
         for i in 1:6; sl = LinearTrees.addrow(sl, x[i], z[i], hscale); end
         for i in 7:12; sr = LinearTrees.addrow(sr, x[i], z[i], hscale); end
         return sl, sr
@@ -57,5 +57,5 @@ end
     @test r30 !== nothing
     @test all(isapprox.(r1[1:4], r30[1:4]; rtol = 1e-6))
     # empty right child is singular
-    @test LinearTrees.fit_blin(sums(1.0)[1], zero(MomentSums{Float64}), t) === nothing
+    @test LinearTrees.fit_blin(sums(1.0)[1], zero(LinearTrees.MomentSums{Float64}), t) === nothing
 end
