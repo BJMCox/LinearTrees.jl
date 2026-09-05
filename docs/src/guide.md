@@ -100,6 +100,10 @@ class, and one split is chosen per node by summing the surrogate deviance over
 all `K - 1` fitted logits. This is one tree with vector-valued coefficients,
 not `K - 1` separate trees.
 
+`min_sum_hessian` is compared against the Hessian summed over all `K - 1`
+fitted coordinates, so the default `1.0` is a weaker stopping gate for a
+larger `K`.
+
 `fit(LinearTreeClassifierFit, X, y)` picks the loss automatically: a
 two-class target fits [`Logistic`](@ref) with `classes[1]` (the first sorted
 class) as the positive outcome, and three or more classes fit `Softmax`.

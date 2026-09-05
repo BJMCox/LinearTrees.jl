@@ -51,6 +51,11 @@ is `false` for both), so they cannot use the Newton step directly:
 3. This is not the exact per-node minimiser for `Quantile` or `MAD`, only an
    IRLS approximation to it.
 
+`Quantile` and `MAD` fits are row-permutation invariant only to about `1e-6`
+relative, since each IRLS pass re-solves the pseudo-Hessian and amplifies
+summation-order differences by about `1/ε`; every smooth loss's Newton step
+is exact under a row permutation.
+
 ## The LossFunctions.jl adapter
 
 [`Loss`](@ref)`(l::LossFunctions.SupervisedLoss, link; scale)` wraps a
