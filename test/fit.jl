@@ -155,6 +155,39 @@ end
     @test_throws ArgumentError fit_tree(X, y, MAD(); niter = 0)
 end
 
+@testset "irls_refit does not allocate a fresh residual or sort buffer (B2)" begin
+    # fails if irls_refit's residual buffer or median_abs's sort buffers revert
+    # to a fresh per-call allocation. `masks` is passed explicitly (as the
+    # categorical call site in grow_subtree does) so this isolates exactly the
+    # buffers B2 targets: irls_refit's own `masks::Vector{UInt64}=UInt64[]`
+    # default, used at the other three call sites, allocates an empty-vector
+    # header (32 bytes, measured) regardless of this fix -- unrelated to the
+    # residual/sort buffers here, and out of this item's scope.
+    function irls_refit_alloc()
+        n = 4000
+        X = rand(n, 1); y = X[:, 1] .+ 0.1 .* randn(n)
+        y[1:20] .+= 5   # outliers, so IRLS solves a non-degenerate residual
+        loss = MAD()
+        w = ones(n)
+        f0 = Float64(LinearTrees.initscore(loss, y, w))
+        f = fill(f0, n)
+        idx = Matrix{Int32}(undef, n, 1)
+        LinearTrees.presort!(idx, X, 1)
+        st = LinearTrees.FitState{Float64,Float64,typeof(loss),BIC}(X, y, w, f, zeros(n), zeros(n), zeros(n), idx,
+            zeros(Bool, n), [LinearTrees.Scratch{Float64,Float64}(n)], [Vector{Int32}(undef, n)],
+            LinearTrees.Node{Float64,Float64}[], UInt64[], Int[], zeros(Int, 1), loss, BIC(), -Inf, Inf,
+            12, 10.0, 5.0, 1.0, 10, false, 1, 5)
+        rows = collect(Int32(1):Int32(n))
+        LinearTrees.refresh!(st, rows)
+        b = LinearTrees.fit_con(LinearTrees.node_sums(st, rows))[1]
+        node = LinearTrees.Node{Float64,Float64}(; lintercept = b, cover = Float64(n))
+        masks = UInt64[]
+        LinearTrees.irls_refit(st, node, rows, 1, 5, masks)
+        return @allocated LinearTrees.irls_refit(st, node, rows, 1, 5, masks)
+    end
+    @test irls_refit_alloc() == 0
+end
+
 @testset "threaded split search equals serial" begin
     rng = StableRNG(35)
     X = rand(rng, 40_000, 6); y = sin.(3 .* X[:, 1]) .+ X[:, 2] .* X[:, 3] .+ 0.1 .* randn(rng, 40_000)

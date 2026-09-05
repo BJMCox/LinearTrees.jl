@@ -400,7 +400,7 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
     if nw < st.min_fit || depth >= st.max_depth || sumh < st.min_sum_hessian || linchain >= st.max_lin_chain
         b = fit_con(node_sums(st, rows))[1]
         me = leafnode(st, rows, b)
-        me = refit_node(st, me, rows)
+        me = refit_node(st, me, rows, first(tids))
         update_score!(st, rows, me)
         return Node{T,V}[me], UInt64[]
     end
@@ -410,7 +410,7 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
     gain = T(sum(con_surrogate) - sum(best.surrogate))
     if best.kind == CON || bestj == 0
         me = leafnode(st, rows, best.kind == CON ? best.lintercept : fit_con(node_sums(st, rows))[1])
-        me = refit_node(st, me, rows)
+        me = refit_node(st, me, rows, first(tids))
         update_score!(st, rows, me)
         return Node{T,V}[me], UInt64[]
     end
@@ -425,7 +425,7 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
     if best.kind == LIN
         me = Node{T,V}(; feature = bestj, threshold = T(NaN), lcoef = best.lcoef, lintercept = best.lintercept,
             rcoef = best.lcoef, rintercept = best.lintercept, xmin, xmax, cover = nw, xmean, gain, model = LIN)
-        me = refit_node(st, me, rows)
+        me = refit_node(st, me, rows, first(tids))
         update_score!(st, rows, me); refresh!(st, rows)
         cnodes, cmasks = grow_subtree(st, rows, span, depth, linchain + 1, tids)
         me = Node{T,V}(me; left = Int32(2), right = Int32(2))
@@ -441,7 +441,7 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
     me = Node{T,V}(; feature = bestj, threshold, lcoef = best.lcoef, lintercept = best.lintercept,
         rcoef = best.rcoef, rintercept = best.rintercept, xmin, xmax, cover = nw, xmean, gain, model = best.kind,
         catstart, catwords)
-    me = refit_node(st, me, rows, masks)
+    me = refit_node(st, me, rows, first(tids), masks)
     update_score!(st, rows, me, masks)
     refresh!(st, rows)
     leftrows = Int32[]; rightrows = Int32[]
@@ -489,11 +489,19 @@ Serial: this is one node's `MomentSums` reduction, not worth threading.
 Takes and returns a `Node` value so it works on a node still local to a
 growing subtree, before it has a place in `st.nodes`. `masks` is the pool
 `n.catstart` indexes into (see `goes_left`); irrelevant, so omitted, for a
-node that cannot be categorical.
+node that cannot be categorical. `tid` is this subtree's own worker index
+(`first(tids)` at the call site): `st.scratch[tid].zs` (the residual buffer)
+and `.xs` (`median_abs`'s abs-value buffer) and `st.perms[tid]` (its sort
+permutation) are all free at this point -- `best_split` has already returned
+its winning candidate, and `partition!` has not yet run for this node -- so
+reusing them here avoids a fresh allocation on every call.
 """
-function irls_refit(st::FitState{T,V}, n::Node{T,V}, rows, niter, masks::Vector{UInt64} = UInt64[]) where {T,V}
+function irls_refit(st::FitState{T,V}, n::Node{T,V}, rows, tid, niter, masks::Vector{UInt64} = UInt64[]) where {T,V}
     j = n.feature
-    resid = Vector{V}(undef, length(rows))
+    m = length(rows)
+    sc = st.scratch[tid]
+    resid = view(sc.zs, 1:m)
+    permbuf = st.perms[tid]
     yscale = max(maximum(abs, view(st.y, rows)), one(T))
     for _ in 1:niter
         for (k, i) in enumerate(rows)
@@ -506,7 +514,7 @@ function irls_refit(st::FitState{T,V}, n::Node{T,V}, rows, niter, masks::Vector{
             end
             resid[k] = st.z[i] - pred
         end
-        ε = max(irls_epsilon(resid, view(st.w, rows)), sqrt(eps(T)) * yscale)
+        ε = max(irls_epsilon(resid, view(st.w, rows); buf = sc.xs, perm = permbuf), sqrt(eps(T)) * yscale)
         left = zero(MomentSums{V}); right = zero(MomentSums{V})
         for (k, i) in enumerate(rows)
             r = resid[k]

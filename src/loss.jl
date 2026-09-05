@@ -177,7 +177,7 @@ function irls_weights!(h::AbstractVector{T}, loss::Union{Quantile,MAD}, y::Abstr
 end
 
 """
-    median_abs(r, w)
+    median_abs(r, w; buf=nothing, perm=nothing)
 
 Weighted median of `abs.(r)` by `w`: sort by `|r|` and walk the cumulative
 weight, returning the value where it first reaches half the total, or the
@@ -187,10 +187,32 @@ per row, when that duplicated count is even. With unit weights this is
 `Statistics.median(abs.(r))`; unlike an unweighted median of the stored
 (undeplicated) rows, it makes integer weights equal row duplication for the
 non-smooth losses (spec line 779-780).
+
+`buf` and `perm`, each at least `length(r)` long, let a hot caller (`irls_refit`)
+sort into its own per-worker storage instead of allocating a fresh `abs.(r)`
+copy and permutation every call; omitted, both default to a fresh allocation.
 """
-function median_abs(r::AbstractVector, w::AbstractVector)
-    a = abs.(r)
-    o = sortperm(a)
+function median_abs(r::AbstractVector, w::AbstractVector; buf::Union{Nothing,AbstractVector} = nothing,
+        perm::Union{Nothing,AbstractVector} = nothing)
+    n = length(r)
+    local a
+    if buf === nothing
+        a = abs.(r)
+    else
+        a = view(buf, 1:n)
+        a .= abs.(r)
+    end
+    local o
+    if perm === nothing
+        o = sortperm(a)
+    else
+        o = view(perm, 1:n)
+        # `QuickSort` (in place, no scratch array) rather than the default
+        # adaptive algorithm, which allocates a same-size buffer for its radix
+        # pass; tie order among equal |r| values never changes the value
+        # returned below, so the unstable order costs nothing here
+        sortperm!(o, a; alg = QuickSort)
+    end
     total = sum(w)
     total > 0 || throw(ArgumentError("weights must have a positive sum"))
     half = total / 2
@@ -204,15 +226,17 @@ function median_abs(r::AbstractVector, w::AbstractVector)
 end
 
 """
-    irls_epsilon(r, w)
+    irls_epsilon(r, w; buf=nothing, perm=nothing)
 
 `1e-3` times the weighted median of `|r|` by `w`: the residual-scale half of
 the ε floor IRLS uses everywhere it re-solves the pseudo-hessian for a
 non-smooth loss. Written once here rather than copied at each call site
 (`irls_weights!`'s own default, `node_epsilon`, `irls_refit`); each caller
-still adds its own `sqrt(eps(T))` floor scaled by `y`'s own magnitude.
+still adds its own `sqrt(eps(T))` floor scaled by `y`'s own magnitude. `buf`
+and `perm` are forwarded to `median_abs`.
 """
-irls_epsilon(r::AbstractVector{T}, w::AbstractVector) where {T} = T(1e-3) * median_abs(r, w)
+irls_epsilon(r::AbstractVector{T}, w::AbstractVector; buf = nothing, perm = nothing) where {T} =
+    T(1e-3) * median_abs(r, w; buf, perm)
 
 """
     l1weight(loss, r)
@@ -224,16 +248,17 @@ l1weight(::MAD, r) = one(r)
 l1weight(l::Quantile, r) = r >= 0 ? oftype(r, l.τ) : oftype(r, 1 - l.τ)
 
 """
-    refit_node(st, n, rows, masks=UInt64[]) -> Node
+    refit_node(st, n, rows, tid, masks=UInt64[]) -> Node
 
 IRLS refinement of a non-smooth node's coefficients on its own rows, including
 `CON` leaves. Runs `st.niter` iterations (the `niter` keyword on `fit_tree`);
 each recomputes the pseudo-hessian at the current node prediction and
 re-solves the chosen model kind. Smooth losses return `n` unchanged. Takes and
 returns a `Node` value rather than a tree index, so it works the same on a
-node still local to a growing subtree.
+node still local to a growing subtree. `tid` selects the caller's own worker
+scratch (`st.scratch[tid]`, `st.perms[tid]`), reused as refit buffer storage.
 """
-refit_node(st, n, rows, masks = UInt64[]) = issmooth(st.loss) ? n : irls_refit(st, n, rows, st.niter, masks)
+refit_node(st, n, rows, tid, masks = UInt64[]) = issmooth(st.loss) ? n : irls_refit(st, n, rows, tid, st.niter, masks)
 
 # ---- init score ------------------------------------------------------------
 wmean(y, w) = sum(w .* y) / sum(w)
