@@ -13,8 +13,10 @@ mutable struct FitState{T,V,L<:Loss,R<:SelectionRule}
     g::Vector{V}
     h::Vector{V}
     z::Vector{V}
-    idx::Matrix{Int32}          # n × p, column j = row order sorted by feature j
+    idx::Matrix{Int32}          # n × p, column j = row order sorted by feature j, partitioned node by node
+    isleft::Vector{Bool}        # n, per-row left marker used by `partition!`; each node touches only its own rows
     scratch::Vector{Scratch{T,V}}   # one per worker
+    perms::Vector{Vector{Int32}}    # one per worker, `partition_column!` buffer
     nodes::Vector{Node{T,V}}
     catmasks::Vector{UInt64}
     categorical::Vector{Int}
@@ -67,13 +69,13 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     f = fill(clampscore(f0, lo, hi), n)
     idx = Matrix{Int32}(undef, n, p)
     presort!(idx, Xm, nthreads)
-    st = FitState{T,V,typeof(loss),typeof(rule)}(Xm, yv, w, f, zeros(V, n), zeros(V, n), zeros(V, n), idx,
-        [Scratch{T,V}(n) for _ in 1:nthreads],
+    st = FitState{T,V,typeof(loss),typeof(rule)}(Xm, yv, w, f, zeros(V, n), zeros(V, n), zeros(V, n), idx, zeros(Bool, n),
+        [Scratch{T,V}(n) for _ in 1:nthreads], [Vector{Int32}(undef, n) for _ in 1:nthreads],
         Node{T,V}[], UInt64[], collect(Int, categorical), nlevels, loss, rule, lo, hi, max_depth, T(min_fit), T(min_leaf),
         T(min_sum_hessian), max_lin_chain, truncate, nthreads)
     rows = collect(Int32(1):Int32(n))
     refresh!(st, rows)
-    st.nodes, st.catmasks = grow_subtree(st, rows, 0, 0, 1:nthreads)
+    st.nodes, st.catmasks = grow_subtree(st, rows, 1:n, 0, 0, 1:nthreads)
     # Fold the clamped start score into the root node: training accumulates it in
     # st.f before any node is fit, but prediction starts score_row at zero, so the
     # root's own intercepts must carry it. Exact for every loss, clamped or not.
@@ -140,15 +142,77 @@ function refresh_chunk!(st::FitState, rows, ε)
     return st
 end
 
-"Gather the node rows in the order of feature `j` into one worker's scratch."
-function gather!(st::FitState, sc::Scratch, inrow::BitVector, j)
+"Gather the node rows, `st.idx[span, j]` in feature-`j` order, into one worker's scratch. `O(length(span))`."
+function gather!(st::FitState, sc::Scratch, span::UnitRange{Int}, j)
     m = 0
-    for i in view(st.idx, :, j)
-        inrow[i] || continue
+    for k in span
+        i = st.idx[k, j]
         m += 1
         sc.xs[m] = st.X[i, j]; sc.zs[m] = st.z[i]; sc.hs[m] = st.h[i]; sc.ws[m] = st.w[i]
     end
     return m
+end
+
+"""
+Stable partition of `idx[span]` into rows with `isleft[i]` true, then the
+rest, each side in its original order. `perm` is a buffer of at least
+`length(span)`. Returns the left count. Positions outside `span` are untouched.
+"""
+function partition_column!(idx::AbstractVector{Int32}, span::UnitRange{Int}, isleft::Vector{Bool}, perm::Vector{Int32})
+    nleft = 0
+    for k in span
+        nleft += isleft[idx[k]]
+    end
+    a = 0; b = nleft
+    for k in span
+        i = idx[k]
+        if isleft[i]
+            perm[a += 1] = i
+        else
+            perm[b += 1] = i
+        end
+    end
+    copyto!(idx, first(span), perm, 1, length(span))
+    return nleft
+end
+
+"""
+Partition every column of `idx` over `span` so that `leftrows` come first, in
+place and stable, so each child's rows stay sorted by every feature. Columns
+are independent: with at least `PARALLEL_MIN_ROWS` rows they split across
+`tids`, each task using its own `perms[tid]` buffer. `isleft` is marked for
+`leftrows` on entry and cleared on exit, so concurrent sibling subtrees, which
+own disjoint rows, never see each other's marks. Returns the left count.
+"""
+function partition!(idx::Matrix{Int32}, span::UnitRange{Int}, leftrows::AbstractVector{Int32}, isleft::Vector{Bool},
+        perms, tids::UnitRange{Int})
+    for i in leftrows
+        isleft[i] = true
+    end
+    p = size(idx, 2)
+    nleft = 0
+    if length(span) >= PARALLEL_MIN_ROWS && length(tids) > 1 && p > 1
+        chunks = collect(Iterators.partition(1:p, cld(p, length(tids))))
+        tasks = [Threads.@spawn begin
+                nl = 0
+                for j in ch
+                    nl = partition_column!(view(idx, :, j), span, isleft, perms[tid])
+                end
+                nl
+            end for (tid, ch) in zip(tids, chunks)]
+        for t in tasks
+            nleft = fetch(t)
+        end
+    else
+        perm = perms[first(tids)]
+        for j in 1:p
+            nleft = partition_column!(view(idx, :, j), span, isleft, perm)
+        end
+    end
+    for i in leftrows
+        isleft[i] = false
+    end
+    return nleft
 end
 
 "Wrap a rule so only `con` and `pcon` are offered, for categorical scans."
@@ -242,14 +306,14 @@ function push_mask!(masks::Vector{UInt64}, leftcodes, L)
 end
 
 "Serial search over `features` using scratch set `tid`. Returns the best candidate, its feature, and (for a categorical winner) its left level codes."
-function best_split_serial(st::FitState{T,V}, rows, inrow::BitVector, dmin, features, tid) where {T,V}
+function best_split_serial(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, features, tid) where {T,V}
     sc = st.scratch[tid]
     best = nocandidate(T, V); bestj = 0; bestleft = Int[]
     for j in features
         if j in st.categorical
             c, leftcodes = scan_categorical(st, sc, rows, j, dmin)
         else
-            m = gather!(st, sc, inrow, j)
+            m = gather!(st, sc, span, j)
             c = scan_feature(view(sc.xs, 1:m), view(sc.zs, 1:m), view(sc.hs, 1:m), view(sc.ws, 1:m),
                 st.rule, st.min_leaf, dmin)
             leftcodes = Int[]
@@ -268,14 +332,14 @@ scratch. The reduction takes the lowest score and, on ties, the lowest
 feature index, so the result equals the serial search regardless of task
 completion order.
 """
-function best_split(st::FitState{T,V}, rows, inrow::BitVector, dmin, tids::UnitRange{Int}) where {T,V}
+function best_split(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, tids::UnitRange{Int}) where {T,V}
     p = size(st.X, 2)
-    if size(st.X, 1) < PARALLEL_MIN_ROWS || length(tids) == 1 || p == 1   # gather! scans the full presorted column, so the cost is O(n) per feature regardless of node size
-        return best_split_serial(st, rows, inrow, dmin, 1:p, first(tids))
+    if length(rows) < PARALLEL_MIN_ROWS || length(tids) == 1 || p == 1
+        return best_split_serial(st, rows, span, dmin, 1:p, first(tids))
     end
     nt = length(tids)
     chunks = collect(Iterators.partition(1:p, cld(p, nt)))
-    tasks = [Threads.@spawn best_split_serial(st, rows, inrow, dmin, ch, tid) for (tid, ch) in zip(tids, chunks)]
+    tasks = [Threads.@spawn best_split_serial(st, rows, span, dmin, ch, tid) for (tid, ch) in zip(tids, chunks)]
     best = nocandidate(T, V); bestj = 0; bestleft = Int[]
     for t in tasks
         c, j, lc = fetch(t)
@@ -314,6 +378,10 @@ end
 
 """
 Grow the subtree for `rows` into a fresh local node vector and mask pool.
+`span` is the range of `st.idx` this node owns: `st.idx[span, j]` holds
+exactly `rows`, sorted by feature `j`, for every `j`. A split partitions the
+span in place, so children own disjoint sub-ranges and no other node reads
+or writes them.
 Returns `(nodes, masks)` with the subtree root at local index 1. `linchain`
 counts consecutive `lin` fits in this node position. `tids` is the range of
 `st.scratch` sets this subtree, and only this subtree, may use; a spawned
@@ -322,7 +390,8 @@ the same scratch set. `st.nodes` and `st.catmasks` are written only once, by
 the splice at the root call in `fit_tree`, so the recursion itself never
 touches them.
 """
-function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, linchain::Int, tids::UnitRange{Int}) where {T,V}
+function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{Int}, depth::Int, linchain::Int,
+        tids::UnitRange{Int}) where {T,V}
     nw = sum(view(st.w, rows))
     sumh = sum(sum(h) for h in view(st.h, rows))   # sum over coordinates too, for vector V
     if nw < st.min_fit || depth >= st.max_depth || sumh < st.min_sum_hessian || linchain >= st.max_lin_chain
@@ -333,8 +402,7 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, lincha
         return Node{T,V}[me], UInt64[]
     end
     dmin = dmin_for(st, rows)
-    inrow = falses(length(st.y)); inrow[rows] .= true
-    best, bestj, leftcodes = best_split(st, rows, inrow, dmin, tids)
+    best, bestj, leftcodes = best_split(st, rows, span, dmin, tids)
     con_surrogate = fit_con(node_sums(st, rows))[2]
     gain = T(sum(con_surrogate) - sum(best.surrogate))
     if best.kind == CON || bestj == 0
@@ -356,7 +424,7 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, lincha
             rcoef = best.lcoef, rintercept = best.lintercept, xmin, xmax, cover = nw, xmean, gain, model = LIN)
         me = refit_node(st, me, rows)
         update_score!(st, rows, me); refresh!(st, rows)
-        cnodes, cmasks = grow_subtree(st, rows, depth, linchain + 1, tids)
+        cnodes, cmasks = grow_subtree(st, rows, span, depth, linchain + 1, tids)
         me = Node{T,V}(me; left = Int32(2), right = Int32(2))
         nodes = vcat(Node{T,V}[me], shift_subtree(cnodes, Int32(1), Int32(0)))
         return nodes, cmasks
@@ -377,14 +445,16 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, depth::Int, lincha
     for i in rows
         (goes_left(st, me, i, masks) ? push!(leftrows, i) : push!(rightrows, i))
     end
+    nl = partition!(st.idx, span, leftrows, st.isleft, st.perms, tids)
+    lspan = first(span):(first(span) + nl - 1); rspan = (first(span) + nl):last(span)
     if st.nthreads > 1 && depth < SUBTREE_PARALLEL_DEPTH && length(tids) >= 2
         mid = first(tids) + length(tids) ÷ 2 - 1
-        task = Threads.@spawn grow_subtree(st, rightrows, depth + 1, 0, (mid + 1):last(tids))
-        lnodes, lmasks = grow_subtree(st, leftrows, depth + 1, 0, first(tids):mid)
+        task = Threads.@spawn grow_subtree(st, rightrows, rspan, depth + 1, 0, (mid + 1):last(tids))
+        lnodes, lmasks = grow_subtree(st, leftrows, lspan, depth + 1, 0, first(tids):mid)
         rnodes, rmasks = fetch(task)
     else
-        lnodes, lmasks = grow_subtree(st, leftrows, depth + 1, 0, tids)
-        rnodes, rmasks = grow_subtree(st, rightrows, depth + 1, 0, tids)
+        lnodes, lmasks = grow_subtree(st, leftrows, lspan, depth + 1, 0, tids)
+        rnodes, rmasks = grow_subtree(st, rightrows, rspan, depth + 1, 0, tids)
     end
     nleft = Int32(length(lnodes)); nmine = Int32(length(masks)); nlmasks = Int32(length(lmasks))
     me = Node{T,V}(me; left = Int32(2), right = Int32(2) + nleft)

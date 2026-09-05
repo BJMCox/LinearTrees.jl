@@ -53,3 +53,30 @@ piecewise, 654 ms / 149 μs) — roughly 2.6 to 3.6 orders of magnitude, not a
 flat three. This is expected, since it is prediction, not tree growth; it is
 included for scale, not as a fair apples-to-apples comparison with
 `build_tree`.
+
+## Deep trees: node-wise row partition
+
+Before this change every node rebuilt an `n`-bit row mask and `gather!`
+walked the full presorted column per feature, so growth cost
+O(nodes · n · p). Now each node owns a contiguous span of the presorted
+index and a stable in-place partition hands the children their spans, so
+growth is O(depth · n · p) as the spec asks. Trees are bit-identical
+(`test/partition.jl` checks four recorded fixtures, serial and threaded).
+
+Same machine as above. `n = 200_000`, `p = 20`, `max_depth = 12`,
+`StableRNG(7)`, target `Σ_{j≤6} floor(5 x_j) + x_7 x_8 + noise` (many step
+changes, so BIC keeps splitting). "forced" uses
+`MinDeviance((LIN, PCON, BLIN, PLIN))` with `min_leaf = 50`, `min_fit = 100`.
+Median of 3 fits.
+
+| case | nodes | threads | before | after | speedup |
+|---|---|---|---|---|---|
+| BIC step target | 3638 | 10 | 2.73 s | 1.14 s | 2.4x |
+| BIC step target | 3638 | 1 | 9.08 s | 2.75 s | 3.3x |
+| forced growth | 2449 | 10 | 1.45 s | 0.56 s | 2.6x |
+| forced growth | 2449 | 1 | 4.23 s | 1.44 s | 2.9x |
+
+Memory fell as well (322 → 253 MiB threaded on the BIC case) because the
+per-node `BitVector` mask is gone. The remaining gap to a CART fit is the
+per-node `leftrows`/`rightrows` vectors and the subtree splice copies.
+`bench/run.jl` now includes the BIC step case.

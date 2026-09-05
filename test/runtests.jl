@@ -23,6 +23,7 @@ using LinearAlgebra
     include("categorical.jl")
     include("softmax.jl")
     include("threads.jl")
+    include("partition.jl")
     include("importance.jl")
     include("shap.jl")
     include("lossfunctions.jl")
