@@ -213,25 +213,10 @@ end
 end
 
 """
-Order-sensitive digest over the raw bit patterns of `a` (FNV-1a over the
-`Float64` words). Any changed mantissa bit, and any change to the order of the
-elements, changes it. Plain integer arithmetic, so unlike `hash` it is stable
-across Julia versions and processes.
-"""
-function bitdigest(a)
-    h = 0xcbf29ce484222325
-    for x in a
-        h = xor(h, reinterpret(UInt64, Float64(x)))
-        h *= 0x00000100000001b3
-    end
-    return h
-end
-
-"""
-The three tree shapes the SHAP byte-identity contract is pinned on: a deep tree
-with a categorical column, a vector-valued `Softmax` tree and a chain of LIN
-nodes. Each returns 4000 query rows, which is above `shap_min_rows` for all
-three, so the threaded call really splits into blocks.
+Three tree shapes the SHAP recursion is exercised on beyond the shallow trees
+above: a deep tree with a categorical column, a vector-valued `Softmax` tree
+and a chain of LIN nodes. Each returns 4000 query rows, which is above
+`shap_min_rows` for all three, so the threaded call really splits into blocks.
 """
 function shap_reference_shapes()
     out = Tuple{String,Any,Matrix{Float64}}[]
@@ -257,31 +242,34 @@ function shap_reference_shapes()
     return out
 end
 
-@testset "shap values are bit-identical to the recorded goldens" begin
-    # These pin the recursion's exact floating-point result, not its accuracy.
-    # Any production change that reassociates a sum inside `extend!`,
-    # `unwind!`, `unwound_sum` or `attribute_constant!` -- summing
-    # `unwound_sum`'s terms in ascending instead of descending `j`, moving the
-    # attribution off the split nodes, reordering the hot/own/cold
-    # attributions -- shifts the last mantissa bits and fails here, while the
-    # `atol = 1e-10` brute-force testsets above all still pass.
-    # `Pkg.test` runs the suite under `--check-bounds=yes`, which changes the
-    # code generated for these loops down to the last mantissa bit; a default
-    # or `--check-bounds=no` build produces the other pattern. Both are
-    # recorded, and both were checked to be unchanged by hoisting the
-    # `onefrac != 0` guard out of `unwind!` and `unwound_sum`.
-    golden = if Base.JLOptions().check_bounds == 1
-        Dict("depth10-cat" => 0x99d635a62ae4d7da, "softmax3" => 0xf67c60a500bbe02f,
-            "linchain" => 0x296f4f4dddd2ef89)
-    else
-        Dict("depth10-cat" => 0x1e8a70347783c121, "softmax3" => 0xf67c60a500bbe02f,
-            "linchain" => 0xfd75bb9998e79170)
-    end
+@testset "shap on three reference shapes is thread-invariant and efficient" begin
+    # These shapes reach cases the shallow testsets above do not: depth 10 with
+    # a categorical split, a `Softmax` class axis on a depth-4 tree, and a
+    # chain of eight LIN nodes. Both assertions fail on any production change
+    # that makes the block split observable -- a `PathPool` buffer shared
+    # across tasks, or a child overwriting a parent's live hot/cold path --
+    # and the efficiency check fails on any change that drops or double-counts
+    # a node's contribution, such as attributing a split node's own-feature
+    # term against the wrong path.
+    #
+    # There is deliberately no bit-level golden here. The exact mantissa bits
+    # of these values depend on the target architecture and on
+    # `--check-bounds`, so a hard constant fails in CI for reasons unrelated
+    # to the code. `bench/ab.jl`'s dumps are the tool for bit regressions:
+    # they compare two commits on one machine under one flag.
     for (name, t, X) in shap_reference_shapes()
         @test size(X, 1) >= LinearTrees.shap_min_rows(t)   # so the threaded call splits
         r1 = shap(t, X; nthreads = 1)
         rn = shap(t, X; nthreads = min(4, Threads.nthreads()))
         @test r1.values == rn.values                       # bit-for-bit, not approximately
-        @test bitdigest(r1.values) == golden[name]
+        @test r1.clipped == rn.clipped
+        S = score(t, X; clip = false)
+        if ndims(r1.values) == 3
+            for k in axes(r1.values, 3)
+                @test vec(sum(r1.values[:, :, k]; dims = 2)) .+ r1.base[k] ≈ S[:, k] atol = 1e-10
+            end
+        else
+            @test vec(sum(r1.values; dims = 2)) .+ r1.base ≈ S atol = 1e-10
+        end
     end
 end

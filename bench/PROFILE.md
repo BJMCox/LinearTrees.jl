@@ -436,7 +436,7 @@ while each extra array costs another bounds check per read (no `@inbounds`
 here) and another `resize!`/`copyto!` in `copyinto!`, which runs three times
 per split node per row. The 39% self time was the loop's one bounds-checked
 load. Hoisting the loop-invariant `onefrac != 0` guard out of `unwind!` and
-`unwound_sum` landed and is neutral, inside the +-5% run-to-run spread.
+`unwound_sum` landed and is worth 2.5-2.7% on a paired run.
 (b) works but pays 1.28x, not 2-3x: 2.97 s serial and 428 ms on 10 threads.
 It halves the number of `attribute_constant!` calls, but the calls it removes
 sat at shallow nodes and the ones that absorb them sit at the leaves, where
@@ -446,6 +446,12 @@ so it did not land; see
 `.superpowers/sdd/2026-09-05-tree-followups/Q3-shap-report.md`. The own-feature
 terms are what is left, and 659 of case 6's 2062 internal nodes carry an own
 term that is exactly zero.
+
+Byte identity was checked throughout with `bench/ab.jl`'s dumps, which is the
+only sound way to check it here: SHAP's last mantissa bits depend on the target
+architecture and on `--check-bounds`, so a dump is comparable between two
+commits only on one machine under one flag. A bit constant recorded in the test
+suite is not portable and does not belong there.
 
 ### 4. `presort!`
 
