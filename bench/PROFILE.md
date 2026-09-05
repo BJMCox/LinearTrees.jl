@@ -443,17 +443,9 @@ from 3827 ms to 2850 ms serial and from 444 ms to 340 ms on ten threads
 `attribute_constant!` calls, but the calls it removes sat at shallow nodes and
 the ones that absorb them sit at the leaves, where `O(depth^2)` is largest.
 
-The change rests on this identity: a constant credited against a split node's
-path equals the same constant credited against both of its child paths, so the
-branch constants can ride down the recursion in a running sum and be
-attributed once per leaf. `visit!`'s docstring names it and
-`.superpowers/sdd/2026-09-05-tree-followups/Q3-shap-report.md` proves it from
-`extend!`'s weight recurrence; `test/shap.jl` pins it on a two-level
+The identity it rests on, and why the own-feature term stays at the node, are
+in `visit!`'s docstring (`src/shap.jl`); `test/shap.jl` pins it on a two-level
 construction with and without an ancestor split on the child's own feature.
-Only the own-feature linear term stays at the node -- its `zerofrac` for the
-split feature is 0, not `cov * izero`, so it is not either child's path and
-pushing it down would cost each leaf one extra path per ancestor split
-feature.
 
 It is not byte-identical: it reassociates, so 6% of case 6's values are
 unchanged and the largest absolute difference against the previous code is
