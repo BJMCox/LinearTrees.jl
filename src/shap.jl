@@ -21,6 +21,59 @@ struct PathElem
     weight::Float64
 end
 
+"""
+    PathPool(depth)
+
+Per-row scratch for the SHAP recursion, indexed by recursion depth. A split
+node at depth `d` builds a hot and a cold path that both stay live across the
+two child recursions, so each depth owns its own pair; the own-path is dead
+once `attribute_constant!` returns, so one scratch per depth is enough. The
+root's path sits outside the depth arrays because `visit!` at depth 1 already
+claims `hot[1]`/`cold[1]`.
+
+One pool per `row_blocks` block: it is mutated for every row, so it must never
+be shared across tasks.
+"""
+struct PathPool
+    hot::Vector{Vector{PathElem}}
+    own::Vector{Vector{PathElem}}
+    cold::Vector{Vector{PathElem}}
+    root::Vector{PathElem}
+end
+
+PathPool(depth::Integer = 0) = ensure_depth!(
+    PathPool(Vector{PathElem}[], Vector{PathElem}[], Vector{PathElem}[], PathElem[]), depth)
+
+function ensure_depth!(pool::PathPool, depth::Integer)
+    while length(pool.hot) < depth
+        push!(pool.hot, PathElem[])
+        push!(pool.own, PathElem[])
+        push!(pool.cold, PathElem[])
+    end
+    return pool
+end
+
+"""
+    shap_depth(tree, k = 1)
+
+Deepest `visit!` recursion the tree can drive, so `PathPool` can be sized once
+per `shap!` call. A LIN node counts a level like any other node, because its
+single child is visited one level down.
+"""
+function shap_depth(tree::LinearTree, k::Integer = 1)
+    n = tree.nodes[k]
+    isleaf(n) && return 1
+    (!iscategorical(n) && n.left == n.right) && return 1 + shap_depth(tree, n.left)
+    return 1 + max(shap_depth(tree, n.left), shap_depth(tree, n.right))
+end
+
+"Refill `dst` with `src`, keeping `dst`'s allocation. Replaces `copy(src)`."
+function copyinto!(dst::Vector{PathElem}, src::Vector{PathElem})
+    resize!(dst, length(src))
+    copyto!(dst, src)
+    return dst
+end
+
 function extend!(path::Vector{PathElem}, zerofrac, onefrac, feature)
     push!(path, PathElem(feature, zerofrac, onefrac, isempty(path) ? 1.0 : 0.0))
     L = length(path)
@@ -99,11 +152,11 @@ function attribute_constant!(φ::AbstractArray{T,3}, path::Vector{PathElem}, v::
     return nothing
 end
 
-"Extend `path` by one element, then dispatch. Called once per row, for the root only -- a split node's own hot/cold recursion already holds an extended path and calls `visit!` on it directly."
-function shap_recurse!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem},
+"Extend the pool's root path by one element, then dispatch. Called once per row, for the root only -- a split node's own hot/cold recursion already holds an extended path and calls `visit!` on it directly."
+function shap_recurse!(φ, tree::LinearTree{T,V}, x, row, k, pool::PathPool,
         zerofrac, onefrac, feature) where {T,V}
-    path = extend!(copy(path), zerofrac, onefrac, feature)
-    visit!(φ, tree, x, row, k, path)
+    path = extend!(empty!(pool.root), zerofrac, onefrac, feature)
+    visit!(φ, tree, x, row, k, path, pool, 1)
     return nothing
 end
 
@@ -111,13 +164,20 @@ end
 Dispatch on node `k` against an already-extended `path`. Split off from
 `shap_recurse!` because a LIN node's single child is reached without adding a
 path dimension for it -- see the LIN branch below.
+
+`path` points into `pool`, at a depth strictly below `depth`, and every path
+this node builds comes from `pool` at `depth`. Children run at `depth + 1`, so
+they cannot touch the hot and cold paths this node keeps live across both
+recursions.
 """
-function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem}) where {T,V}
+function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem},
+        pool::PathPool, depth::Int) where {T,V}
     n = tree.nodes[k]
     if isleaf(n)
         attribute_constant!(φ, path, n.lintercept, row)
         return nothing
     end
+    ensure_depth!(pool, depth)   # shap_depth presizes; this covers a pool built by hand
     j = n.feature
     xraw = T(x[j])
     if !iscategorical(n) && n.left == n.right
@@ -137,10 +197,14 @@ function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem}) wh
         own = n.lcoef * (xc - n.xmean)
         attribute_constant!(φ, path, val, row)
         prev = findfirst(e -> e.feature == j, path)
-        ownpath = prev === nothing ? extend!(copy(path), 0.0, 1.0, j) :
-            extend!(unwind!(copy(path), prev), 0.0, path[prev].onefrac, j)
+        ownpath = copyinto!(pool.own[depth], path)
+        if prev === nothing
+            extend!(ownpath, 0.0, 1.0, j)
+        else
+            extend!(unwind!(ownpath, prev), 0.0, path[prev].onefrac, j)
+        end
         attribute_constant!(φ, ownpath, own, row)
-        visit!(φ, tree, x, row, n.left, path)
+        visit!(φ, tree, x, row, n.left, path, pool, depth + 1)
         return nothing
     end
     covl = tree.nodes[n.left].cover / n.cover; covr = 1 - covl
@@ -167,17 +231,17 @@ function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem}) wh
     # constant part of the taken branch's piece, one level down.  hotpath and
     # coldpath are already the paths the hot/cold recursion needs, so they are
     # passed straight into visit! rather than rebuilt there -- shap_recurse!
-    # would otherwise copy(path) and extend! a second time for the same result.
-    hotpath = extend!(copy(path), hotcov * izero, ione, j)
+    # would otherwise refill a buffer and extend! a second time for the same result.
+    hotpath = extend!(copyinto!(pool.hot[depth], path), hotcov * izero, ione, j)
     attribute_constant!(φ, hotpath, hotval, row)
     # own-feature linear term: only present when j is in the coalition, so
     # zerofrac = 0 -- the term vanishes when j is absent, not weighted by cover
-    ownpath = extend!(copy(path), 0.0, ione, j)
+    ownpath = extend!(copyinto!(pool.own[depth], path), 0.0, ione, j)
     attribute_constant!(φ, ownpath, hotown, row)
-    coldpath = extend!(copy(path), coldcov * izero, 0.0, j)
+    coldpath = extend!(copyinto!(pool.cold[depth], path), coldcov * izero, 0.0, j)
     attribute_constant!(φ, coldpath, coldval, row)
-    visit!(φ, tree, x, row, hot, hotpath)
-    visit!(φ, tree, x, row, cold, coldpath)
+    visit!(φ, tree, x, row, hot, hotpath, pool, depth + 1)
+    visit!(φ, tree, x, row, cold, coldpath, pool, depth + 1)
     return nothing
 end
 
@@ -221,9 +285,11 @@ function shap!(values, clipped::Vector{Bool}, tree::LinearTree{T,V}, X::Abstract
         nthreads = Threads.nthreads()) where {T,V}
     n = size(X, 1)
     fill!(values, 0)
+    depth = shap_depth(tree)
     row_blocks(n, nthreads) do rs
+        pool = PathPool(depth)   # one per block: never shared between tasks
         for i in rs
-            shap_recurse!(values, tree, view(X, i, :), i, 1, PathElem[], 1.0, 1.0, 0)
+            shap_recurse!(values, tree, view(X, i, :), i, 1, pool, 1.0, 1.0, 0)
             clipped[i] = score_row(tree, X, i, true) != score_row(tree, X, i, false)
         end
     end

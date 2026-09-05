@@ -159,6 +159,27 @@ end
     @test r1.clipped == rn.clipped
 end
 
+@testset "shap on a deep tree is efficient and thread-invariant" begin
+    # max_depth = 10 drives the path pool past whatever depth the shallow
+    # testsets reach, so a pool that failed to grow (or that let a child
+    # overwrite a live parent buffer) breaks efficiency here, not above.
+    rng = StableRNG(101)
+    n = 2000
+    lvl = Float64.(rand(rng, 1:6, n))
+    X = hcat(lvl, rand(rng, n, 4))
+    y = sin.(3 .* X[:, 2]) .+ 2 .* X[:, 3] .* (X[:, 4] .> 0.5) .+
+        [l in (1.0, 4.0) ? 1.5 : -0.5 for l in lvl] .+ 0.05 .* randn(rng, n)
+    t = fit_tree(X, y; categorical = [1], max_depth = 10)
+    @test length(t.nodes) > 40
+
+    Xq = X[1:200, :]
+    r1 = shap(t, Xq; nthreads = 1)
+    rn = shap(t, Xq)
+    @test r1.values == rn.values                 # bit-for-bit, not approximately
+    @test r1.clipped == rn.clipped
+    @test vec(sum(r1.values; dims = 2)) .+ r1.base ≈ score(t, Xq; clip = false) atol = 1e-10
+end
+
 @testset "shap base comes from the nodes, not the base field" begin
     # a hand-built tree with a stale `base` (the constructor default pattern) must still satisfy efficiency
     N(; kw...) = LinearTrees.Node{Float64,Float64}(; kw...)
