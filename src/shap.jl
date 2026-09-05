@@ -14,6 +14,15 @@ struct ShapResult{A,B,C}
     clipped::C
 end
 
+"""
+One path element. The four fields stay in one struct rather than in parallel
+arrays on [`PathPool`](@ref): the split was measured on case 6 and lost, by 25%
+with all four fields split apart and by 20% with `weight` alone split out. The
+paths are at most one element per tree level and stay in L1, so there is no
+locality to win, while every extra array costs another bounds check per read
+(this package forbids `@inbounds`) and another `resize!`/`copyto!` pair in
+`copyinto!`, which runs three times per split node per row.
+"""
 struct PathElem
     feature::Int
     zerofrac::Float64
@@ -79,13 +88,17 @@ function unwind!(path::Vector{PathElem}, i)
     n = path[L].weight
     onefrac = path[i].onefrac; zerofrac = path[i].zerofrac
     # weight recompute runs the whole path, not just down to i: removing
-    # position i changes every surviving weight, so the range must be full
-    for j in (L - 1):-1:1
-        if onefrac != 0
+    # position i changes every surviving weight, so the range must be full.
+    # `onefrac` does not change inside the loop, so the guard is hoisted out
+    # of it -- the two arms are the same arithmetic in the same order.
+    if onefrac != 0
+        for j in (L - 1):-1:1
             t = path[j].weight
             path[j] = PathElem(path[j].feature, path[j].zerofrac, path[j].onefrac, n * L / (j * onefrac))
             n = t - path[j].weight * zerofrac * (L - j) / L
-        else
+        end
+    else
+        for j in (L - 1):-1:1
             path[j] = PathElem(path[j].feature, path[j].zerofrac, path[j].onefrac, path[j].weight * L / (zerofrac * (L - j)))
         end
     end
@@ -101,13 +114,15 @@ function unwound_sum(path::Vector{PathElem}, i)
     n = path[L].weight
     onefrac = path[i].onefrac; zerofrac = path[i].zerofrac
     total = 0.0
-    # same full-path range as unwind!: see note there
-    for j in (L - 1):-1:1
-        if onefrac != 0
+    # same full-path range and hoisted guard as unwind!: see note there
+    if onefrac != 0
+        for j in (L - 1):-1:1
             t = n * L / (j * onefrac)
             total += t
             n = path[j].weight - t * zerofrac * (L - j) / L
-        else
+        end
+    else
+        for j in (L - 1):-1:1
             total += path[j].weight * L / (zerofrac * (L - j))
         end
     end

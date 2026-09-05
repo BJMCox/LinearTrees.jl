@@ -427,6 +427,26 @@ times at every split node. Estimated 2-3x.
 the per-branch linear increments are exactly why the attribution sits at the
 nodes. Its own stream.
 
+**Measured** Both estimates were wrong. (a) loses: four parallel arrays cost
+5.68 s serial on case 6 against 3.84 s for the single `Vector{PathElem}`, and
+4.75 s with an explicit length and spare capacity to keep `resize!` out of the
+hot path; splitting only `weight` out costs 20%. A path holds at most one
+element per tree level, so it never leaves L1 and there is no locality to win,
+while each extra array costs another bounds check per read (no `@inbounds`
+here) and another `resize!`/`copyto!` in `copyinto!`, which runs three times
+per split node per row. The 39% self time was the loop's one bounds-checked
+load. Hoisting the loop-invariant `onefrac != 0` guard out of `unwind!` and
+`unwound_sum` landed and is neutral, inside the +-5% run-to-run spread.
+(b) works but pays 1.28x, not 2-3x: 2.97 s serial and 428 ms on 10 threads.
+It halves the number of `attribute_constant!` calls, but the calls it removes
+sat at shallow nodes and the ones that absorb them sit at the leaves, where
+`O(depth^2)` is largest. It is also not byte-identical -- 6% of case 6's
+values are unchanged, max absolute difference 3.1e-14 on values up to 2.2 --
+so it did not land; see
+`.superpowers/sdd/2026-09-05-tree-followups/Q3-shap-report.md`. The own-feature
+terms are what is left, and 659 of case 6's 2062 internal nodes carry an own
+term that is exactly zero.
+
 ### 4. `presort!`
 
 **Where** `src/fit.jl:168-175`.

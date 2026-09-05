@@ -211,3 +211,77 @@ end
     LinearTrees.row_blocks(_ -> Threads.atomic_add!(nblocks, 1), n, nt; minrows = LinearTrees.shap_min_rows(t))
     @test nblocks[] == nt
 end
+
+"""
+Order-sensitive digest over the raw bit patterns of `a` (FNV-1a over the
+`Float64` words). Any changed mantissa bit, and any change to the order of the
+elements, changes it. Plain integer arithmetic, so unlike `hash` it is stable
+across Julia versions and processes.
+"""
+function bitdigest(a)
+    h = 0xcbf29ce484222325
+    for x in a
+        h = xor(h, reinterpret(UInt64, Float64(x)))
+        h *= 0x00000100000001b3
+    end
+    return h
+end
+
+"""
+The three tree shapes the SHAP byte-identity contract is pinned on: a deep tree
+with a categorical column, a vector-valued `Softmax` tree and a chain of LIN
+nodes. Each returns 4000 query rows, which is above `shap_min_rows` for all
+three, so the threaded call really splits into blocks.
+"""
+function shap_reference_shapes()
+    out = Tuple{String,Any,Matrix{Float64}}[]
+
+    rng = StableRNG(101)
+    n = 4000
+    lvl = Float64.(rand(rng, 1:6, n))
+    X = hcat(lvl, rand(rng, n, 4))
+    y = sin.(3 .* X[:, 2]) .+ 2 .* X[:, 3] .* (X[:, 4] .> 0.5) .+
+        [l in (1.0, 4.0) ? 1.5 : -0.5 for l in lvl] .+ 0.05 .* randn(rng, n)
+    push!(out, ("depth10-cat", fit_tree(X, y; categorical = [1], max_depth = 10), X))
+
+    rng = StableRNG(23)
+    X = randn(rng, n, 3)
+    y = [X[i, 1] > 0 ? 1 : X[i, 2] > 0 ? 2 : 3 for i in 1:n]
+    push!(out, ("softmax3", fit_tree(X, y, Softmax(3); max_depth = 4), X))
+
+    rng = StableRNG(77)
+    X = rand(rng, n, 3)
+    y = 2 .* X[:, 1] .+ 3 .* X[:, 2] .- X[:, 3] .+ 0.05 .* randn(rng, n)
+    t = fit_tree(X, y; rule = MinDeviance((LIN,)), max_lin_chain = 8, max_depth = 8, truncate = false)
+    push!(out, ("linchain", t, X))
+    return out
+end
+
+@testset "shap values are bit-identical to the recorded goldens" begin
+    # These pin the recursion's exact floating-point result, not its accuracy.
+    # Any production change that reassociates a sum inside `extend!`,
+    # `unwind!`, `unwound_sum` or `attribute_constant!` -- summing
+    # `unwound_sum`'s terms in ascending instead of descending `j`, moving the
+    # attribution off the split nodes, reordering the hot/own/cold
+    # attributions -- shifts the last mantissa bits and fails here, while the
+    # `atol = 1e-10` brute-force testsets above all still pass.
+    # `Pkg.test` runs the suite under `--check-bounds=yes`, which changes the
+    # code generated for these loops down to the last mantissa bit; a default
+    # or `--check-bounds=no` build produces the other pattern. Both are
+    # recorded, and both were checked to be unchanged by hoisting the
+    # `onefrac != 0` guard out of `unwind!` and `unwound_sum`.
+    golden = if Base.JLOptions().check_bounds == 1
+        Dict("depth10-cat" => 0x99d635a62ae4d7da, "softmax3" => 0xf67c60a500bbe02f,
+            "linchain" => 0x296f4f4dddd2ef89)
+    else
+        Dict("depth10-cat" => 0x1e8a70347783c121, "softmax3" => 0xf67c60a500bbe02f,
+            "linchain" => 0xfd75bb9998e79170)
+    end
+    for (name, t, X) in shap_reference_shapes()
+        @test size(X, 1) >= LinearTrees.shap_min_rows(t)   # so the threaded call splits
+        r1 = shap(t, X; nthreads = 1)
+        rn = shap(t, X; nthreads = min(4, Threads.nthreads()))
+        @test r1.values == rn.values                       # bit-for-bit, not approximately
+        @test bitdigest(r1.values) == golden[name]
+    end
+end
