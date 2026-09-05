@@ -56,10 +56,8 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     isempty(keep) && throw(ArgumentError("total weight must be positive"))
     Xm = Matrix{T}(X[keep, :]); yv = Vector{T}(y[keep]); w = w[keep]
     all(isfinite, Xm) || throw(ArgumentError("X contains NaN or Inf"))
-    n = length(keep)
-    V = coeftype(loss, T)
     nlevels = zeros(Int, p)
-    iscat = falses(p)
+    iscat = zeros(Bool, p)
     for j in categorical
         1 <= j <= p || throw(ArgumentError("categorical column $j is outside 1:$p"))
         col = view(Xm, :, j)
@@ -68,6 +66,23 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         nlevels[j] = Int(maximum(col))
         iscat[j] = true
     end
+    return _fit_tree(Xm, yv, w, loss, rule, coeftype(loss, T), collect(Int, categorical), iscat, nlevels;
+        max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
+        nthreads, niter)
+end
+
+"""
+The body of `fit_tree` once every argument is concrete: `Xm::Matrix{T}`,
+`yv`/`w::Vector{T}`, a concrete loss and rule, and the coefficient type `V`.
+A function barrier, so growth specializes on those types instead of
+re-dispatching on them at run time in every node. `fit_tree` stays the
+validating front end.
+"""
+function _fit_tree(Xm::Matrix{T}, yv::Vector{T}, w::Vector{T}, loss::L, rule::R, ::Type{V},
+        categorical::Vector{Int}, iscat::Vector{Bool}, nlevels::Vector{Int};
+        max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
+        nthreads, niter) where {T,V,L<:Loss,R<:SelectionRule}
+    n, p = size(Xm)
     f0 = V(initscore(loss, yv, w))
     # every `scorebound` method returns bounds in its own working type (often
     # `Float64`, regardless of `V`), so convert here rather than trust each method
@@ -75,9 +90,9 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     f = fill(clampscore(f0, lo, hi), n)
     idx = Matrix{Int32}(undef, n, p)
     presort!(idx, Xm, nthreads)
-    st = FitState{T,V,typeof(loss),typeof(rule)}(Xm, yv, w, f, zeros(V, n), zeros(V, n), zeros(V, n), idx, zeros(Bool, n),
+    st = FitState{T,V,L,R}(Xm, yv, w, f, zeros(V, n), zeros(V, n), zeros(V, n), idx, zeros(Bool, n),
         [Scratch{T,V}(n) for _ in 1:nthreads], [Vector{Int32}(undef, n) for _ in 1:nthreads],
-        Node{T,V}[], UInt64[], collect(Int, categorical), iscat, nlevels, loss, rule, lo, hi, max_depth, T(min_fit), T(min_leaf),
+        Node{T,V}[], UInt64[], categorical, iscat, nlevels, loss, rule, lo, hi, max_depth, T(min_fit), T(min_leaf),
         T(min_sum_hessian), max_lin_chain, truncate, nthreads, niter)
     rows = collect(Int32(1):Int32(n))
     refresh!(st, rows)
@@ -90,9 +105,9 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         rintercept = st.nodes[1].rintercept + f0c)
     # `expected_score` only reads `nodes`/`catmasks` (see shap.jl), so build once with
     # a placeholder base to get the real one, the empty-coalition value (spec line 669-670)
-    prelim = LinearTree{T,V,typeof(loss)}(st.nodes, st.catmasks, loss, lo, hi, zero(V), p, truncate)
+    prelim = LinearTree{T,V,L}(st.nodes, st.catmasks, loss, lo, hi, zero(V), p, truncate)
     base = expected_score(prelim)
-    return LinearTree{T,V,typeof(loss)}(st.nodes, st.catmasks, loss, lo, hi, base, p, truncate)
+    return LinearTree{T,V,L}(st.nodes, st.catmasks, loss, lo, hi, base, p, truncate)
 end
 
 "Stable per-feature sort orders. Features are independent, so this threads over columns."
@@ -207,7 +222,7 @@ function partition!(idx::Matrix{Int32}, span::UnitRange{Int}, leftrows::Abstract
                 nl
             end for (tid, ch) in zip(tids, chunks)]
         for t in tasks
-            nleft = fetch(t)
+            nleft = fetch(t)::Int   # `fetch` infers `Any`; without this the span arithmetic dispatches at run time
         end
     else
         perm = perms[first(tids)]
@@ -348,7 +363,9 @@ function best_split(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, tids::U
     tasks = [Threads.@spawn best_split_serial(st, rows, span, dmin, ch, tid) for (tid, ch) in zip(tids, chunks)]
     best = nocandidate(T, V); bestj = 0; bestleft = Int[]
     for t in tasks
-        c, j, lc = fetch(t)
+        # `fetch` infers `Any`; without this the winning candidate stays boxed and
+        # `grow_subtree`'s whole body dispatches on it once per node
+        c, j, lc = fetch(t)::Tuple{Candidate{T,V},Int,Vector{Int}}
         if c.score < best.score || (c.score == best.score && j != 0 && (bestj == 0 || j < bestj))
             best = c; bestj = j; bestleft = lc
         end
@@ -370,6 +387,14 @@ leafnode(st::FitState{T,V}, rows, b) where {T,V} =
 
 "Depth gate for sibling-subtree parallelism: a node shallower than this may spawn its two children as separate tasks."
 const SUBTREE_PARALLEL_DEPTH = 3
+
+"""
+What `grow_subtree` returns: the subtree's own node vector and mask pool.
+Named so the recursive calls can assert it -- inference gives up on a
+self-recursive function that early-returns, and without the assertion every
+splice, `vcat` and `shift_subtree` dispatches at run time, once per node.
+"""
+const Subtree{T,V} = Tuple{Vector{Node{T,V}},Vector{UInt64}}
 
 """
 Add `idxoff` to every non-zero child index and `maskoff` to every non-zero
@@ -430,7 +455,7 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
             rcoef = best.lcoef, rintercept = best.lintercept, xmin, xmax, cover = nw, xmean, gain, model = LIN)
         me = refit_node(st, me, rows, first(tids))
         update_score!(st, rows, me); refresh!(st, rows)
-        cnodes, cmasks = grow_subtree(st, rows, span, depth, linchain + 1, tids)
+        cnodes, cmasks = grow_subtree(st, rows, span, depth, linchain + 1, tids)::Subtree{T,V}
         me = Node{T,V}(me; left = Int32(2), right = Int32(2))
         nodes = vcat(Node{T,V}[me], shift_subtree(cnodes, Int32(1), Int32(0)))
         return nodes, cmasks
@@ -456,11 +481,11 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
     if st.nthreads > 1 && depth < SUBTREE_PARALLEL_DEPTH && length(tids) >= 2
         mid = first(tids) + length(tids) ÷ 2 - 1
         task = Threads.@spawn grow_subtree(st, rightrows, rspan, depth + 1, 0, (mid + 1):last(tids))
-        lnodes, lmasks = grow_subtree(st, leftrows, lspan, depth + 1, 0, first(tids):mid)
-        rnodes, rmasks = fetch(task)
+        lnodes, lmasks = grow_subtree(st, leftrows, lspan, depth + 1, 0, first(tids):mid)::Subtree{T,V}
+        rnodes, rmasks = fetch(task)::Subtree{T,V}
     else
-        lnodes, lmasks = grow_subtree(st, leftrows, lspan, depth + 1, 0, tids)
-        rnodes, rmasks = grow_subtree(st, rightrows, rspan, depth + 1, 0, tids)
+        lnodes, lmasks = grow_subtree(st, leftrows, lspan, depth + 1, 0, tids)::Subtree{T,V}
+        rnodes, rmasks = grow_subtree(st, rightrows, rspan, depth + 1, 0, tids)::Subtree{T,V}
     end
     nleft = Int32(length(lnodes)); nmine = Int32(length(masks)); nlmasks = Int32(length(lmasks))
     me = Node{T,V}(me; left = Int32(2), right = Int32(2) + nleft)
