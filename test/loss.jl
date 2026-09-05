@@ -1,4 +1,6 @@
-using StableRNGs
+using StableRNGs, StaticArrays
+using Statistics: median
+import Distributions   # not `using`: Distributions exports its own `Logistic`, colliding with LinearTrees's
 
 pointloss(::MSE, y, f) = (y - f)^2 / 2
 pointloss(l::Huber, y, f) = (r = y - f; abs(r) <= l.δ ? r^2 / 2 : l.δ * (abs(r) - l.δ / 2))
@@ -100,4 +102,101 @@ end
     @test isfinite(deviance(Logistic(), [1.0], [800.0], [1.0]))
     @test deviance(Logistic(), [1.0], [800.0], [1.0]) ≈ 0 atol = 1e-6
     @test linkinv(Logistic(), 0.0) == 0.5 && linkinv(Poisson(), 0.0) == 1.0
+end
+
+@testset "deviance differences match Distributions.jl logpdf (C1)" begin
+    # `deviance(loss, y, f1, w) - deviance(loss, y, f2, w)` must equal
+    # `-2 Σ w (logpdf(D(f1), y) - logpdf(D(f2), y))` for the matching
+    # Distributions.jl model `D`. Catches a wrong factor of 2, a dropped
+    # weight, or a wrong sign in `pointloss`.
+    function devdiff(loss, D, y, f1, f2, w)
+        lhs = deviance(loss, y, f1, w) - deviance(loss, y, f2, w)
+        rhs = -2 * sum(w[i] * (Distributions.logpdf(D(f1[i]), y[i]) - Distributions.logpdf(D(f2[i]), y[i])) for i in eachindex(y))
+        return lhs, rhs
+    end
+
+    w = [1.0, 2.5, 0.3, 4.0]
+    f1 = [0.1, -0.3, 0.5, 1.2]
+    f2 = [0.4, 0.2, -0.1, 0.9]
+
+    @testset "Poisson" begin
+        y = [0.0, 1.0, 3.0, 5.0]
+        lhs, rhs = devdiff(Poisson(), f -> Distributions.Poisson(exp(f)), y, f1, f2, w)
+        @test lhs ≈ rhs atol = 1e-10
+    end
+    @testset "Gamma" begin
+        y = [0.5, 2.0, 1.3, 3.7]
+        lhs, rhs = devdiff(Gamma(), f -> Distributions.Gamma(1.0, exp(f)), y, f1, f2, w)
+        @test lhs ≈ rhs atol = 1e-10
+    end
+    @testset "NegBin" begin
+        θ = 2.0
+        y = [0.0, 1.0, 4.0, 2.0]
+        lhs, rhs = devdiff(NegBin(θ), f -> Distributions.NegativeBinomial(θ, θ / (exp(f) + θ)), y, f1, f2, w)
+        @test lhs ≈ rhs atol = 1e-10
+    end
+    @testset "Logistic" begin
+        y = [0.0, 1.0, 1.0, 0.0]
+        lhs, rhs = devdiff(Logistic(), f -> Distributions.Bernoulli(1 / (1 + exp(-f))), y, f1, f2, w)
+        @test lhs ≈ rhs atol = 1e-10
+    end
+    @testset "Softmax(3)" begin
+        loss = Softmax(3)
+        y = [1, 2, 3, 1]
+        sf1 = [SVector(0.2, -0.1), SVector(-0.3, 0.4), SVector(0.1, 0.1), SVector(0.5, -0.5)]
+        sf2 = [SVector(-0.1, 0.3), SVector(0.2, -0.2), SVector(-0.4, 0.6), SVector(0.0, 0.0)]
+        D(f) = Distributions.Categorical(collect(LinearTrees.probs(loss, f)))
+        lhs, rhs = devdiff(loss, D, y, sf1, sf2, w)
+        @test lhs ≈ rhs atol = 1e-10
+    end
+    @testset "MSE" begin
+        y = [0.5, -1.2, 3.3, 0.0]
+        lhs, rhs = devdiff(MSE(), f -> Distributions.Normal(f, 1.0), y, f1, f2, w)
+        @test lhs ≈ rhs atol = 1e-10
+    end
+end
+
+@testset "initscore and scorebound for Huber, MAD, Gamma, Tweedie, NegBin (C2)" begin
+    y = [1.0, 5.0, 100.0]; w = [1.0, 2.0, 0.5]
+    @test initscore(Huber(1.0), y, w) ≈ sum(w .* y) / sum(w)   # Huber initscore diverging from the weighted mean
+
+    # integer weights equal row duplication: weighted median against Statistics.median.
+    # Holds away from a cumulative-weight tie...
+    yq = [3.0, 1.0, 4.0, 1.0, 5.0]
+    iw_odd = [2, 1, 2, 1, 1]   # total 7: no cumulative tie at the half-point
+    dup_odd = reduce(vcat, [fill(yq[i], iw_odd[i]) for i in eachindex(yq)])
+    @test initscore(MAD(), yq, Float64.(iw_odd)) ≈ median(dup_odd)
+
+    # ...but not at one: DEFECT, reported not fixed (no src/ changes in this
+    # brief). `wquantile` (used by `initscore(MAD,...)`/`initscore(Quantile,...)`)
+    # returns the first value whose cumulative weight reaches the target, with no
+    # tie-average at an exact boundary; `median_abs` (the IRLS ε floor's weighted
+    # median) does average there. The two disagree under integer-weight
+    # duplication exactly at a half-point tie: `wquantile` gives 3.0, the true
+    # (duplicated-row) median is 3.5.
+    iw_tie = [2, 1, 3, 1, 1]   # total 8: cumulative weight lands exactly at half (4)
+    dup_tie = reduce(vcat, [fill(yq[i], iw_tie[i]) for i in eachindex(yq)])
+    @test_broken initscore(MAD(), yq, Float64.(iw_tie)) ≈ median(dup_tie)
+
+    yg = [1.0, 2.0, 3.0]; wg = [1.0, 1.0, 2.0]
+    @test initscore(Gamma(), yg, wg) ≈ log(sum(wg .* yg) / sum(wg))   # Gamma initscore missing the log link
+
+    y0 = zeros(3); wu = ones(3)
+    @test initscore(Tweedie(1.5), y0, wu) == log(1e-6)   # Tweedie floor case y .= 0
+    @test initscore(NegBin(2.0), y0, wu) == log(1e-6)    # NegBin floor case y .= 0
+    yt = [1.0, 2.0, 3.0]
+    @test initscore(Tweedie(1.5), yt, wu) ≈ log(sum(wu .* yt) / sum(wu))
+    @test initscore(NegBin(2.0), yt, wu) ≈ log(sum(wu .* yt) / sum(wu))
+
+    # identity losses: padded range formula
+    @test scorebound(Huber(1.0), [0.0, 2.0]) == (-2.0, 4.0)   # B = 1, factor 3
+    @test scorebound(MAD(), [0.0, 2.0]; truncation_factor = 1) == (0.0, 2.0)
+
+    # log-link losses: S = log(max(maximum(y), 1)) + 3
+    @test scorebound(Gamma(), [0.1, 5.0]) == (-(log(5) + 3), log(5) + 3)
+    @test scorebound(Gamma(), [0.1, 0.5]) == (-3.0, 3.0)   # maximum(y) < 1 gives S = 3
+    @test scorebound(Tweedie(1.5), [0.0, 5.0]) == (-(log(5) + 3), log(5) + 3)
+    @test scorebound(Tweedie(1.5), [0.0, 0.5]) == (-3.0, 3.0)
+    @test scorebound(NegBin(2.0), [0.0, 5.0]) == (-(log(5) + 3), log(5) + 3)
+    @test scorebound(NegBin(2.0), [0.0, 0.5]) == (-3.0, 3.0)
 end
