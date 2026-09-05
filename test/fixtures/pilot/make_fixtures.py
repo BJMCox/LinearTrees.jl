@@ -80,7 +80,18 @@ def walk(node, data, Tree, out):
         entry["threshold"] = None
     entry["lm_l"] = None if node.lm_l is None else [float(v) for v in node.lm_l]
     entry["lm_r"] = None if node.lm_r is None else [float(v) for v in node.lm_r]
-    entry["range"] = None if node.interval is None else [float(v) for v in node.interval]
+    # best_split never assigns `interval` in its categorical branch, so a
+    # "pconc" node keeps the function's initial [-inf, inf] default -- not
+    # meaningful (there is no numeric range for a categorical split), and
+    # not valid strict JSON (Infinity/-Infinity aren't JSON tokens). Record
+    # null there instead, like `pivot_c` below.
+    entry["range"] = None if node.interval is None or node.node == "pconc" else [float(v) for v in node.interval]
+    # Only "pconc" (categorical) nodes carry a meaningful pivot_c (left-level
+    # set); omit the key entirely for every other kind, so the five original
+    # fixtures -- none of which have a categorical column -- regenerate
+    # byte-identical to before this field existed.
+    if node.node == "pconc":
+        entry["pivot_c"] = [int(v) for v in node.pivot_c]
     out.append(entry)
     left_data, right_data = Tree._get_child_data(data, node)
     walk(node.left, left_data, Tree, out)
@@ -128,6 +139,67 @@ N, P = 300, 3
 MAX_DEPTH, MIN_SAMPLE_LEAF, MIN_SAMPLE_SPLIT, TRUNCATION_FACTOR = 6, 5, 10, 3
 
 
+# --- Extra fixtures (stream D): each owns its own shape, y-generator, and
+# fit-kwarg overrides, since none of them share DESIGNS' fixed (N, P, uniform
+# -2..2) shape. Each `gen` returns (X, y), already rounded to 6 decimals.
+
+
+def gen_twoslope(seed):
+    """Root should pick 'plin': a two-slope line with a discontinuity at 0.5,
+    plus two uninformative noise features."""
+    rng = np.random.default_rng(seed)
+    n = 400
+    x1 = rng.uniform(0, 1, size=n)
+    noise = rng.uniform(-2, 2, size=(n, 2))
+    X = np.c_[x1, noise].round(6)
+    y = np.where(X[:, 0] < 0.5, 3 * X[:, 0], 4 - 2 * X[:, 0])
+    y = (y + rng.normal(scale=0.05, size=n)).round(6)
+    return X, y
+
+
+def gen_deep(seed):
+    """Many step levels on feature 0 plus a coarser step on feature 1, so the
+    unconstrained reference tree grows to depth 9 -- fit with max_depth=3 so
+    the cap actually binds and truncates it to depth 3."""
+    rng = np.random.default_rng(seed)
+    n = 600
+    X = rng.uniform(-2, 2, size=(n, 2)).round(6)
+    cuts0 = np.array([-1.6, -1.2, -0.8, -0.4, 0.0, 0.4, 0.8, 1.2, 1.6])
+    vals0 = np.array([-4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+    y = vals0[np.searchsorted(cuts0, X[:, 0], side="right")]
+    y = y + np.where(X[:, 1] < 0, -0.5, 0.5)
+    y = (y + rng.normal(scale=0.05, size=n)).round(6)
+    return X, y
+
+
+def gen_categorical(seed):
+    """One categorical column (4 levels, coded 1..4 to match
+    LinearTrees.jl's 1-based codes directly, no remapping needed) driving a
+    step, plus one continuous column."""
+    rng = np.random.default_rng(seed)
+    n = 400
+    lvl = rng.integers(1, 5, size=n)  # levels 1..4
+    xc = rng.uniform(-2, 2, size=n).round(6)
+    level_means = np.array([np.nan, -2.0, 1.0, -2.0, 3.0])  # index by level; 1,3 low, 2,4 high
+    y = level_means[lvl] + 0.3 * xc
+    y = (y + rng.normal(scale=0.05, size=n)).round(6)
+    X = np.c_[lvl.astype(float), xc]
+    return X, y
+
+
+EXTRA_DESIGNS = [
+    dict(name="twoslope", seed=6, gen=gen_twoslope, fit_kwargs={}, categorical=np.array([-1])),
+    dict(name="deep", seed=7, gen=gen_deep, fit_kwargs={"max_depth": 3}, categorical=np.array([-1])),
+    dict(
+        name="categorical",
+        seed=8,
+        gen=gen_categorical,
+        fit_kwargs={},
+        categorical=np.array([0], dtype=np.int64),
+    ),
+]
+
+
 def git_head(path):
     try:
         return subprocess.check_output(
@@ -168,6 +240,50 @@ def main():
                 "min_leaf": MIN_SAMPLE_LEAF,
                 "min_fit": MIN_SAMPLE_SPLIT,
                 "truncation_factor": TRUNCATION_FACTOR,
+            },
+            "seed": seed,
+            "sha256": {
+                "X": hashlib.sha256(X.tobytes()).hexdigest(),
+                "y": hashlib.sha256(y.tobytes()).hexdigest(),
+            },
+            "X": X.tolist(),
+            "y": y.tolist(),
+            "nodes": nodes,
+            "pred": pred.tolist(),
+        }
+
+        out_path = os.path.join(OUT_DIR, f"{name}.json")
+        with open(out_path, "w") as f:
+            json.dump(fixture, f)
+        print(f"wrote {out_path} ({len(nodes)} split nodes: {[n['kind'] for n in nodes]})")
+
+    for spec in EXTRA_DESIGNS:
+        name, seed, gen = spec["name"], spec["seed"], spec["gen"]
+        X, y = gen(seed)
+
+        # Same reproducibility note as the DESIGNS loop above: seeds the
+        # legacy global NumPy RNG that random_sample draws from.
+        np.random.seed(seed)
+        params = dict(
+            max_depth=MAX_DEPTH,
+            min_sample_split=MIN_SAMPLE_SPLIT,
+            min_sample_leaf=MIN_SAMPLE_LEAF,
+            truncation_factor=TRUNCATION_FACTOR,
+        )
+        params.update(spec["fit_kwargs"])
+        model = Pilot.PILOT(**params)
+        model.fit(X, y, categorical=spec["categorical"])
+
+        nodes = []
+        walk(model.model_tree, X, Tree, nodes)
+        pred = model.predict(X)
+
+        fixture = {
+            "params": {
+                "max_depth": params["max_depth"],
+                "min_leaf": params["min_sample_leaf"],
+                "min_fit": params["min_sample_split"],
+                "truncation_factor": params["truncation_factor"],
             },
             "seed": seed,
             "sha256": {
