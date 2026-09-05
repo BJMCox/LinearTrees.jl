@@ -674,3 +674,107 @@ bound argument is available -- `span ⊆ 1:n`, `st.idx` is `n x p` with
 fills the column with a `sortperm` and `partition!` only permutes within a
 span, and `m` runs from 1 to `length(span) ≤ n` over scratch buffers of length
 `n` -- but the gain does not pay for the loss of the check.
+
+## The allocation and presort pass
+
+Protocol for every number in this section: Apple M4 Pro, Julia 1.12.7, quiet
+machine, `@benchmark` with `samples = 5, evals = 1`, the minimum quoted, and
+the two arms run alternately from the same source tree three times each with
+only `src/fit.jl` toggled between them. Case 1 is `bench/cases.jl`'s
+`case1_data` at `max_depth = 12`, `bench/ab.jl`'s first row. The bar for a
+change is 3% of runtime or 20% of allocated bytes.
+
+### 1. `presort!` by radix sort (ranked target 4, done)
+
+`sortperm(view(X, :, j); alg = MergeSort)` sorted an index vector through
+indirect comparisons and allocated a permutation, a merge buffer and an
+`Int32` conversion per column: 275 ms of case 1's 1350 ms serial and 48 MB of
+its 100 MB. `radix_key` maps a float to an unsigned integer of the same width
+so that a least-significant-byte first radix sort orders exactly as `isless`
+does, `-0.0` below `0.0` included, and each pass is a counting sort, so equal
+values keep ascending row index. Bytes whose value is the same on every row
+are skipped. One `RadixBuffers` set serves a whole column block.
+
+| | base | radix | change |
+|---|---|---|---|
+| case 1, 1 thread | 1349.6 ms | 1123.4 ms | **-16.8%** |
+| case 1, 1 thread, bytes | 100.46 MB | 57.13 MB | **-43.1%** |
+| case 1, 10 threads | 181.6 ms | 162.2 ms | **-10.7%** |
+| wide (n = 50_000, p = 60), 1 thread | 972.2 ms | 828.0 ms | **-14.8%** |
+| wide, 1 thread, bytes | 61.17 MB | 25.07 MB | **-59.0%** |
+
+The permutation is identical to the one `sortperm` produced, so the fitted
+trees are unchanged bit for bit. An element type with no radix key keeps the
+comparison sort.
+
+### 2. Child row vectors and level buffers (ranked targets 5 and 6, done)
+
+Measured separately, neither clears the 20% bar; together they do, and both
+leave the fitted trees bit for bit unchanged. Case 1, 1 thread, against the
+same base:
+
+| | bytes | allocations |
+|---|---|---|
+| base | 57.13 MB | 70_354 |
+| child row slices only | 46.97 MB (-17.8%) | 64_256 |
+| level buffers only | 55.15 MB (-3.5%) | 8_643 |
+| both | 44.99 MB (**-21.2%**) | 2_545 |
+
+Runtime is unchanged in every arm, within 0.3%. At ten threads the pair takes
+case 1 from about 204 MB to about 194 MB; the fit's own scratch sets dominate
+there.
+
+The claim in ranked target 5 -- that after `partition!` the children's rows are
+`idx[lspan, 1]` and `idx[rspan, 1]` **in the parent's row order** -- is false.
+`idx`'s first column is in feature-1 order, and the row order every node's sums
+run over is the root's `1:n` filtered stably down the tree. Taking the two
+halves of `idx[·, 1]` as the child row sets does give the right row *sets*, and
+the tree structure is identical, but it changes the order of every float sum.
+On three of the four stored partition fixtures that is rounding (max 1.7e-10 on
+the coefficients, predictions equal to 2.2e-16). On `quantile_weighted` it is
+not: 193 of 193 nodes move, the largest coefficient moves by 1.04 and the
+largest prediction by 0.119. The cause is a genuinely non-unique solution --
+a weighted quantile at tau = 0.3 with integer weights, a quarter of them zero,
+has plateaus, so IRLS lands on a different point of the optimal set. The
+achieved weighted pinball loss is 2231.649 against the fixture's 2231.811, so
+neither fit is better; they are two solutions to the same problem.
+
+`FitState.roworder` avoids the question: it holds the node's rows in the order
+its sums run over, `partition!` splits it in place with the same stable
+partition, and the two halves are then exactly the vectors the old code built.
+
+The level buffers give back 61_711 allocations of case 1's 70_354 -- the empty
+`Int[]` `best_split_serial` created per feature -- but only 1.97 MB, and case 2
+has eight levels, so its eight per-node arrays are worth 1.7% of its bytes. The
+same design with 200 levels is a different picture: 54.58 MB and 101_298
+allocations become 26.60 MB and 20_455, **-51.3%** of bytes, with runtime
+unchanged. The change pays on high-cardinality categorical columns and is
+neutral elsewhere.
+
+### 3. The LIN chain's re-gather: measured, not committed
+
+After a `lin` node `grow_subtree` recurses on the same rows and the same span,
+and `best_split` gathers every feature again. `st.idx` has not moved and
+`sc.ws` has not changed either -- only `z` and `h` did, in `refresh!` -- so in
+principle the `xs` copy could be skipped on the second pass. It is not worth
+it, on two counts.
+
+The size of the prize, case 1, `-t 1`: `gather!` is 15.2% of the fit's samples
+(669 of 4414, sampling profiler, three fits at 0.5 ms). The `xs` store is 41.9%
+of one gather pass (0.460 ms against 0.267 ms for the same loop without it,
+n = 200_000, minimum of 200 samples). Weighted by rows, `lin` nodes are 12.3%
+of all gather work -- 1057 of 2432 split nodes, but the smaller ones. The
+product is **0.8%** of the fit, against a 3% bar. On the `test/shap.jl`
+`linchain` design scaled to n = 200_000 (`MinDeviance((LIN,))`,
+`max_lin_chain = 8`, `max_depth = 8`, p = 3), where seven of the eight gathers
+per feature are repeats, `gather!` is 11.4% of the fit and the bound is 4.2%
+-- but that design is not in `bench/cases.jl`.
+
+The cost, second: `sc.xs` holds one feature at a time, and feature `j + 1`
+overwrites what feature `j` left there. Keeping `xs` across a `lin` recursion
+therefore needs one buffer per feature, `p * |rows|` doubles -- 32 MB for case
+1's root against the 1.6 MB it uses today -- which is the opposite of what the
+rest of this pass did. Nothing committed.
+
+`max_lin_chain = 8` on case 1 is also a no-op: the fit reaches a chain of at
+most eight anyway, so it grows the same 3808 nodes in the same 1125 ms.
