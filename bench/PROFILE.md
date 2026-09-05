@@ -707,6 +707,27 @@ The permutation is identical to the one `sortperm` produced, so the fitted
 trees are unchanged bit for bit. An element type with no radix key keeps the
 comparison sort.
 
+Each pass reads and writes a 256-counter table whatever `n` is, so the radix
+sort loses on a short column. `presort!` on n x 20 uniform `Float64`,
+`-t 1`, minimum of five `@benchmark` samples at 20 evals each:
+
+| n | comparison | radix | radix / comparison |
+|---|---|---|---|
+| 64 | 9.3 us | 42.8 us | 4.62 |
+| 128 | 20.0 us | 56.3 us | 2.81 |
+| 256 | 48.0 us | 84.4 us | 1.76 |
+| 512 | 116.2 us | 141.6 us | 1.22 |
+| 576 | 143.5 us | 153.6 us | 1.07 |
+| 640 | 169.6 us | 167.1 us | **0.99** |
+| 1024 | 510.5 us | 241.9 us | 0.47 |
+| 2048 | 1390.9 us | 496.6 us | 0.36 |
+
+The crossover is near n = 630, so `RADIX_MIN_ROWS = 640` and a shorter column
+keeps the comparison sort. Uniform data is the radix sort's worst case here:
+its exponent byte varies just enough not to be skipped. A 60 x 20 fit at
+`max_depth = 8` goes from 188.0 us to 153.5 us (**-18.3%**) with the
+threshold in place; case 1, at n = 200_000, is untouched.
+
 ### 2. Child row vectors and level buffers (ranked targets 5 and 6, done)
 
 Measured separately, neither clears the 20% bar; together they do, and both

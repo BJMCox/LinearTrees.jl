@@ -424,11 +424,25 @@ function radix_sortperm!(out::AbstractVector{Int32}, x::AbstractVector, buf::Rad
     return copyto!(out, 1, isrc, 1, n)
 end
 
-"Stable per-feature sort orders. Features are independent, so this threads over columns; `radix_uint` picks the sort."
-presort!(idx::Matrix{Int32}, X::Matrix{T}, nthreads) where {T<:Real} =
-    presort!(idx, X, nthreads, radix_uint(T))
+"""
+Fewest rows a radix sort is worth. Each pass reads and writes a 256-counter
+table whatever `n` is, so below the measured crossover the comparison sort
+wins; see the presort section of `bench/PROFILE.md` for the sweep.
+"""
+const RADIX_MIN_ROWS = 640
 
-"Comparison sort, for an element type with no radix key."
+"""
+Stable per-feature sort orders. Features are independent, so this threads over
+columns. Both sorts give the same permutation; the row count and the element
+type pick which one runs.
+"""
+function presort!(idx::Matrix{Int32}, X::Matrix{T}, nthreads) where {T<:Real}
+    # two call sites, not one on a `Union`: each stays a static dispatch
+    size(X, 1) < RADIX_MIN_ROWS && return presort!(idx, X, nthreads, nothing)
+    return presort!(idx, X, nthreads, radix_uint(T))
+end
+
+"Comparison sort, for a short column or an element type with no radix key."
 function presort!(idx::Matrix{Int32}, X::Matrix, nthreads, ::Nothing)
     column_blocks(size(X, 2), size(X, 1), nthreads) do cols, _
         for j in cols

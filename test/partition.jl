@@ -6,21 +6,25 @@ using StableRNGs, JSON3
 
 # The scan reads `st.idx` as "sorted by feature j, ties in ascending row order",
 # so `presort!` owes each column exactly the permutation `sortperm` with a stable
-# algorithm gives. A radix key that folded `-0.0` into `0.0`, mishandled the sign
-# of negative values, or an unstable pass, would break that here.
+# algorithm gives, and both of its sorts owe the same one. The two row counts
+# straddle `RADIX_MIN_ROWS`, so the first runs the comparison sort and the second
+# the radix sort. A radix key that folded `-0.0` into `0.0`, mishandled the sign
+# of negative values, an unstable pass, or a threshold that let the two paths
+# disagree, would break this.
 @testset "presort! matches a stable comparison sort per feature" begin
     rng = StableRNG(23)
-    n = 400
-    X = Matrix{Float64}(undef, n, 4)
-    X[:, 1] = rand(rng, n)
-    X[:, 2] = Float64.(rand(rng, 1:3, n))               # one value per ~133 rows: ties everywhere
-    X[:, 3] = [iseven(i) ? -0.0 : 0.0 for i in 1:n]     # signed zeros only
-    X[:, 4] = randn(rng, n) .* 1e300                    # both signs, wide exponent range
-    for M in (X, Float32.(X))                           # the key is per float width
-        idx = Matrix{Int32}(undef, n, 4)
-        LinearTrees.presort!(idx, M, 1)
-        for j in 1:4
-            @test idx[:, j] == Int32.(sortperm(view(M, :, j); alg = MergeSort))
+    for n in (LinearTrees.RADIX_MIN_ROWS - 1, LinearTrees.RADIX_MIN_ROWS)
+        X = Matrix{Float64}(undef, n, 4)
+        X[:, 1] = rand(rng, n)
+        X[:, 2] = Float64.(rand(rng, 1:3, n))               # three values over n rows: ties everywhere
+        X[:, 3] = [iseven(i) ? -0.0 : 0.0 for i in 1:n]     # signed zeros only
+        X[:, 4] = randn(rng, n) .* 1e300                    # both signs, wide exponent range
+        for M in (X, Float32.(X))                           # the key is per float width
+            idx = Matrix{Int32}(undef, n, 4)
+            LinearTrees.presort!(idx, M, 1)
+            for j in 1:4
+                @test idx[:, j] == Int32.(sortperm(view(M, :, j); alg = MergeSort))
+            end
         end
     end
 end
