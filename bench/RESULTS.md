@@ -80,3 +80,28 @@ Memory fell as well (322 → 253 MiB threaded on the BIC case) because the
 per-node `BitVector` mask is gone. The remaining gap to a CART fit is the
 per-node `leftrows`/`rightrows` vectors and the subtree splice copies.
 `bench/run.jl` now includes the BIC step case.
+
+## SHAP: pooled path buffers
+
+`visit!` used to `copy(path)` three times per split node and once per LIN
+node, so a row's TreeSHAP recursion allocated one fresh `Vector{PathElem}` per
+branch. A `PathPool` of buffers indexed by recursion depth now holds them: a
+split node's hot and cold paths stay live across both child recursions, so
+each depth owns its own pair, and the own-path is a single scratch per depth.
+`shap!` sizes the pool once from `shap_depth(tree)` and builds one per
+`row_blocks` block, so threads never share it. SHAP values are byte-identical
+(`==`, not `≈`) on the `test/shap.jl` trees, on a `max_depth = 10` tree with a
+categorical column, and on a `Softmax(3)` tree.
+
+Same machine as above, `-t 1`. 57-node tree: `StableRNG(3)`, `n = 600`,
+`p = 4`, target `sin(3x₁) + 2x₂·1[x₃ > 0.5] + x₄² + noise`,
+`fit_tree(X, y; max_depth = 5)`; `@benchmark shap($t, $X)` over all 600 rows.
+
+| | median | memory | allocs | bytes/row | allocs/row |
+|---|---|---|---|---|---|
+| before | 3.262 ms | 20.86 MiB | 139,205 | 35.6 KiB | 232 |
+| after | 2.076 ms | 28.95 KiB | 71 | 49 B | 0.12 |
+
+Per-row allocation is gone: what is left is the pool itself plus the result
+arrays, amortised over the whole call, and the recursion is 36% faster because
+it no longer runs the allocator once per branch.
