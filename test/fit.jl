@@ -141,6 +141,20 @@ end
     @test all(p -> 0 <= p <= 1, predict(t, X))
 end
 
+@testset "niter keyword controls IRLS refit passes" begin
+    # fails if fit_tree's `niter` kwarg is not threaded to irls_refit's iteration count
+    rng = StableRNG(41)
+    n = 200
+    X = rand(rng, n, 2); y = X[:, 1] .+ 0.2 .* randn(rng, n)
+    y[1:5] .+= 20   # outliers: node medians need several IRLS passes to settle
+    t5 = fit_tree(X, y, MAD())
+    t5b = fit_tree(X, y, MAD(); niter = 5)
+    @test t5.nodes == t5b.nodes   # default stays 5, bit for bit
+    t1 = fit_tree(X, y, MAD(); niter = 1)
+    @test t1.nodes != t5.nodes
+    @test_throws ArgumentError fit_tree(X, y, MAD(); niter = 0)
+end
+
 @testset "threaded split search equals serial" begin
     rng = StableRNG(35)
     X = rand(rng, 40_000, 6); y = sin.(3 .* X[:, 1]) .+ X[:, 2] .* X[:, 3] .+ 0.1 .* randn(rng, 40_000)

@@ -28,19 +28,22 @@ mutable struct FitState{T,V,L<:Loss,R<:SelectionRule}
     min_sum_hessian::T; max_lin_chain::Int
     truncate::Bool
     nthreads::Int
+    niter::Int
 end
 
 """
     fit_tree(X, y, loss=MSE(); kwargs...)
 
 Fit a PILOT-style linear model tree. See the design spec section 4 for the
-keyword contract.
+keyword contract. `niter` is the number of IRLS refit passes non-smooth
+losses (`MAD`, `Quantile`) take at each node; smooth losses ignore it.
 """
 function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         weights = nothing, categorical = Int[], rule::SelectionRule = BIC(),
         max_depth = 12, min_fit = 10, min_leaf = 5, min_sum_hessian = 1.0,
         max_lin_chain = 10, truncate = true, truncation_factor = 3,
-        nthreads = Threads.nthreads())
+        nthreads = Threads.nthreads(), niter = 5)
+    niter >= 1 || throw(ArgumentError("niter must be >= 1, got $niter"))
     nthreads = clamp(nthreads, 1, Threads.nthreads())
     T = float(promote_type(eltype(X), eltype(y)))
     n, p = size(X)
@@ -72,7 +75,7 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     st = FitState{T,V,typeof(loss),typeof(rule)}(Xm, yv, w, f, zeros(V, n), zeros(V, n), zeros(V, n), idx, zeros(Bool, n),
         [Scratch{T,V}(n) for _ in 1:nthreads], [Vector{Int32}(undef, n) for _ in 1:nthreads],
         Node{T,V}[], UInt64[], collect(Int, categorical), nlevels, loss, rule, lo, hi, max_depth, T(min_fit), T(min_leaf),
-        T(min_sum_hessian), max_lin_chain, truncate, nthreads)
+        T(min_sum_hessian), max_lin_chain, truncate, nthreads, niter)
     rows = collect(Int32(1):Int32(n))
     refresh!(st, rows)
     st.nodes, st.catmasks = grow_subtree(st, rows, 1:n, 0, 0, 1:nthreads)
