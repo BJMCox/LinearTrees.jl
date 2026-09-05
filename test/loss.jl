@@ -1,4 +1,5 @@
 using StableRNGs, StaticArrays
+using Statistics: median
 import Distributions   # not `using`: Distributions exports its own `Logistic`, colliding with LinearTrees's
 
 pointloss(::MSE, y, f) = (y - f)^2 / 2
@@ -153,4 +154,49 @@ end
         lhs, rhs = devdiff(MSE(), f -> Distributions.Normal(f, 1.0), y, f1, f2, w)
         @test lhs ≈ rhs atol = 1e-10
     end
+end
+
+@testset "initscore and scorebound for Huber, MAD, Gamma, Tweedie, NegBin (C2)" begin
+    y = [1.0, 5.0, 100.0]; w = [1.0, 2.0, 0.5]
+    @test initscore(Huber(1.0), y, w) ≈ sum(w .* y) / sum(w)   # Huber initscore diverging from the weighted mean
+
+    # integer weights equal row duplication: weighted median against Statistics.median.
+    # Holds away from a cumulative-weight tie...
+    yq = [3.0, 1.0, 4.0, 1.0, 5.0]
+    iw_odd = [2, 1, 2, 1, 1]   # total 7: no cumulative tie at the half-point
+    dup_odd = reduce(vcat, [fill(yq[i], iw_odd[i]) for i in eachindex(yq)])
+    @test initscore(MAD(), yq, Float64.(iw_odd)) ≈ median(dup_odd)
+
+    # ...but not at one: DEFECT, reported not fixed (no src/ changes in this
+    # brief). `wquantile` (used by `initscore(MAD,...)`/`initscore(Quantile,...)`)
+    # returns the first value whose cumulative weight reaches the target, with no
+    # tie-average at an exact boundary; `median_abs` (the IRLS ε floor's weighted
+    # median) does average there. The two disagree under integer-weight
+    # duplication exactly at a half-point tie: `wquantile` gives 3.0, the true
+    # (duplicated-row) median is 3.5.
+    iw_tie = [2, 1, 3, 1, 1]   # total 8: cumulative weight lands exactly at half (4)
+    dup_tie = reduce(vcat, [fill(yq[i], iw_tie[i]) for i in eachindex(yq)])
+    @test_broken initscore(MAD(), yq, Float64.(iw_tie)) ≈ median(dup_tie)
+
+    yg = [1.0, 2.0, 3.0]; wg = [1.0, 1.0, 2.0]
+    @test initscore(Gamma(), yg, wg) ≈ log(sum(wg .* yg) / sum(wg))   # Gamma initscore missing the log link
+
+    y0 = zeros(3); wu = ones(3)
+    @test initscore(Tweedie(1.5), y0, wu) == log(1e-6)   # Tweedie floor case y .= 0
+    @test initscore(NegBin(2.0), y0, wu) == log(1e-6)    # NegBin floor case y .= 0
+    yt = [1.0, 2.0, 3.0]
+    @test initscore(Tweedie(1.5), yt, wu) ≈ log(sum(wu .* yt) / sum(wu))
+    @test initscore(NegBin(2.0), yt, wu) ≈ log(sum(wu .* yt) / sum(wu))
+
+    # identity losses: padded range formula
+    @test scorebound(Huber(1.0), [0.0, 2.0]) == (-2.0, 4.0)   # B = 1, factor 3
+    @test scorebound(MAD(), [0.0, 2.0]; truncation_factor = 1) == (0.0, 2.0)
+
+    # log-link losses: S = log(max(maximum(y), 1)) + 3
+    @test scorebound(Gamma(), [0.1, 5.0]) == (-(log(5) + 3), log(5) + 3)
+    @test scorebound(Gamma(), [0.1, 0.5]) == (-3.0, 3.0)   # maximum(y) < 1 gives S = 3
+    @test scorebound(Tweedie(1.5), [0.0, 5.0]) == (-(log(5) + 3), log(5) + 3)
+    @test scorebound(Tweedie(1.5), [0.0, 0.5]) == (-3.0, 3.0)
+    @test scorebound(NegBin(2.0), [0.0, 5.0]) == (-(log(5) + 3), log(5) + 3)
+    @test scorebound(NegBin(2.0), [0.0, 0.5]) == (-3.0, 3.0)
 end
