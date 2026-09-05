@@ -160,12 +160,14 @@ end
     end
     oracle_median_abs(r, w) = oracle_wquantile(abs.(r), w, 0.5)
 
-    # n mostly small (1:64): the exact-boundary and zero-weight branches are
-    # driven by ties, which small n hits far more often per draw than large n
-    # does. Counted on this seed, the 200 draws hit the walk's exact-boundary
-    # return 7 times, carry a zero-weight row 99 times and carry duplicate
-    # values 179 times; a handful of large-n draws stay in the mix so the O(m)
-    # behavior at bigger sizes still gets exercised.
+    # A general agreement check over mixed inputs, not the branch cover: n is
+    # mostly small (1:64) because ties, which drive the interesting branches,
+    # are far more common per draw at small n, and counted on this seed the 200
+    # draws hit the walk's exact-boundary return 7 times and carry a zero-weight
+    # row 99 times. Only a draw where the branch also *changes the answer*
+    # fails, and at 200 draws none does: the zero-weight and exact-boundary
+    # branches are pinned by the deterministic cases below instead. A few
+    # large-n draws stay in the mix so the O(m) path runs at bigger sizes too.
     rng = StableRNG(202609)
     ncases = 0
     for trial in 1:200
