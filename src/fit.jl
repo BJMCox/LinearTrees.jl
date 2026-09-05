@@ -69,8 +69,8 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     max_depth >= 0 || throw(ArgumentError("max_depth must be >= 0, got $max_depth"))
     min_fit >= 1 || throw(ArgumentError("min_fit must be >= 1, got $min_fit"))
     min_leaf >= 1 || throw(ArgumentError("min_leaf must be >= 1, got $min_leaf"))
-    # below 1 the padding term goes negative and `(lo, hi)` inverts, after which
-    # `clampscore` silently returns `hi` for every row
+    # below 1 the padding term goes negative, so the clamp band closes inside the
+    # observed range of `y` and every extreme score is pulled toward the middle
     truncation_factor >= 1 || throw(ArgumentError("truncation_factor must be >= 1, got $truncation_factor"))
     nthreads = clamp(nthreads, 1, Threads.nthreads())
     T = float(promote_type(eltype(X), eltype(y)))

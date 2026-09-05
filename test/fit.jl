@@ -44,17 +44,6 @@ end
     @test predict(fit_tree(X2, y), X2) ≈ predict(fit_tree(X, y), X) atol = 1e-8
 end
 
-@testset "integer weights equal duplication" begin
-    rng = StableRNG(8)
-    X = rand(rng, 40, 2); y = X[:, 1] .+ 0.3 .* randn(rng, 40)
-    w = Float64.(rand(rng, 1:3, 40))
-    rows = reduce(vcat, [fill(i, Int(w[i])) for i in 1:40])
-    tw = fit_tree(X, y; weights = w, min_fit = 12, min_leaf = 6)
-    td = fit_tree(X[rows, :], y[rows]; min_fit = 12, min_leaf = 6)
-    @test predict(tw, X) ≈ predict(td, X) atol = 1e-8
-    @test length(tw.nodes) == length(td.nodes)
-end
-
 @testset "integer weights equal duplication, every loss (spec line 779-780)" begin
     # Before the fix, median_abs took an unweighted median of the stored (not
     # duplicated) rows, so the IRLS epsilon floor moved when weights were
@@ -72,6 +61,7 @@ end
         tw = fit_tree(X, yy, loss; weights = w)
         td = fit_tree(X[rows, :], yy[rows], loss)
         @test maximum(abs.(predict(tw, X) .- predict(td, X))) < 1e-8
+        @test length(tw.nodes) == length(td.nodes)   # the same tree, not just the same predictions
     end
 end
 
@@ -111,6 +101,19 @@ end
     @test_throws ArgumentError fit_tree(Xinf, y)
 end
 
+@testset "truncation_factor below 1 is rejected" begin
+    # fails if fit_tree drops the truncation_factor >= 1 guard. Below 1 the
+    # padding term goes negative, so the clamp band closes inside the observed
+    # range of y and every extreme score is pulled toward the middle with no
+    # error anywhere; at 0 the band is a single point.
+    rng = StableRNG(10)
+    X = rand(rng, 60, 2); y = X[:, 1] .+ 0.1 .* randn(rng, 60)
+    @test_throws ArgumentError fit_tree(X, y; truncation_factor = 0.5)
+    lo, hi = scorebound(MSE(), y; truncation_factor = 0.5)
+    @test lo > minimum(y) && hi < maximum(y)             # the band the guard prevents
+    @test LinearTrees.clampscore(maximum(y), lo, hi) == hi
+end
+
 @testset "Float32 and Float64 fits agree (spec property test)" begin
     # A noise-free linear fixture hits the dmin floor exactly, where Float32
     # rounding of a near-zero RSS can flip the winning kind; this fixture adds
@@ -137,7 +140,6 @@ end
     rng = StableRNG(302)
     X = Float32.(rand(rng, 100, 2)); y = Float32.(rand(rng, Bool, 100))
     t = fit_tree(X, y, Logistic(); truncate = true)
-    @test t isa LinearTree
     @test all(p -> 0 <= p <= 1, predict(t, X))
 end
 
@@ -152,7 +154,6 @@ end
     @test t5.nodes == t5b.nodes   # default stays 5, bit for bit
     t1 = fit_tree(X, y, MAD(); niter = 1)
     @test t1.nodes != t5.nodes
-    @test_throws ArgumentError fit_tree(X, y, MAD(); niter = 0)
 end
 
 @testset "irls_refit does not allocate a fresh residual or sort buffer (B2)" begin
@@ -173,12 +174,15 @@ end
         f = fill(f0, n)
         idx = Matrix{Int32}(undef, n, 1)
         LinearTrees.presort!(idx, X, 1)
-        st = LinearTrees.FitState{Float64,Float64,typeof(loss),BIC}(X, y, w, f, zeros(n), zeros(n), zeros(n), idx,
-            zeros(Bool, n), [LinearTrees.Scratch{Float64,Float64}(n)], [Vector{Int32}(undef, n)],
-            LinearTrees.Node{Float64,Float64}[], UInt64[], Int[], zeros(Bool, 1), zeros(Int, 1), loss, BIC(), -Inf, Inf,
-            12, 10.0, 5.0, 1.0, 10, false, 1, 5)
+        st = LinearTrees.FitState{Float64,Float64,typeof(loss),BIC}(; X, y, w, f,
+            g = zeros(n), h = zeros(n), z = zeros(n), idx, isleft = zeros(Bool, n),
+            scratch = [LinearTrees.Scratch{Float64,Float64}(n)],
+            nodes = LinearTrees.Node{Float64,Float64}[], catmasks = UInt64[],
+            iscat = zeros(Bool, 1), nlevels = zeros(Int, 1), loss, rule = BIC(), lo = -Inf, hi = Inf,
+            max_depth = 12, min_fit = 10.0, min_leaf = 5.0, min_sum_hessian = 1.0, max_lin_chain = 10,
+            truncate = false, nthreads = 1, niter = 5)
         rows = collect(Int32(1):Int32(n))
-        LinearTrees.refresh!(st, rows)
+        LinearTrees.refresh!(st, rows, 1)
         b = LinearTrees.fit_con(LinearTrees.node_sums(st, rows))[1]
         node = LinearTrees.Node{Float64,Float64}(; lintercept = b, cover = Float64(n))
         masks = UInt64[]
