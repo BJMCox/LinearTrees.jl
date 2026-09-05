@@ -512,3 +512,24 @@ Only worth it if `predict` becomes the bottleneck.
 - `fit_blin`'s 3x3 solve: 6% of case 1, the only real linear algebra in the sweep.
 - The `Union{Nothing, Tuple}` returns of `fit_lin`/`fit_blin`: a two-member union the compiler splits.
 - The `Dict` level lookup left in `encode_levels!`: about 5% of case 4 after the barrier below, against a `DataAPI.refarray` rewrite that would have to handle every table type.
+
+## P2: the scan-speed pass
+
+### 1. Score once per kind per feature (ranked target 1, done)
+
+`scan_feature` now carries the lowest `devkey` each of `pcon`, `blin`
+and `plin` reaches through the split sweep and calls `selection_score` once per
+kind at the end, so `log(dev / n)` runs three times per feature instead of
+three times per split point. `devkey` is the deviance in the form the rule
+compares it in -- `max(dev, dmin)` for `BIC`, the raw value for `MinDeviance`,
+whose score has no floor -- so the per-kind minimiser is the one the
+interleaved sweep kept, and the key hands to `selection_score` for a
+bit-identical score. Case 1 (Apple M4 Pro, Julia 1.12.7, median of five)
+drops from **2210 ms to 1504 ms serial (-32%)** and from **952 ms to 621 ms on
+ten threads (-35%)**; allocations are unchanged. Only an exact cross-kind score
+tie can now resolve differently (it goes to the earlier kind in
+`(con, lin, pcon, blin, plin)` rather than to the lower split point), and the
+fitted trees are bit-identical on all thirteen designs checked: the four
+`test/fixtures/partition` cases, the eight PILOT reference fixtures and a
+`Softmax(3)` design with a categorical column. The fixtures were therefore not
+regenerated.

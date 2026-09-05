@@ -48,3 +48,30 @@ end
     @test_throws ArgumentError LinearTrees.allowed(r, CON)
     @test_throws ArgumentError LinearTrees.selection_score(r, CON, 1.0, 10.0, 1e-12)
 end
+
+@testset "devkey is the deviance in the form its rule compares" begin
+    # `scan_feature` carries the lowest `devkey` per kind through the split
+    # sweep and hands that key to `selection_score` in place of the raw
+    # deviance, so a rule's key must (a) give the identical score, to the bit,
+    # and (b) order candidates exactly as the score does. Fails if a rule's
+    # key stops matching its own floor -- if `MinDeviance` gained `BIC`'s
+    # `dmin` floor, or `BIC` lost it.
+    dmin = 1e-3
+    devs = (0.0, 1e-9, 1e-3, 0.5, 3.5, 50.0, Inf, NaN)
+    for r in (BIC(), BIC(dof = (1.0, 2.0, 3.0, 3.0, 4.0)), MinDeviance((PCON, BLIN, PLIN)),
+            LinearTrees.PconOnly(BIC()))
+        for k in (CON, LIN, PCON, BLIN, PLIN), n in (10.0, 3.7, 1e6), nc in (1, 3)
+            for s in devs
+                @test LinearTrees.selection_score(r, k, LinearTrees.devkey(r, s, dmin), n, dmin, nc) ===
+                    LinearTrees.selection_score(r, k, s, n, dmin, nc)
+            end
+            keys = filter(isfinite, [LinearTrees.devkey(r, s, dmin) for s in devs])
+            for a in keys, b in keys
+                sa = LinearTrees.selection_score(r, k, a, n, dmin, nc)
+                sb = LinearTrees.selection_score(r, k, b, n, dmin, nc)
+                a < b && isfinite(sa) && @test sa < sb
+            end
+        end
+    end
+    @test_throws ArgumentError LinearTrees.devkey(GainRule(0.1), 1.0, 1e-12)
+end

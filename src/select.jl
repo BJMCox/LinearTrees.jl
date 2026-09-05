@@ -48,6 +48,28 @@ score_logn(::SelectionRule, n) = (isfinite(n) && n > 0) ? log(n) : zero(float(n)
 score_logn(::MinDeviance, n) = zero(float(n))
 score_logn(::GainRule, n) = throw(ArgumentError("GainRule is reserved for boosting"))
 
+"""
+    devkey(rule, surrogate, dmin)
+
+The surrogate deviance in the form `rule` compares it in. `scan_feature`
+carries the lowest key per model kind through the split sweep and scores each
+kind once, at the end, so every rule owes two properties:
+
+1. its `selection_score` is strictly increasing in the key, so the lowest key
+   is the lowest score;
+2. `selection_score(rule, k, devkey(rule, s, dmin), n, dmin, ...)` is
+   `selection_score(rule, k, s, n, dmin, ...)` to the last bit, so the key can
+   be handed to the score in place of the raw deviance.
+
+`BIC` scores `max(surrogate, dmin)`, so its key is that floored value and (2)
+holds because `max` is idempotent. `MinDeviance` scores the raw deviance and
+so keeps it: flooring it would make two deviances below `dmin` tie where the
+rule separates them.
+"""
+devkey(::SelectionRule, surrogate, dmin) = max(surrogate, dmin)   # BIC and any rule with the same log floor
+devkey(::MinDeviance, surrogate, dmin) = surrogate
+devkey(::GainRule, surrogate, dmin) = throw(ArgumentError("GainRule is reserved for boosting"))
+
 # `ncoord` is the number of coefficient coordinates (K-1 for softmax, 1 otherwise):
 # every model kind fits `ncoord` times its scalar parameter count, so the BIC
 # penalty scales with it while the deviance term already sums over coordinates.

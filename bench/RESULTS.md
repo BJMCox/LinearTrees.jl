@@ -105,3 +105,18 @@ Same machine as above, `-t 1`. 57-node tree: `StableRNG(3)`, `n = 600`,
 Per-row allocation is gone: what is left is the pool itself plus the result
 arrays, amortised over the whole call, and the recursion is 36% faster because
 it no longer runs the allocator once per branch.
+
+## Scoring each model kind once per feature
+
+The BIC score is strictly increasing in the surrogate deviance within one
+kind, so `scan_feature` now carries the lowest deviance each of `pcon`, `blin`
+and `plin` reaches through the split sweep and calls `selection_score` once per
+kind per feature instead of once per kind per split point. On the P1 profiling
+case 1 (`fit_tree` MSE, `n = 200_000`, `p = 20`, `max_depth = 12`, Apple M4
+Pro, Julia 1.12.7, median of five `@benchmark` samples) this takes the serial
+median from **2210 ms to 1504 ms (-32%)** and the ten-thread median from
+**952 ms to 621 ms (-35%)**, with the allocation count unchanged. The fitted
+trees are bit-identical on the four stored partition designs, the eight PILOT
+reference fixtures and a `Softmax(3)` design with a categorical column; only an
+exact cross-kind score tie can resolve differently, and it now goes to the kind
+that comes first in `(con, lin, pcon, blin, plin)`.

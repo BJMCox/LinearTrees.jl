@@ -40,6 +40,20 @@ expansion of the deviance around the node's current score, which keeps each
 candidate `O(1)` to score. `dof` is a field of the `BIC` instance, so a
 custom tuple can be passed: `BIC(dof = (1.0, 2.0, 5.0, 5.0, 7.0))`.
 
+Within one kind the score is strictly increasing in the surrogate deviance, so
+the scan carries the lowest deviance each kind reaches and scores the kind once
+per feature rather than once per split point. Two ties can arise:
+
+- within a kind, the earliest split point (lowest threshold) reaching that
+  kind's lowest deviance wins;
+- across kinds, an exact score tie goes to the kind that comes first in
+  `(con, lin, pcon, blin, plin)`, which never has more parameters than the
+  other.
+
+Both are degenerate for continuous data: a cross-kind tie needs two kinds to
+reach the same deviance to the last bit, or two deviances that both fall under
+the score's `eps`-scaled log floor.
+
 A node stops splitting (becomes a leaf) when `CON` wins, when its total weight
 falls below `min_fit`, when it reaches `max_depth`, when its summed Hessian
 falls below `min_sum_hessian`, or when it has reached `max_lin_chain`

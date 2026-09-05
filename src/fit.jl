@@ -300,6 +300,7 @@ struct PconOnly{R<:SelectionRule} <: SelectionRule
 end
 allowed(r::PconOnly, k::ModelKind) = (k == CON || k == PCON) && allowed(r.inner, k)
 score_logn(r::PconOnly, n) = score_logn(r.inner, n)
+devkey(r::PconOnly, surrogate, dmin) = devkey(r.inner, surrogate, dmin)
 selection_score(r::PconOnly, k, s, n, dmin, ncoord::Integer = 1, logn = score_logn(r, n)) =
     allowed(r, k) ? selection_score(r.inner, k, s, n, dmin, ncoord, logn) : Inf
 

@@ -112,3 +112,83 @@ end
     c2 = LinearTrees.scan_feature(x, z, ones(10), ones(10), MinDeviance((PCON,)), 100, 1e-12)
     @test c2.score == Inf && c2.kind == CON
 end
+
+# ---- score once per kind per feature ---------------------------------------
+
+"""
+Wraps `inner` so only `kinds` are offered, the way `LinearTrees.PconOnly`
+does for a categorical scan. Lets a test isolate one kind's own best split
+under the real `BIC` score.
+"""
+struct OnlyKinds{R<:LinearTrees.SelectionRule} <: LinearTrees.SelectionRule
+    inner::R
+    kinds::Tuple{Vararg{ModelKind}}
+end
+LinearTrees.allowed(r::OnlyKinds, k::ModelKind) = any(==(k), r.kinds) && LinearTrees.allowed(r.inner, k)
+LinearTrees.score_logn(r::OnlyKinds, n) = LinearTrees.score_logn(r.inner, n)
+LinearTrees.devkey(r::OnlyKinds, dev, dmin) = LinearTrees.devkey(r.inner, dev, dmin)
+LinearTrees.selection_score(r::OnlyKinds, k::ModelKind, s, n, dmin, nc::Integer = 1,
+    logn = LinearTrees.score_logn(r, n)) =
+    LinearTrees.allowed(r, k) ? LinearTrees.selection_score(r.inner, k, s, n, dmin, nc, logn) : Inf
+
+"Counts `selection_score` calls and otherwise scores as `inner`. Serial use only."
+mutable struct CountingRule{R<:LinearTrees.SelectionRule} <: LinearTrees.SelectionRule
+    inner::R
+    calls::Int
+end
+LinearTrees.allowed(r::CountingRule, k::ModelKind) = LinearTrees.allowed(r.inner, k)
+LinearTrees.score_logn(r::CountingRule, n) = LinearTrees.score_logn(r.inner, n)
+LinearTrees.devkey(r::CountingRule, dev, dmin) = LinearTrees.devkey(r.inner, dev, dmin)
+function LinearTrees.selection_score(r::CountingRule, k::ModelKind, s, n, dmin, nc::Integer = 1,
+        logn = LinearTrees.score_logn(r, n))
+    r.calls += 1
+    return LinearTrees.selection_score(r.inner, k, s, n, dmin, nc, logn)
+end
+
+@testset "selection_score runs once per kind, not once per split point" begin
+    # The sweep carries the lowest `devkey` per kind and scores each kind once,
+    # so a 400-row column costs at most five calls rather than three per split
+    # point. Fails if `scan_feature` scores inside the split loop again.
+    x = collect(1.0:400.0)
+    z = [xi <= 200 ? 0.0 : 5.0 for xi in x] .+ 0.01 .* sin.(x)
+    r = CountingRule(BIC(), 0)
+    c = LinearTrees.scan_feature(x, z, ones(400), ones(400), r, 5, 1e-12)
+    @test r.calls <= 5
+    # and the winner is the one the plain rule finds, to the bit
+    c2 = LinearTrees.scan_feature(x, z, ones(400), ones(400), BIC(), 5, 1e-12)
+    @test c.kind == c2.kind && c.threshold === c2.threshold && c.score === c2.score
+    @test c2.kind == PCON && c2.threshold == 200.0
+end
+
+@testset "within a kind the earliest split point with the lowest devkey wins" begin
+    # `dmin` is the BIC log floor (normally `eps · Σ h z²`); a large one makes
+    # several split points score identically, which is what pins the rule.
+    # blin's deviance on this design is 0.959 at t = 6, 0.918 at t = 7 and
+    # 0.941 at t = 8, so with dmin = 1.0 all three floor to 1.0 and tie: the
+    # earliest, t = 6, wins. Fails if the sweep carries the raw deviance
+    # instead of the `dmin`-floored one, which returns t = 7.
+    x = collect(1.0:20.0)
+    z = [(xi > 10) + 0.1 * max(xi - 10, 0) for xi in x]
+    c = LinearTrees.scan_feature(x, z, ones(20), ones(20), OnlyKinds(BIC(), (BLIN,)), 2, 1.0)
+    @test c.kind == BLIN && c.threshold == 6.0
+    # `MinDeviance` scores the raw deviance, so its own key must not be
+    # floored: the same design under it picks the true minimiser, t = 7.
+    c2 = LinearTrees.scan_feature(x, z, ones(20), ones(20), MinDeviance((BLIN,)), 2, 1.0)
+    @test c2.kind == BLIN && c2.threshold == 7.0
+end
+
+@testset "an exact cross-kind score tie goes to the kind that comes first" begin
+    # Same design and floor: blin's best split (t = 6) and pcon's (t = 10)
+    # both floor to dmin, and `dof` is 5 for both kinds, so their scores are
+    # bit-equal. The documented rule breaks the tie in the order
+    # (con, lin, pcon, blin, plin), so pcon wins. Fails if the sweep resolves
+    # the tie by split point again, which returns blin at t = 6.
+    x = collect(1.0:20.0)
+    z = [(xi > 10) + 0.1 * max(xi - 10, 0) for xi in x]
+    bl = LinearTrees.scan_feature(x, z, ones(20), ones(20), OnlyKinds(BIC(), (BLIN,)), 2, 1.0)
+    pc = LinearTrees.scan_feature(x, z, ones(20), ones(20), OnlyKinds(BIC(), (PCON,)), 2, 1.0)
+    @test bl.threshold == 6.0 && pc.threshold == 10.0
+    @test bl.score === pc.score              # the tie is exact, not close
+    c = LinearTrees.scan_feature(x, z, ones(20), ones(20), BIC(), 2, 1.0)
+    @test c.kind == PCON && c.threshold == 10.0
+end
