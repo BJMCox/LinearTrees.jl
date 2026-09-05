@@ -81,11 +81,12 @@ _lossfromname(::Val{S}, ps) where {S} = throw(ArgumentError("unknown loss name \
     from_dict(d) -> LinearTree
 
 Inverse of [`to_dict`](@ref). Throws `ArgumentError` for an unrecognised
-format version or loss name.
+format version, element type, or loss name.
 """
 function from_dict(d::AbstractDict)
     d["format"] == 1 || throw(ArgumentError("unknown LinearTrees dict format $(d["format"])"))
-    T = d["T"] == "Float32" ? Float32 : Float64
+    T = d["T"] == "Float32" ? Float32 : d["T"] == "Float64" ? Float64 :
+        throw(ArgumentError("unrecognised element type \"$(d["T"])\""))
     K = d["K"]
     V = K == 1 ? T : SVector{K - 1,T}
     convV(x) = V <: SVector ? V(fromjsonnum.(T, x)) : fromjsonnum(V, x)
