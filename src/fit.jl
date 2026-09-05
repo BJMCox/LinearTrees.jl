@@ -26,6 +26,7 @@ Scratch{T,V}() where {T,V} = Scratch{T,V}(T[], V[], V[], T[], Int32[], Int[])
 """
 Scratch buffers are sized on demand, never shrunk, and only ever by the one
 task that owns the set, so this is the whole of their allocation policy.
+Returns `v`, which `partition!` uses to size and name a buffer in one step.
 """
 @inline function ensure_len!(v::Vector, m::Integer)
     length(v) < m && resize!(v, m)
@@ -563,10 +564,10 @@ function best_split(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, ids::Ab
         return best_split_serial(st, rows, span, dmin, 1:p, first(ids))
     end
     chunks = collect(Iterators.partition(1:p, cld(p, length(ids))))
-    # spawned in ascending chunk order, and `fetch` below blocks, so the reduction
-    # sees the chunks in feature order however the tasks finish. A comprehension
-    # over `zip` would infer a 0-dimensional `similar` here, since `ids` is
-    # abstractly typed
+    # `tasks` is iterated in creation order below, over ascending chunks, so the
+    # reduction sees the chunks in feature order however the tasks finish. A
+    # comprehension over `zip` would infer a 0-dimensional `similar` here, since
+    # `ids` is abstractly typed
     tasks = Vector{Task}(undef, length(chunks))
     for k in eachindex(chunks)
         # bound outside the task: `@spawn` closes over its arguments rather than
@@ -585,7 +586,7 @@ function best_split(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, ids::Ab
             failed === nothing && (failed = e)
         end
     end
-    failed === nothing || throw(failed)
+    failed === nothing || rethrow(failed)   # `rethrow`, so the failing chunk's own frames stay in the trace
     best = nocandidate(T, V); bestj = 0; bestleft = Int[]
     for t in tasks
         # `fetch` infers `Any`; without this the winning candidate stays boxed and

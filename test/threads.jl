@@ -127,17 +127,58 @@ LinearTrees.selection_score(r::ThrowNth, k, s, n, dmin, ncoord::Integer = 1,
     logn = LinearTrees.score_logn(r, n)) = LinearTrees.selection_score(r.inner, k, s, n, dmin, ncoord, logn)
 
 """
-A `FitState` over a step target with `nt` workers and `SCRATCH_PER_THREAD * nt`
-scratch sets, ready for `grow_subtree`. Returns it with its row vector and the
-set count. `grow_subtree` is the only way to reach the pool guards, and it is
-not called by any public entry point that also hands back `st`.
+A rule that throws from the `LIN` score of the one feature that fits `y`
+exactly, and blocks every other feature's `LIN` score on an `Event`. That
+feature is column 1, so the chunk that throws is always `tasks[1]` and the
+chunks still running are always the later ones, whatever order the scheduler
+starts them in.
 """
-function poolstate(loss, rule, nt)
+struct BlockOthers <: LinearTrees.SelectionRule
+    inner::BIC
+    thrown::Threads.Event
+    release::Threads.Event
+end
+BlockOthers() = BlockOthers(BIC(), Threads.Event(), Threads.Event())
+
+function LinearTrees.selection_score(r::BlockOthers, kind::LinearTrees.ModelKind, surrogate, n, dmin,
+        ncoord::Integer = 1, logn = LinearTrees.score_logn(r, n))
+    if kind == LinearTrees.LIN
+        # only column 1 fits `z` exactly, so only its residual sum reaches zero
+        if surrogate < 1e-6
+            notify(r.thrown)
+            error("BlockOthers fired on chunk 1")
+        end
+        wait(r.release)
+    end
+    return LinearTrees.selection_score(r.inner, kind, surrogate, n, dmin, ncoord, logn)
+end
+LinearTrees.allowed(r::BlockOthers, k::LinearTrees.ModelKind) = LinearTrees.allowed(r.inner, k)
+LinearTrees.score_logn(r::BlockOthers, n) = LinearTrees.score_logn(r.inner, n)
+LinearTrees.devkey(r::BlockOthers, surrogate, dmin) = LinearTrees.devkey(r.inner, surrogate, dmin)
+
+"20_000 x 4, a step target so BIC keeps splitting down to nodes of a few hundred rows."
+function stepdata()
     rng = StableRNG(37)
-    n, p = 20_000, 4
-    X = rand(rng, n, p)
-    # a step target, so BIC keeps splitting down to nodes small enough to throw
-    y = sum(floor.(4 .* X[:, j]) for j in 1:3) .+ 0.1 .* randn(rng, n)
+    X = rand(rng, 20_000, 4)
+    return X, sum(floor.(4 .* X[:, j]) for j in 1:3) .+ 0.1 .* randn(rng, 20_000)
+end
+
+"20_000 x 4 where column 1 is `y` itself, so its linear fit is the only exact one."
+function linedata()
+    rng = StableRNG(38)
+    X = rand(rng, 20_000, 4)
+    return X, copy(X[:, 1])
+end
+
+"""
+A `FitState` over `data` with `nt` workers and `SCRATCH_PER_THREAD * nt` scratch
+sets, ready for `grow_subtree`. Returns it with its row vector and the set
+count. `grow_subtree` is the only way to reach the pool guards, and no public
+entry point that reaches them also hands back `st`.
+"""
+function poolstate(loss, rule, nt; data = stepdata())
+    X, y = data
+    n, p = size(X)
     nsets = nt == 1 ? 1 : LinearTrees.SCRATCH_PER_THREAD * nt
     idx = Matrix{Int32}(undef, n, p)
     LinearTrees.presort!(idx, X, nt)
@@ -173,4 +214,24 @@ end
     st, rows, nsets = poolstate(MSE(), ThrowNth(1), min(4, Threads.nthreads()))
     @test_throws Exception LinearTrees.grow_subtree(st, rows, 1:20_000, 0, 0, 1, st.nodes, st.catmasks)
     @test sort(st.pool.free) == collect(2:nsets)
+end
+
+# Fails if `best_split` drops its join loop and returns on the first chunk's
+# failure: the caller's `giveback!` then puts ids back that the later chunks are
+# still scanning on. The window is opened by an `Event`, not by a sleep, and
+# closed by `notify`, so the only bound in the test is on the negative check --
+# with the join, `t` can never finish while chunk 2 and up are blocked, and
+# without it `t` unwinds in microseconds.
+@testset "the threaded split search does not return before its own chunks" begin
+    nt = min(4, Threads.nthreads())
+    if nt > 1
+        rule = BlockOthers()
+        st, rows, nsets = poolstate(MSE(), rule, nt; data = linedata())
+        t = Threads.@spawn LinearTrees.grow_subtree(st, rows, 1:20_000, 0, 0, 1, st.nodes, st.catmasks)
+        wait(rule.thrown)
+        @test timedwait(() -> istaskdone(t), 1.0; pollint = 0.02) === :timed_out
+        notify(rule.release)
+        @test_throws TaskFailedException wait(t)
+        @test sort(st.pool.free) == collect(2:nsets)
+    end
 end
