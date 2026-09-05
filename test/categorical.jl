@@ -76,4 +76,6 @@ end
     tb = fit_tree(X, y; categorical = [1], max_depth = 1)
     right = findfirst(c -> !LinearTrees.category_is_left(tb, tb.nodes[1], c), 1:L)
     @test predict(tb, [NaN;;])[1] == predict(tb, [Float64(right);;])[1]
+    # non-integer codes would index the wrong level silently, so they are rejected
+    @test_throws ArgumentError fit_tree(X .+ 0.5, y; categorical = [1])
 end
