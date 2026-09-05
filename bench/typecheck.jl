@@ -143,7 +143,7 @@ open(joinpath(OUT, "warntype.txt"), "w") do io
             ("score_row softmax", LinearTrees.score_row, Tuple{TREEv,Matrix{Float64},Int,Bool}),
             ("visit! scalar", LinearTrees.visit!,
                 Tuple{Matrix{Float64},TREEs,SubArray{Float64,1,Matrix{Float64},Tuple{Int,Base.Slice{Base.OneTo{Int}}},true},
-                    Int,Int,Vector{LinearTrees.PathElem},LinearTrees.PathPool,Int}),
+                    Int,Int,Vector{LinearTrees.PathElem},LinearTrees.PathPool,Int,T}),
             ("addrow scalar", LinearTrees.addrow, Tuple{LinearTrees.MomentSums{T},T,T,T}),
             ("addrow softmax", LinearTrees.addrow, Tuple{LinearTrees.MomentSums{VS},T,VS,VS}),
             ("fit_lin scalar", LinearTrees.fit_lin, Tuple{LinearTrees.MomentSums{T}}),

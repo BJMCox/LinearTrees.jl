@@ -159,7 +159,7 @@ end
 function shap_recurse!(φ, tree::LinearTree{T,V}, x, row, k, pool::PathPool,
         zerofrac, onefrac, feature) where {T,V}
     path = extend!(empty!(pool.root), zerofrac, onefrac, feature)
-    visit!(φ, tree, x, row, k, path, pool, 1)
+    visit!(φ, tree, x, row, k, path, pool, 1, zero(V))
     return nothing
 end
 
@@ -172,12 +172,24 @@ path dimension for it -- see the LIN branch below.
 this node builds comes from `pool` at `depth`. Children run at `depth + 1`, so
 they cannot touch the hot and cold paths this node keeps live across both
 recursions.
+
+`acc` carries the branch constants collected on the way down from the root;
+they are attributed only at the leaves. A constant credited against a node's
+path equals the same constant credited against both of its child paths,
+because the total path weight `unwound_sum` computes is linear in the appended
+element's `(zerofrac, onefrac)` and the two children's fractions sum
+componentwise to the parent's (`hotcov * izero + coldcov * izero == izero`,
+`ione + 0 == ione`). That trades three `attribute_constant!` calls per split
+node for one per leaf, worth 1.3x on case 6 -- see `bench/PROFILE.md`'s
+"3. SHAP". It reassociates, so values move in the last few bits. The
+own-feature linear term is the exception: it is attributed at the node,
+against a path no child has.
 """
 function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem},
-        pool::PathPool, depth::Int) where {T,V}
+        pool::PathPool, depth::Int, acc::V) where {T,V}
     n = tree.nodes[k]
     if isleaf(n)
-        attribute_constant!(φ, path, n.lintercept, row)
+        attribute_constant!(φ, path, acc + n.lintercept, row)
         return nothing
     end
     ensure_depth!(pool, depth)   # lazy growth: extends the pool the first time recursion reaches this depth
@@ -186,19 +198,19 @@ function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem},
     if !iscategorical(n) && n.left == n.right
         # LIN node: no real split, single child, cover unchanged. Present vs.
         # absent give the same constant (lcoef * xmean + lintercept) either
-        # way, so it is attributed against the path as-is -- extending it for
-        # j here would rescale every other element's weight for no reason,
-        # since a (zerofrac=1, onefrac=1) element is not a no-op mid-path.
+        # way, so it rides down in acc against the path as-is -- the child is
+        # reached without extending path for j, since a (zerofrac=1,
+        # onefrac=1) element is not a no-op mid-path and would rescale every
+        # other element's weight for no reason.
         # Only the own-feature term lcoef * (x - xmean) is conditional on
         # presence. If an ancestor already split on j, that ancestor fixed
         # j's coalition state (its onefrac); the own term reuses that state
         # (unwind the stale element, extend with zerofrac 0 and the
-        # ancestor's onefrac) on its own copy of path, leaving path itself,
-        # the constant attribution and the child recursion untouched.
+        # ancestor's onefrac) on its own copy of path, leaving path itself and
+        # the child recursion untouched.
         xc = tree.truncate ? min(max(xraw, n.xmin), n.xmax) : xraw
         val = n.lcoef * n.xmean + n.lintercept
         own = n.lcoef * (xc - n.xmean)
-        attribute_constant!(φ, path, val, row)
         prev = findfirst(e -> e.feature == j, path)
         ownpath = copyinto!(pool.own[depth], path)
         if prev === nothing
@@ -207,7 +219,7 @@ function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem},
             extend!(unwind!(ownpath, prev), 0.0, path[prev].onefrac, j)
         end
         attribute_constant!(φ, ownpath, own, row)
-        visit!(φ, tree, x, row, n.left, path, pool, depth + 1)
+        visit!(φ, tree, x, row, n.left, path, pool, depth + 1, acc + val)
         return nothing
     end
     covl = tree.nodes[n.left].cover / n.cover; covr = 1 - covl
@@ -231,20 +243,21 @@ function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem},
     hotcov, coldcov = goleft ? (covl, covr) : (covr, covl)
     hotval, coldval = goleft ? (lval, rval) : (rval, lval)
     hotown = goleft ? ownl : ownr
-    # constant part of the taken branch's piece, one level down.  hotpath and
-    # coldpath are already the paths the hot/cold recursion needs, so they are
-    # passed straight into visit! rather than rebuilt there -- shap_recurse!
-    # would otherwise refill a buffer and extend! a second time for the same result.
-    hotpath = extend!(copyinto!(pool.hot[depth], path), hotcov * izero, ione, j)
-    attribute_constant!(φ, hotpath, hotval, row)
     # own-feature linear term: only present when j is in the coalition, so
-    # zerofrac = 0 -- the term vanishes when j is absent, not weighted by cover
+    # zerofrac = 0 -- the term vanishes when j is absent, not weighted by
+    # cover. That also makes ownpath no child's path, so it cannot ride down
+    # in acc; pushing it down would cost each leaf one path per ancestor split
+    # feature instead.
     ownpath = extend!(copyinto!(pool.own[depth], path), 0.0, ione, j)
     attribute_constant!(φ, ownpath, hotown, row)
+    # hotpath and coldpath are already the paths the hot/cold recursion needs,
+    # so they are passed straight into visit! rather than rebuilt there --
+    # shap_recurse! would otherwise refill a buffer and extend! a second time
+    # for the same result. The two branch constants ride down in acc.
+    hotpath = extend!(copyinto!(pool.hot[depth], path), hotcov * izero, ione, j)
     coldpath = extend!(copyinto!(pool.cold[depth], path), coldcov * izero, 0.0, j)
-    attribute_constant!(φ, coldpath, coldval, row)
-    visit!(φ, tree, x, row, hot, hotpath, pool, depth + 1)
-    visit!(φ, tree, x, row, cold, coldpath, pool, depth + 1)
+    visit!(φ, tree, x, row, hot, hotpath, pool, depth + 1, acc + hotval)
+    visit!(φ, tree, x, row, cold, coldpath, pool, depth + 1, acc + coldval)
     return nothing
 end
 

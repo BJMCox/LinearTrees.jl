@@ -242,6 +242,64 @@ function shap_reference_shapes()
     return out
 end
 
+"""
+Rebuild, from the path `P` at a split node on feature `j`, the hot and cold
+paths `visit!` hands to the two child recursions. `prev` is the position of
+`j`'s stale element in `P`, or `nothing` when no ancestor split on `j`.
+"""
+function shap_child_paths(P, j, prev, hotcov)
+    Q = copy(P)
+    izero = 1.0; ione = 1.0
+    if prev !== nothing
+        izero = P[prev].zerofrac; ione = P[prev].onefrac
+        LinearTrees.unwind!(Q, prev)
+    end
+    hot = LinearTrees.extend!(copy(Q), hotcov * izero, ione, j)
+    cold = LinearTrees.extend!(copy(Q), (1 - hotcov) * izero, 0.0, j)
+    return hot, cold
+end
+
+@testset "a constant attributed at a split node telescopes to its two children" begin
+    # `visit!` does not attribute a split node's two branch constants at the
+    # node any more: it adds them to `acc` and attributes the running sum once
+    # per leaf. That is sound only because of this identity. Reinstating the
+    # `izero` factor wrongly -- `hotcov` in place of `hotcov * izero` in
+    # `visit!`'s hot path, say -- or changing `extend!`'s weight recurrence
+    # breaks it, and then a constant credited at a leaf no longer equals the
+    # same constant credited at the ancestor it came from.
+    c = 1.7
+    p = 3
+    root = LinearTrees.extend!(LinearTrees.PathElem[], 1.0, 1.0, 0)
+
+    # Two levels, child feature fresh: the root splits on feature 1 (cover 0.6
+    # to the taken side), and its hot child splits on feature 2.
+    P = LinearTrees.extend!(copy(root), 0.6, 1.0, 1)
+    hot, cold = shap_child_paths(P, 2, nothing, 0.25)
+    φnode = zeros(1, p); φkids = zeros(1, p); φhot = zeros(1, p)
+    LinearTrees.attribute_constant!(φnode, P, c, 1)
+    LinearTrees.attribute_constant!(φkids, hot, c, 1)
+    LinearTrees.attribute_constant!(φkids, cold, c, 1)
+    LinearTrees.attribute_constant!(φhot, hot, c, 1)
+    @test φkids ≈ φnode atol = 1e-12
+    @test φhot[1, 2] != 0        # the split feature's two child credits really cancel
+    @test φkids[1, 2] ≈ φnode[1, 2] atol = 1e-12
+
+    # Same shape with an ancestor split on the child's own feature, so `visit!`
+    # unwinds a stale element and both child covers carry its `izero`. Here the
+    # split feature's parent credit is nonzero, so the two children have to
+    # reproduce it rather than cancel.
+    Ps = LinearTrees.extend!(LinearTrees.extend!(copy(P), 0.3, 1.0, 2), 0.45, 1.0, 3)
+    prev = findfirst(e -> e.feature == 2, Ps)
+    hots, colds = shap_child_paths(Ps, 2, prev, 0.25)
+    ψnode = zeros(1, p); ψkids = zeros(1, p)
+    LinearTrees.attribute_constant!(ψnode, Ps, c, 1)
+    LinearTrees.attribute_constant!(ψkids, hots, c, 1)
+    LinearTrees.attribute_constant!(ψkids, colds, c, 1)
+    @test ψnode[1, 2] != 0
+    @test ψkids ≈ ψnode atol = 1e-12
+    @test ψkids[1, 2] ≈ ψnode[1, 2] atol = 1e-12
+end
+
 @testset "shap on three reference shapes is thread-invariant and efficient" begin
     # These shapes reach cases the shallow testsets above do not: depth 10 with
     # a categorical split, a `Softmax` class axis on a depth-4 tree, and a
