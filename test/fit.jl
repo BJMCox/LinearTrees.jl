@@ -175,7 +175,7 @@ end
         LinearTrees.presort!(idx, X, 1)
         st = LinearTrees.FitState{Float64,Float64,typeof(loss),BIC}(X, y, w, f, zeros(n), zeros(n), zeros(n), idx,
             zeros(Bool, n), [LinearTrees.Scratch{Float64,Float64}(n)], [Vector{Int32}(undef, n)],
-            LinearTrees.Node{Float64,Float64}[], UInt64[], Int[], zeros(Int, 1), loss, BIC(), -Inf, Inf,
+            LinearTrees.Node{Float64,Float64}[], UInt64[], Int[], zeros(Bool, 1), zeros(Int, 1), loss, BIC(), -Inf, Inf,
             12, 10.0, 5.0, 1.0, 10, false, 1, 5)
         rows = collect(Int32(1):Int32(n))
         LinearTrees.refresh!(st, rows)
