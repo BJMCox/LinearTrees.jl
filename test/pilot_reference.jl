@@ -1,4 +1,6 @@
 using JSON3
+using Random
+using StableRNGs
 
 const PILOT_KINDS = Dict("con" => CON, "lin" => LIN, "pcon" => PCON, "blin" => BLIN, "plin" => PLIN)
 
@@ -22,8 +24,10 @@ default_kw(name) = get(FIXTURE_KW, name, (max_depth = 6, categorical = Int[]))
             truncation_factor = 3, categorical = kw.categorical)
         @test LinearTrees.predict(t, X) ≈ Float64.(fx.pred) atol = 1e-8
 
-        # coefficients ride along in the sort key so equal (kind, feature, threshold)
-        # entries (e.g. two lin nodes on the same feature) still pair deterministically.
+        # Coefficients ride along in the sort key (`by` below) so equal
+        # (kind, feature, sortkey) entries -- e.g. two lin nodes on the same
+        # feature, where sortkey is NaN on both sides -- still pair
+        # deterministically instead of by incidental emission order.
         # For a categorical (reference "pconc") node, threshold is meaningless on both
         # sides (NaN on ours, a stale placeholder on the reference's), so the surrogate
         # sort key there is the smallest left-level code instead, and the real
@@ -46,8 +50,21 @@ default_kw(name) = get(FIXTURE_KW, name, (max_depth = 6, categorical = Int[]))
                 cat = iscat, leftset = leftset)
         end
         @test length(ours) == length(theirs)
-        by = x -> (x.kind, x.feature, x.sortkey)
-        for (o, r) in zip(sort(ours; by), sort(theirs; by))
+        by = x -> (x.kind, x.feature, x.sortkey, x.lcoef, x.lintercept, x.rcoef, x.rintercept)
+        sorted_ours, sorted_theirs = sort(ours; by), sort(theirs; by)
+        # Pairing must not depend on t.nodes'/the fixture's own emission order: a
+        # production change that only reorders nodes (no fitted value changes) must
+        # not fail this testset, and a real coefficient swap between two tied nodes
+        # must not slip through paired by accident. Shuffling before sorting must
+        # reproduce the identical sorted sequence (fails this testset before the
+        # coefficients were restored to `by` above -- D-review.md finding 1).
+        # isequal, not ==: NaN != NaN under == (IEEE 754), which would make
+        # every lin entry's sortkey compare unequal to itself and fail this
+        # check regardless of whether shuffling actually changed the pairing.
+        rng = StableRNG(hash(name))
+        @test isequal(sort(shuffle(rng, ours); by), sorted_ours)
+        @test isequal(sort(shuffle(rng, theirs); by), sorted_theirs)
+        for (o, r) in zip(sorted_ours, sorted_theirs)
             @test o.kind == r.kind && o.feature == r.feature && o.cat == r.cat
             if r.cat
                 @test o.leftset == r.leftset
