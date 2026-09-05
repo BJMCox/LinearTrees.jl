@@ -49,6 +49,9 @@ Base.@kwdef mutable struct FitState{T,V,L<:Loss,R<:SelectionRule}
     truncate::Bool
     nthreads::Int
     niter::Int
+    # `h` is exactly one on every row: `MSE` with unit weights. The split scan
+    # then reads `hs` as `UnitHessians` and accumulates without a multiply.
+    unith::Bool
 end
 
 """
@@ -128,7 +131,8 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{T}, w::Vector{T}, loss::L, rule::R,
         nodes = Node{T,V}[], catmasks = UInt64[], iscat, nlevels, loss, rule, lo, hi,
         max_depth = Int(max_depth), min_fit = T(min_fit), min_leaf = T(min_leaf),
         min_sum_hessian = T(min_sum_hessian), max_lin_chain = Int(max_lin_chain),
-        truncate = Bool(truncate), nthreads = Int(nthreads), niter = Int(niter))
+        truncate = Bool(truncate), nthreads = Int(nthreads), niter = Int(niter),
+        unith = unit_hessian(loss) && all(isone, w))
     rows = collect(Int32(1):Int32(n))
     refresh!(st, rows, 1)
     grow_subtree(st, rows, 1:n, 0, 0, 1:nthreads, st.nodes, st.catmasks)
@@ -201,7 +205,7 @@ end
 `ε` for IRLS, computed once over the whole `rows` set so a chunked pass
 matches the serial one exactly; smooth losses ignore it. Runs on worker
 `tid`'s scratch: the residual goes in `.ws`, `median_abs!`'s abs-value buffer
-is `.xs` and its sort order is `.perm`. All three are free here for the
+is `.xs` and its index buffer is `.perm`. All three are free here for the
 same reason they are free in `irls_refit` -- `best_split` has returned and
 `partition!` has not yet run -- so the node's ε costs no allocation.
 """
@@ -229,15 +233,41 @@ function refresh_chunk!(st::FitState, rows, ε)
     return st
 end
 
-"Gather the node rows, `st.idx[span, j]` in feature-`j` order, into one worker's scratch. `O(length(span))`."
+"""
+Gather the node rows, `st.idx[span, j]` in feature-`j` order, into one
+worker's scratch. `O(length(span))`. On the unit-hessian path `sc.hs` is not
+written: `scan_gathered` hands the scan a `UnitHessians` instead, and the
+branch is hoisted out of the row loop so neither loop tests it per row.
+"""
 function gather!(st::FitState, sc::Scratch, span::UnitRange{Int}, j)
     m = 0
-    for k in span
-        i = st.idx[k, j]
-        m += 1
-        sc.xs[m] = st.X[i, j]; sc.zs[m] = st.z[i]; sc.hs[m] = st.h[i]; sc.ws[m] = st.w[i]
+    if st.unith
+        for k in span
+            i = st.idx[k, j]
+            m += 1
+            sc.xs[m] = st.X[i, j]; sc.zs[m] = st.z[i]; sc.ws[m] = st.w[i]
+        end
+    else
+        for k in span
+            i = st.idx[k, j]
+            m += 1
+            sc.xs[m] = st.X[i, j]; sc.zs[m] = st.z[i]; sc.hs[m] = st.h[i]; sc.ws[m] = st.w[i]
+        end
     end
     return m
+end
+
+"""
+Scan the first `m` rows of `sc` under `rule`. Two calls, not one on a
+`Union` of `hs` types: on the unit-hessian path the scan gets `UnitHessians`,
+which drops the multiply from `addrow` and `subrow`, and each branch stays a
+call with a concrete argument type. Both give the same sums to the bit, since
+the multiply dropped is by exactly one.
+"""
+@inline function scan_gathered(st::FitState{T,V}, sc::Scratch{T,V}, m, rule, dmin) where {T,V}
+    xs = view(sc.xs, 1:m); zs = view(sc.zs, 1:m); ws = view(sc.ws, 1:m)
+    st.unith && return scan_feature(xs, zs, UnitHessians{V}(m), ws, rule, st.min_leaf, dmin)
+    return scan_feature(xs, zs, view(sc.hs, 1:m), ws, rule, st.min_leaf, dmin)
 end
 
 """
@@ -300,6 +330,7 @@ struct PconOnly{R<:SelectionRule} <: SelectionRule
 end
 allowed(r::PconOnly, k::ModelKind) = (k == CON || k == PCON) && allowed(r.inner, k)
 score_logn(r::PconOnly, n) = score_logn(r.inner, n)
+devkey(r::PconOnly, surrogate, dmin) = devkey(r.inner, surrogate, dmin)
 selection_score(r::PconOnly, k, s, n, dmin, ncoord::Integer = 1, logn = score_logn(r, n)) =
     allowed(r, k) ? selection_score(r.inner, k, s, n, dmin, ncoord, logn) : Inf
 
@@ -359,7 +390,7 @@ function scan_categorical(st::FitState{T,V}, sc::Scratch{T,V}, rows, j, dmin) wh
                 sc.xs[m] = T(rank[lc]); sc.zs[m] = st.z[i]; sc.hs[m] = st.h[i]; sc.ws[m] = st.w[i]
             end
         end
-        cand = scan_feature(view(sc.xs, 1:m), view(sc.zs, 1:m), view(sc.hs, 1:m), view(sc.ws, 1:m), rule, st.min_leaf, dmin)
+        cand = scan_gathered(st, sc, m, rule, dmin)
         if cand.score < best.score
             best = cand
             bestleft = cand.kind == PCON ? [lc for lc in order if rank[lc] <= cand.threshold] : Int[]
@@ -391,8 +422,7 @@ function best_split_serial(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, 
             c, leftcodes = scan_categorical(st, sc, rows, j, dmin)
         else
             m = gather!(st, sc, span, j)
-            c = scan_feature(view(sc.xs, 1:m), view(sc.zs, 1:m), view(sc.hs, 1:m), view(sc.ws, 1:m),
-                st.rule, st.min_leaf, dmin)
+            c = scan_gathered(st, sc, m, st.rule, dmin)
             leftcodes = Int[]
         end
         if c.score < best.score

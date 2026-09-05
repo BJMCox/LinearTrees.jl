@@ -43,9 +43,28 @@ end
 Evaluate all five model kinds on one presorted feature and return the best
 candidate under `rule`. Rows arrive sorted by `xs`. `ws` are frequency
 weights. `min_leaf` is the least `Σ w` per child. `dmin` is the BIC log
-floor.
+floor. `hs` holds the row hessians as a `Vector{V}` or, when every one of
+them is exactly one, as `UnitHessians{V}`, which accumulates without the
+multiply and gives the same sums to the bit.
+
+`selection_score` runs once per kind, not once per split point: the sweep
+carries the lowest `devkey` reached by each of `pcon`, `blin` and `plin`, and
+scores those three at the end. The winner is chosen by
+
+1. the lowest score, then
+2. the fixed kind order `(con, lin, pcon, blin, plin)` on an exact score tie
+   (an ordering by parameter count only for `BIC`'s default `dof`), then
+3. the lowest feature index, applied by `best_split`;
+
+and within one kind by the lowest `devkey`, then the earliest split point on
+an exact key tie. Because the score is monotone but not injective in the key
+(see `devkey`), split points that share one score are separated by deviance
+here where scoring inside the sweep kept the earliest of them.
+
+The `nu >= MIN_UNIQUE_LIN`, `uleft`/`uright` and `min_leaf` restrictions still
+apply per split point, exactly as they would with the score inside the loop.
 """
-function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::AbstractVector{V},
+function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::AbstractVector,
         ws::AbstractVector{T}, rule::SelectionRule, min_leaf, dmin) where {T<:Real,V}
     m = length(xs)
     n = sum(ws)
@@ -76,7 +95,14 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
         end
     end
 
-    # splits: sweep the boundary from left to right
+    # splits: sweep the boundary from left to right, carrying the lowest
+    # `devkey` per kind. The `score` field of these three holds that key, not
+    # a score, until the sweep ends; `nocandidate`'s `Inf` is the empty state,
+    # so a non-finite key is never stored and never wins.
+    pcon = nocandidate(T, V); blin = nocandidate(T, V); plin = nocandidate(T, V)
+    dopcon = allowed(rule, PCON)
+    doblin = allowed(rule, BLIN) && nu >= MIN_UNIQUE_LIN
+    doplin = allowed(rule, PLIN)
     left = zero(MomentSums{V}); right = total
     wleft = zero(T); wright = n
     uleft = 0
@@ -90,29 +116,40 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
         t = xs[i]                                      # PILOT parity: split point and blin knot are the largest left value
         uright = nu - uleft
 
-        if allowed(rule, PCON)
+        if dopcon
             bl, rl = fit_con(left); br, rr = fit_con(right)
             rss = rl + rr
-            sc = selection_score(rule, PCON, sum(rss), n, dmin, nc, logn)
-            sc < best.score && (best = Candidate{T,V}(PCON, t, zero(V), bl, zero(V), br, rss, sc))
+            dk = devkey(rule, sum(rss), dmin)
+            dk < pcon.score && (pcon = Candidate{T,V}(PCON, t, zero(V), bl, zero(V), br, rss, dk))
         end
-        if allowed(rule, BLIN) && nu >= MIN_UNIQUE_LIN
+        if doblin
             r = fit_blin(left, right, t)
             if r !== nothing
                 al, bl, ar, br, rss = r
-                sc = selection_score(rule, BLIN, sum(rss), n, dmin, nc, logn)
-                sc < best.score && (best = Candidate{T,V}(BLIN, t, al, bl, ar, br, rss, sc))
+                dk = devkey(rule, sum(rss), dmin)
+                dk < blin.score && (blin = Candidate{T,V}(BLIN, t, al, bl, ar, br, rss, dk))
             end
         end
-        if allowed(rule, PLIN) && uleft >= MIN_UNIQUE_LIN && uright >= MIN_UNIQUE_LIN
+        if doplin && uleft >= MIN_UNIQUE_LIN && uright >= MIN_UNIQUE_LIN
             rl = fit_lin(left); rr = fit_lin(right)
             if rl !== nothing && rr !== nothing
                 al, bl, rssl = rl; ar, br, rssr = rr
                 rss = rssl + rssr
-                sc = selection_score(rule, PLIN, sum(rss), n, dmin, nc, logn)
-                sc < best.score && (best = Candidate{T,V}(PLIN, t, al, bl, ar, br, rss, sc))
+                dk = devkey(rule, sum(rss), dmin)
+                dk < plin.score && (plin = Candidate{T,V}(PLIN, t, al, bl, ar, br, rss, dk))
             end
         end
+    end
+
+    # con and lin are already in `best`, so scoring pcon, blin and plin in that
+    # order with `<` gives the kind order the docstring states. The key stands
+    # in for the raw deviance here: `devkey`'s contract is that it scores the
+    # same, to the bit.
+    for cand in (pcon, blin, plin)
+        isfinite(cand.score) || continue
+        sc = selection_score(rule, cand.kind, cand.score, n, dmin, nc, logn)
+        sc < best.score && (best = Candidate{T,V}(cand.kind, cand.threshold, cand.lcoef,
+            cand.lintercept, cand.rcoef, cand.rintercept, cand.surrogate, sc))
     end
     return best
 end

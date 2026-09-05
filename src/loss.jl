@@ -138,6 +138,18 @@ end
 end
 
 """
+    unit_hessian(loss)
+
+True when every row hessian this loss produces is exactly one before frequency
+weighting. Only `MSE` qualifies: `gh(::MSE, y, f)` returns `one(f)` and the
+`HMIN` floor leaves it alone, so with unit weights the whole `h` vector is
+ones and the scan can take an accumulation path with no multiply in it. Any
+loss that does not implement this keeps the general path.
+"""
+unit_hessian(::Loss) = false
+unit_hessian(::MSE) = true
+
+"""
     gradhess!(g, h, loss, y, f)
 
 Unweighted `g = ∂ℓ/∂f` and `h = max(∂²ℓ/∂f², HMIN)` per row. Frequency

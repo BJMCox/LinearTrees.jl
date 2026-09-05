@@ -538,3 +538,125 @@ Only worth it if `predict` becomes the bottleneck.
 - `fit_blin`'s 3x3 solve: 6% of case 1, the only real linear algebra in the sweep.
 - The `Union{Nothing, Tuple}` returns of `fit_lin`/`fit_blin`: a two-member union the compiler splits.
 - The `Dict` level lookup left in `encode_levels!`: about 5% of case 4 after the barrier below, against a `DataAPI.refarray` rewrite that would have to handle every table type.
+
+## P2: the scan-speed pass
+
+Protocol for every number in this section: Apple M4 Pro, Julia 1.12.7, eleven
+`@benchmark` samples, and the two arms of each comparison run alternately from
+the same source tree with only the change under test toggled. Run-to-run drift
+on this machine reached 8% during the pass, so a before/after pair taken
+sequentially is not trustworthy at this scale; best-of-eleven is quoted next to
+the median wherever the margin is small. Reproduce with `bench/ab.jl` (case 1
+is its first row) or with the case-1 data from `bench/cases.jl` alone.
+
+### 1. Score once per kind per feature (ranked target 1, done)
+
+`scan_feature` now carries the lowest `devkey` each of `pcon`, `blin`
+and `plin` reaches through the split sweep and calls `selection_score` once per
+kind at the end, so `log(dev / n)` runs three times per feature instead of
+three times per split point. `devkey` is the deviance in the form the rule
+compares it in -- `max(dev, dmin)` for `BIC`, the raw value for `MinDeviance`,
+whose score has no floor -- so the per-kind minimiser is the one the
+interleaved sweep kept, and the key hands to `selection_score` for a
+bit-identical score. Case 1 drops from **2086 ms to 1429 ms serial (-31%)**
+and from **826 ms to 542 ms on ten threads (-34%)**; allocations are
+unchanged; best-of-eleven, 2023 -> 1363 ms serial and 801 -> 532 ms on ten
+threads, gives the same picture. Only an exact cross-kind score
+tie can now resolve differently (it goes to the earlier kind in
+`(con, lin, pcon, blin, plin)` rather than to the lower split point), and the
+fitted trees are bit-identical on all thirteen designs checked: the four
+`test/fixtures/partition` cases, the eight PILOT reference fixtures and a
+`Softmax(3)` design with a categorical column. The fixtures were therefore not
+regenerated.
+
+### 2. The MSE unit-hessian path (committed, above the 3% bar)
+
+With `MSE` and no frequency weights every row hessian is exactly one, and the
+sweep still multiplied every row sum by it. `unit_hessian(loss)` plus a
+`all(isone, w)` check at the start of the fit sets `FitState.unith`; the split
+scan then gets `UnitHessians{V}`, an `hs` vector of `OneHessian` markers whose
+`addrow`/`subrow` methods are the general ones with every `h *` dropped, and
+`gather!` stops writing `sc.hs` at all. Case 1, with the path switched off and
+on at `FitState.unith` and everything else held fixed: **serial 1554 -> 1432 ms
+(-7.9%)** median, 1457 -> 1360 ms best-of-eleven (-6.6%); **ten threads
+571 -> 536 ms (-6.0%)** median, 551 -> 504 ms best (-8.5%) -- over the 3% bar
+the brief set on both. The multiply dropped is by exactly one, so the trees are
+bit-identical, checked on
+the same thirteen designs and on the case-1 tree itself (3808 nodes, every node
+field compared as a bit pattern).
+
+### 3. The blin 3x3 solve as a Schur complement: measured, not committed
+
+`fit_blin` builds a `3x3` `SMatrix`, takes `det` and solves with `\` at every
+split point. The system is the `lin` `2x2` Gram matrix bordered by one hinge
+column, so it can be solved as the `2x2` solve plus a rank-one Schur update:
+with `p = [sxu, su]`, `adj2` the adjugate of the `2x2` and `d2` its
+determinant, `det(G3) = suu*d2 - p' adj2 p` (the guard's own quantity),
+`c = (suz*d2 - p' adj2 m2) / det(G3)` and `[a; b] = (adj2 m2 - c*adj2 p) / d2`,
+which is three divisions and about twenty multiplications against the dense
+solve's one division and about forty. Isolated, that form **is** faster: over a
+2000-point sweep, `14.29 us -> 11.96 us` per sweep (-16%), or `11.54 us`
+(-19%) with the reciprocal of `d2` taken once. It is **not committed**, for
+three measured reasons.
+
+1. **The brief's exactness gate fails.** Against the dense solve on 3 x 10^5
+   random node sums (rows accumulated through `addrow`, so the sums are
+   reachable ones), the coefficients agree to a median of `8e-15` relative but
+   only to `1.5e-11` at the 99th percentile and `4.8e-7` at worst, with the
+   knot restricted to the middle 5-95% of rows as `min_leaf` restricts it. The
+   gate was `1e-12` relative. The singular guard is unaffected: it fires on
+   exactly the same inputs in all 3 x 10^5 cases, zero flips.
+2. **Neither form is the accurate one.** Against a `BigFloat` solve of the same
+   normal equations, the Schur form's worst error over the 5-95% band is
+   `5.4e-9` and the dense solve's is `1.2e-8`; the Schur form is closer to
+   exact in 56% of random cases. The disagreement in (1) is the conditioning of
+   the blin normal equations at `Float64`, not a defect of either ordering --
+   which is also why it cannot be tuned away.
+3. **No end-to-end win to weigh against that, and the trees move.** Case 1
+   measured `1402 -> 1469 ms` serial and `552 -> 525 ms` on ten threads, but
+   those two runs were sequential rather than alternated and the tree itself
+   changes, so the work changes with it: the end-to-end comparison carries no
+   weight either way, and the isolated sweep above is the only trustworthy
+   speed number. The fitted trees differ on 135 of case 1's 3808
+   nodes, on all 28 nodes of the `mse_bic` fixture, and the `softmax_cat`
+   fixture grows from 35 to 53 nodes. Blessing that means regenerating every
+   partition fixture, and (1) and (2) say the new trees would be no better
+   founded than the old ones.
+
+Worth revisiting only together with the conditioning: solving the blin system
+on centred sums (`x - x̄`) would cut both the cancellation and the operation
+count, but it changes what the moment sums are, so it is its own item.
+
+### 4. `@inbounds` on the two hottest loops: measured, not committed
+
+The project bans `@inbounds` without a cited measurement, and the measurement
+does not support one. Apple M4 Pro, Julia 1.12.7, `-t 1`, `@benchmark`
+medians, `n = 200_000` sorted rows, three runs of each variant with the source
+toggled between them.
+
+| Loop | plain | `@inbounds` | gain |
+|---|---|---|---|
+| `scan_feature` sweep, `Vector{Float64}` hs | 2.20 ms | 2.36 ms | **-7%** |
+| `scan_feature` sweep, `UnitHessians` hs | 2.18 ms | 2.35 ms | **-8%** |
+| `gather!`, unit-hessian path (three stores) | 0.524 ms | 0.521 ms | +0.6% |
+| `gather!`, general path (four stores) | 0.917 ms | 0.814 ms | +11.2% |
+
+`scan_feature` is consistently **slower** with the bounds checks removed: the
+loop is arithmetic-bound, and dropping the checks changes LLVM's scheduling
+for the worse. `gather!`'s unit path -- the one an unweighted `MSE` fit takes
+-- gains 0.6%, far under the 5% bar. Only `gather!`'s general path clears the
+bar, and it is worth about 1-2% of a weighted or non-`MSE` fit end to end.
+
+Case 1 end to end, `-t 1`, eleven samples, the two variants run alternately to
+control for drift: plain medians 1463 / 1443 ms against 1398 / 1352 ms with
+`@inbounds` in `gather!`, and best-of-eleven 1333 ms against 1298 ms -- a 2.6%
+to 5.4% spread that straddles the bar and sits inside this machine's
+run-to-run noise (other work was resident during the pass). `@inbounds` in
+`scan_feature` alone measured 1362 / 1375 ms, no better than plain.
+
+So: nothing committed. If the general `gather!` path is ever revisited, the
+bound argument is available -- `span ⊆ 1:n`, `st.idx` is `n x p` with
+`j ∈ 1:p`, every `i = st.idx[k, j]` is a row index in `1:n` because `presort!`
+fills the column with a `sortperm` and `partition!` only permutes within a
+span, and `m` runs from 1 to `length(span) ≤ n` over scratch buffers of length
+`n` -- but the gain does not pay for the loss of the check.

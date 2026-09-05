@@ -21,6 +21,25 @@ Base.:-(a::MomentSums{V}, b::MomentSums{V}) where {V} =
     MomentSums{V}(a.sw - b.sw, a.sx - b.sx, a.sxx - b.sxx, a.sz - b.sz, a.sxz - b.sxz, a.szz - b.szz)
 
 """
+Stands in for a row hessian that is exactly one. `addrow` and `subrow` have
+methods for it that drop the multiplication by one; the value it stands for
+is `one(eltype(V))` in every coordinate. Multiplying by exactly one is exact,
+so a scan over these sums is bit-identical to the same scan over a
+`Vector{V}` of ones.
+"""
+struct OneHessian{V} end
+
+"A read-only `hs` vector of `OneHessian{V}`, the fast path's stand-in for `ones(V, len)`."
+struct UnitHessians{V} <: AbstractVector{OneHessian{V}}
+    len::Int
+end
+Base.size(h::UnitHessians) = (h.len,)
+Base.@propagate_inbounds function Base.getindex(h::UnitHessians{V}, i::Int) where {V}
+    @boundscheck checkbounds(h, i)
+    return OneHessian{V}()
+end
+
+"""
 Add one row. `h` and `z` have type `V`, `x` has the feature type. `h * x` and
 `hx * x` scale a `V` by the scalar feature value, which `*` already does for
 `SVector`; `h * z` and `z * z` multiply two `V`s elementwise, which needs `.*`
@@ -33,6 +52,19 @@ end
 @inline function subrow(s::MomentSums{V}, x, z, h) where {V}
     hx = h * x
     MomentSums{V}(s.sw - h, s.sx - hx, s.sxx - hx * x, s.sz - h .* z, s.sxz - hx .* z, s.szz - h .* z .* z)
+end
+
+# `h ≡ 1`: the same expressions with every `h *` dropped. Dotted, and with
+# `one(eltype(V))` rather than `one(V)`, because `x` is the scalar feature
+# value while the sums carry the coefficient type `V`, an `SVector` for a
+# softmax fit.
+@inline function addrow(s::MomentSums{V}, x, z, ::OneHessian{V}) where {V}
+    o = one(eltype(V))
+    MomentSums{V}(s.sw .+ o, s.sx .+ x, s.sxx .+ x * x, s.sz .+ z, s.sxz .+ x .* z, s.szz .+ z .* z)
+end
+@inline function subrow(s::MomentSums{V}, x, z, ::OneHessian{V}) where {V}
+    o = one(eltype(V))
+    MomentSums{V}(s.sw .- o, s.sx .- x, s.sxx .- x * x, s.sz .- z, s.sxz .- x .* z, s.szz .- z .* z)
 end
 
 const SINGULAR_TOL = 1e-12
@@ -65,6 +97,9 @@ end
 Broken linear fit with knot `t`: basis `[x, 1, max(x - t, 0)]`. Hinge sums
 come from the right-child sums. Returns left and right pieces and the
 surrogate deviance, or `nothing` when the `3×3` system is singular.
+
+The `2×2`-plus-Schur-update form of this solve was measured and rejected: see
+`bench/PROFILE.md`, "not worth changing".
 """
 @inline function fit_blin(sl::MomentSums{T}, sr::MomentSums{T}, t; tol = SINGULAR_TOL) where {T<:Real}
     s = sl + sr

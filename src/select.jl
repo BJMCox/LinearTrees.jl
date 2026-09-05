@@ -48,6 +48,44 @@ score_logn(::SelectionRule, n) = (isfinite(n) && n > 0) ? log(n) : zero(float(n)
 score_logn(::MinDeviance, n) = zero(float(n))
 score_logn(::GainRule, n) = throw(ArgumentError("GainRule is reserved for boosting"))
 
+"""
+    devkey(rule, surrogate, dmin)
+
+The surrogate deviance in the form `rule` compares it in. `scan_feature`
+carries the lowest key per model kind through the split sweep and scores each
+kind once, at the end, so every rule owes two properties:
+
+1. its `selection_score` is **monotone non-decreasing** in the key, so the
+   lowest key is a lowest score;
+2. `selection_score(rule, k, devkey(rule, s, dmin), n, dmin, ...)` is
+   `selection_score(rule, k, s, n, dmin, ...)` to the last bit, so the key can
+   be handed to the score in place of the raw deviance.
+
+Property (1) is not strict: `n log(dev / n)` is not injective in `Float64`, so
+adjacent keys can share one score (two at `n = 108`, up to ten at
+`n = 200_000`). Where several split points of one kind share a score the sweep
+keeps the lowest key, the lowest surrogate deviance, while scoring inside the
+sweep kept the earliest split point. Both reach the same score.
+
+`BIC` scores `max(surrogate, dmin)`, so its key is that floored value and (2)
+holds because `max` is idempotent. `MinDeviance` scores the raw deviance and
+so keeps it: flooring it would make two deviances below `dmin` tie where the
+rule separates them.
+
+The generic method floors the deviance and keys a non-finite one to `Inf`, so
+a `-Inf` surrogate can never win its kind, as when it was scored in the sweep.
+No fit has been observed to produce `-Inf`; the guard is for a latent case.
+"""
+# BIC and any rule with the same log floor
+@inline function devkey(::SelectionRule, surrogate, dmin)
+    d = max(surrogate, dmin)
+    # `max` already carries `NaN` and `+Inf` through to a key that cannot win;
+    # `-Inf` is the one that would otherwise floor to `dmin` and win outright
+    return isfinite(surrogate) ? d : oftype(d, Inf)
+end
+devkey(::MinDeviance, surrogate, dmin) = surrogate
+devkey(::GainRule, surrogate, dmin) = throw(ArgumentError("GainRule is reserved for boosting"))
+
 # `ncoord` is the number of coefficient coordinates (K-1 for softmax, 1 otherwise):
 # every model kind fits `ncoord` times its scalar parameter count, so the BIC
 # penalty scales with it while the deviance term already sums over coordinates.
