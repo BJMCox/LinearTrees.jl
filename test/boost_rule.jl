@@ -76,7 +76,12 @@ end
     @test LinearTrees.score_logn(r, 100.0) == 0.0
 end
 
-"Brute-force depth-1 GainRule tree: every feature, every split between distinct values, ridge fits."
+"""
+Brute-force depth-1 GainRule tree: checks the search over every feature and
+every split between distinct values, given the package's own ridged closed
+forms (`fit_con`/`fit_lin`), which the first testset verifies against the
+explicit normal equations.
+"""
 function brute_depth1(X, z, h, w, λw, λb, γ; min_leaf = 5)
     n, p = size(X)
     hw = h .* w
@@ -139,4 +144,29 @@ end
     # a large gamma forbids every split
     t = fit_tree(X, y; rule = GainRule(gamma = 1e6), max_depth = 3, truncate = false)
     @test length(t.nodes) == 1 && t.nodes[1].model == CON
+end
+
+@testset "GainRule's intercept ridge reaches a categorical PCON split under weights" begin
+    # locks PconOnly's fit_con forwarding: scan_categorical always wraps the
+    # rule in PconOnly, so a categorical split under GainRule is the only path
+    # that reaches it. Fails (off by ~0.02 here) if the ridge forward is
+    # dropped and PconOnly falls back to the unridged closed form.
+    rng = StableRNG(21)
+    n = 300
+    lvl = rand(rng, 1:6, n)
+    means = [0.0, 5.0, 0.0, 5.0, 5.0, 0.0]         # levels 2, 4, 5 are high
+    y = means[lvl] .+ 0.1 .* randn(rng, n)
+    X = Float64.(reshape(lvl, n, 1))
+    w = Float64.(rand(rng, 1:3, n))                # frequency weights, not all one
+    λb = 2.0
+    t = fit_tree(X, y; categorical = [1], weights = w, rule = GainRule(lambda_intercept = λb),
+        max_depth = 1, truncate = false)
+    root = t.nodes[1]
+    @test root.model == PCON && root.feature == 1
+    f0 = LinearTrees.initscore(MSE(), y, w)
+    z = y .- f0                                    # h = 1 for MSE
+    left = [LinearTrees.category_is_left(t, root, l) for l in lvl]
+    target(rows) = f0 + sum(w[rows] .* z[rows]) / (sum(w[rows]) + λb)
+    @test root.lintercept ≈ target(left) atol = 1e-12
+    @test root.rintercept ≈ target(.!left) atol = 1e-12
 end
