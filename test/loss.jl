@@ -167,16 +167,12 @@ end
     dup_odd = reduce(vcat, [fill(yq[i], iw_odd[i]) for i in eachindex(yq)])
     @test initscore(MAD(), yq, Float64.(iw_odd)) ≈ median(dup_odd)
 
-    # ...but not at one: DEFECT, reported not fixed (no src/ changes in this
-    # brief). `wquantile` (used by `initscore(MAD,...)`/`initscore(Quantile,...)`)
-    # returns the first value whose cumulative weight reaches the target, with no
-    # tie-average at an exact boundary; `median_abs` (the IRLS ε floor's weighted
-    # median) does average there. The two disagree under integer-weight
-    # duplication exactly at a half-point tie: `wquantile` gives 3.0, the true
-    # (duplicated-row) median is 3.5.
+    # ...and at one: the cumulative weight lands exactly on half, so `wquantile`
+    # must average the two adjacent order statistics like `median` does on the
+    # duplicated sample (a first-value-reaching-the-target rule returns 3.0, not 3.5)
     iw_tie = [2, 1, 3, 1, 1]   # total 8: cumulative weight lands exactly at half (4)
     dup_tie = reduce(vcat, [fill(yq[i], iw_tie[i]) for i in eachindex(yq)])
-    @test_broken initscore(MAD(), yq, Float64.(iw_tie)) ≈ median(dup_tie)
+    @test initscore(MAD(), yq, Float64.(iw_tie)) ≈ median(dup_tie)
 
     yg = [1.0, 2.0, 3.0]; wg = [1.0, 1.0, 2.0]
     @test initscore(Gamma(), yg, wg) ≈ log(sum(wg .* yg) / sum(wg))   # Gamma initscore missing the log link

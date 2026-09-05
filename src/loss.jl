@@ -177,66 +177,67 @@ function irls_weights!(h::AbstractVector{T}, loss::Union{Quantile,MAD}, y::Abstr
 end
 
 """
-    median_abs(r, w; buf=nothing, perm=nothing)
+    wquantile(y, w, τ) -> eltype(y)
 
-Weighted median of `abs.(r)` by `w`: sort by `|r|` and walk the cumulative
-weight, returning the value where it first reaches half the total, or the
-average with the next value when the half-point lands exactly on a block
-boundary -- the same tie a plain median takes on `r` duplicated `w[i]` times
-per row, when that duplicated count is even. With unit weights this is
-`Statistics.median(abs.(r))`; unlike an unweighted median of the stored
-(undeplicated) rows, it makes integer weights equal row duplication for the
-non-smooth losses (spec line 779-780).
-
-`buf` and `perm`, each at least `length(r)` long, let a hot caller (`irls_refit`)
-sort into its own per-worker storage instead of allocating a fresh `abs.(r)`
-copy and permutation every call; omitted, both default to a fresh allocation.
+Weighted `τ`-quantile of `y` by frequency weights `w`: walk `y` in sorted
+order until the cumulative weight passes `τ · Σw`. When it lands exactly on
+that target, return the mean of the two adjacent order statistics, the tie a
+plain `quantile` takes on `y` duplicated `w[i]` times per row. Integer weights
+therefore equal row duplication, and `τ = 0.5` matches `Statistics.median` of
+the duplicated sample. Throws `ArgumentError` when `Σw` is not positive.
 """
-function median_abs(r::AbstractVector, w::AbstractVector; buf::Union{Nothing,AbstractVector} = nothing,
-        perm::Union{Nothing,AbstractVector} = nothing)
-    n = length(r)
-    local a
-    if buf === nothing
-        a = abs.(r)
-    else
-        a = view(buf, 1:n)
-        a .= abs.(r)
-    end
-    local o
-    if perm === nothing
-        o = sortperm(a)
-    else
-        o = view(perm, 1:n)
-        # `QuickSort` (in place, no scratch array) rather than the default
-        # adaptive algorithm, which allocates a same-size buffer for its radix
-        # pass; tie order among equal |r| values never changes the value
-        # returned below, so the unstable order costs nothing here
-        sortperm!(o, a; alg = QuickSort)
-    end
+wquantile(y, w, τ) = wquantile_sorted(y, w, sortperm(y), τ)
+
+"`wquantile` given `o`, a permutation that sorts `y`. Allocation free."
+function wquantile_sorted(y, w, o, τ)
     total = sum(w)
     total > 0 || throw(ArgumentError("weights must have a positive sum"))
-    half = total / 2
-    cw = zero(total)
+    target = τ * total
+    cum = zero(total)
     for (k, i) in enumerate(o)
-        cw += w[i]
-        cw > half && return a[i]
-        cw == half && return (a[i] + a[o[k + 1]]) / 2   # boundary lands exactly at half: average with the next value
+        cum += w[i]
+        cum > target && return y[i]
+        cum == target && return k < length(o) ? (y[i] + y[o[k + 1]]) / 2 : y[i]
     end
-    return a[o[end]]   # unreachable once total > 0; keeps the return type concrete
+    return y[o[end]]   # unreachable once total > 0; keeps the return type concrete
 end
 
 """
-    irls_epsilon(r, w; buf=nothing, perm=nothing)
+    median_abs(r, w) -> eltype(r)
+    median_abs!(buf, perm, r, w)
+
+Weighted median of `abs.(r)` by `w`, the residual scale IRLS floors its ε on.
+The two-argument form allocates; `median_abs!` writes `abs.(r)` into the
+first `length(r)` slots of `buf` and the sort order into `perm` (an `Int32`
+buffer), so `irls_refit` can run it on per-worker scratch every pass without
+allocating. The sort is `QuickSort` because the default algorithm allocates a
+radix scratch; tie order among equal `|r|` never changes the median.
+"""
+median_abs(r::AbstractVector, w::AbstractVector) = (a = abs.(r); wquantile_sorted(a, w, sortperm(a), 0.5))
+
+function median_abs!(buf::Vector{T}, perm::Vector{Int32}, r::AbstractVector{T}, w::AbstractVector) where {T<:AbstractFloat}
+    n = length(r)
+    a = view(buf, 1:n)
+    a .= abs.(r)
+    o = view(perm, 1:n)
+    o .= 1:n
+    sort!(o; by = i -> a[i], alg = QuickSort)   # in place on the view; `sortperm!` here trips JET on a Base.Sort path
+    return wquantile_sorted(a, w, o, 0.5)
+end
+
+"""
+    irls_epsilon(r, w)
+    irls_epsilon!(buf, perm, r, w)
 
 `1e-3` times the weighted median of `|r|` by `w`: the residual-scale half of
 the ε floor IRLS uses everywhere it re-solves the pseudo-hessian for a
 non-smooth loss. Written once here rather than copied at each call site
 (`irls_weights!`'s own default, `node_epsilon`, `irls_refit`); each caller
-still adds its own `sqrt(eps(T))` floor scaled by `y`'s own magnitude. `buf`
-and `perm` are forwarded to `median_abs`.
+still adds its own `sqrt(eps(T))` floor scaled by `y`'s own magnitude.
 """
-irls_epsilon(r::AbstractVector{T}, w::AbstractVector; buf = nothing, perm = nothing) where {T} =
-    T(1e-3) * median_abs(r, w; buf, perm)
+irls_epsilon(r::AbstractVector{T}, w::AbstractVector) where {T} = T(1e-3) * median_abs(r, w)
+irls_epsilon!(buf::Vector{T}, perm::Vector{Int32}, r::AbstractVector{T}, w::AbstractVector) where {T} =
+    T(1e-3) * median_abs!(buf, perm, r, w)
 
 """
     l1weight(loss, r)
@@ -263,15 +264,6 @@ refit_node(st, n, rows, tid, masks = UInt64[]) = issmooth(st.loss) ? n : irls_re
 # ---- init score ------------------------------------------------------------
 wmean(y, w) = sum(w .* y) / sum(w)
 
-function wquantile(y, w, τ)
-    o = sortperm(y)
-    cum = zero(eltype(w)); tot = sum(w)
-    for i in o
-        cum += w[i]
-        cum >= τ * tot && return y[i]
-    end
-    return y[o[end]]
-end
 
 initscore(::Union{MSE,Huber}, y, w) = wmean(y, w)
 initscore(l::Quantile, y, w) = wquantile(y, w, l.τ)

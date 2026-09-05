@@ -517,7 +517,7 @@ function irls_refit(st::FitState{T,V}, n::Node{T,V}, rows, tid, niter, masks::Ve
             end
             resid[k] = st.z[i] - pred
         end
-        ε = max(irls_epsilon(resid, view(st.w, rows); buf = sc.xs, perm = permbuf), sqrt(eps(T)) * yscale)
+        ε = max(irls_epsilon!(sc.xs, permbuf, resid, view(st.w, rows)), sqrt(eps(T)) * yscale)
         left = zero(MomentSums{V}); right = zero(MomentSums{V})
         for (k, i) in enumerate(rows)
             r = resid[k]
