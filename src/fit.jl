@@ -20,6 +20,7 @@ mutable struct FitState{T,V,L<:Loss,R<:SelectionRule}
     nodes::Vector{Node{T,V}}
     catmasks::Vector{UInt64}
     categorical::Vector{Int}
+    iscat::Vector{Bool}         # length p, iscat[j] == (j in categorical), a lookup for the per-feature scan
     nlevels::Vector{Int}
     loss::L
     rule::R
@@ -58,12 +59,14 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     n = length(keep)
     V = coeftype(loss, T)
     nlevels = zeros(Int, p)
+    iscat = falses(p)
     for j in categorical
         1 <= j <= p || throw(ArgumentError("categorical column $j is outside 1:$p"))
         col = view(Xm, :, j)
         all(x -> isfinite(x) && x >= 1 && x == round(x), col) ||
             throw(ArgumentError("categorical column $j must hold integer codes >= 1"))
         nlevels[j] = Int(maximum(col))
+        iscat[j] = true
     end
     f0 = V(initscore(loss, yv, w))
     # every `scorebound` method returns bounds in its own working type (often
@@ -74,7 +77,7 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     presort!(idx, Xm, nthreads)
     st = FitState{T,V,typeof(loss),typeof(rule)}(Xm, yv, w, f, zeros(V, n), zeros(V, n), zeros(V, n), idx, zeros(Bool, n),
         [Scratch{T,V}(n) for _ in 1:nthreads], [Vector{Int32}(undef, n) for _ in 1:nthreads],
-        Node{T,V}[], UInt64[], collect(Int, categorical), nlevels, loss, rule, lo, hi, max_depth, T(min_fit), T(min_leaf),
+        Node{T,V}[], UInt64[], collect(Int, categorical), iscat, nlevels, loss, rule, lo, hi, max_depth, T(min_fit), T(min_leaf),
         T(min_sum_hessian), max_lin_chain, truncate, nthreads, niter)
     rows = collect(Int32(1):Int32(n))
     refresh!(st, rows)
@@ -313,7 +316,7 @@ function best_split_serial(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, 
     sc = st.scratch[tid]
     best = nocandidate(T, V); bestj = 0; bestleft = Int[]
     for j in features
-        if j in st.categorical
+        if st.iscat[j]
             c, leftcodes = scan_categorical(st, sc, rows, j, dmin)
         else
             m = gather!(st, sc, span, j)
@@ -414,7 +417,7 @@ function grow_subtree(st::FitState{T,V}, rows::Vector{Int32}, span::UnitRange{In
         update_score!(st, rows, me)
         return Node{T,V}[me], UInt64[]
     end
-    iscat = bestj in st.categorical
+    iscat = st.iscat[bestj]
     if iscat
         xmin = xmax = xmean = zero(T)
     else
