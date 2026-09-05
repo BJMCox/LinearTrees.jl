@@ -179,3 +179,103 @@ end
     @test scorebound(NegBin(2.0), [0.0, 5.0]) == (-(log(5) + 3), log(5) + 3)
     @test scorebound(NegBin(2.0), [0.0, 0.5]) == (-3.0, 3.0)
 end
+
+@testset "wquantile_select! matches a sort-then-walk oracle (Q2)" begin
+    # regression for `median_abs!`'s full sort, profiled at 41% of a MAD fit
+    # (bench/PROFILE.md case 3): fails if the O(m) quickselect in
+    # `wquantile_select!` ever disagrees with a plain sort on the weighted
+    # quantile it returns, including at the exact-boundary tie, with zero
+    # weights, and with heavy duplicates.
+    #
+    # A zero-weight row contributes no copies to the duplicated sample
+    # `wquantile` means to match, so this oracle drops zero-weight rows before
+    # sorting, exactly as `wquantile_select!` does (see its docstring): once
+    # dropped, every remaining run of equal values has positive total weight,
+    # so `sortperm`'s unspecified tie order among that run's rows can no
+    # longer change which row the walk returns on. The unpatched sort-based
+    # code this replaced (`wquantile_sorted`, walking the *unfiltered* `o`)
+    # does not have that guarantee: a value shared by a zero- and a
+    # positive-weight row lets whatever tie order `sortperm`/`sort!` happens
+    # to produce decide the exact-boundary answer -- a preexisting
+    # inconsistency with its own documented invariant ("tie order among equal
+    # values never changes the median"), not a target this replacement
+    # reproduces.
+    function oracle_wquantile(y, w, τ)
+        total = sum(w)
+        total > 0 || throw(ArgumentError("weights must have a positive sum"))
+        idx = [i for i in eachindex(y, w) if w[i] > 0]
+        o = idx[sortperm(y[idx])]
+        target = τ * total
+        cum = zero(total)
+        for (k, i) in enumerate(o)
+            cum += w[i]
+            cum > target && return y[i]
+            cum == target && return k < length(o) ? (y[i] + y[o[k + 1]]) / 2 : y[i]
+        end
+        return y[o[end]]
+    end
+    oracle_median_abs(r, w) = oracle_wquantile(abs.(r), w, 0.5)
+
+    rng = StableRNG(202609)
+    ncases = 0
+    for _ in 1:20_000
+        n = rand(rng, 1:3000)
+        y = rand(rng, Bool) ? Float64.(rand(rng, -5:5, n)) : round.(randn(rng, n); digits = 1)
+        w = rand(rng, Bool) ? Float64.(rand(rng, 0:3, n)) : rand(rng, n) .* 2
+        sum(w) > 0 || continue
+        ncases += 1
+        τ = rand(rng, (0.1, 0.25, 0.3, 0.5, 0.7, 0.75, 0.9))
+        buf = similar(y); perm = Vector{Int32}(undef, n)
+        got_q = LinearTrees.wquantile_select!(copy(y), w, collect(eachindex(y)), τ)
+        got_m = LinearTrees.median_abs!(buf, perm, y, w)
+        @test got_q == oracle_wquantile(y, w, τ)
+        @test got_m == oracle_median_abs(y, w)
+    end
+    @test ncases > 15_000   # sanity: the loop actually ran on most of the 20,000 draws
+
+    # zero-weight rows and duplicate values, direct: `wquantile_select!` must
+    # ignore the former and treat a run of the latter as one order statistic
+    @test LinearTrees.wquantile_select!([1.0, 2.0, 3.0], [0.0, 5.0, 0.0], [1, 2, 3], 0.5) == 2.0
+    @test LinearTrees.wquantile_select!(fill(3.0, 10), Float64.([0, 1, 0, 2, 0, 3, 0, 4, 0, 5]), collect(1:10), 0.5) == 3.0
+    @test_throws ArgumentError LinearTrees.wquantile_select!([1.0, 2.0], [0.0, 0.0], [1, 2], 0.5)
+end
+
+@testset "median_abs! benchmark sizes agree with median_abs (Q2)" begin
+    # m = 10^3 and 10^5, the sizes bench/RESULTS.md reports median_abs! at
+    rng = StableRNG(3)
+    for m in (1_000, 100_000)
+        r = randn(rng, m); w = Float64.(rand(rng, 0:3, m))
+        buf = similar(r); perm = Vector{Int32}(undef, m)
+        @test LinearTrees.median_abs!(buf, perm, r, w) == LinearTrees.median_abs(r, w)
+    end
+end
+
+@testset "MAD and Quantile(0.3) fits are unchanged by the median_abs! rewrite (Q2)" begin
+    # fails if `median_abs!`'s quickselect ever returns a different value than
+    # the sort it replaced on any node of these trees: `nodes` and `predict`
+    # are recorded from a fit against the pre-rewrite (sort-based)
+    # `median_abs!`/`wquantile_sorted`, compared here bit for bit
+    include(joinpath(@__DIR__, "fixtures", "partition", "cases.jl"))
+    # the hash is `reduce(xor, reinterpret(UInt64, predict(t, X)))`: exactly
+    # associative and commutative, so it does not depend (unlike a floating
+    # sum) on thread count or reduction order, only on predict's bit pattern
+    golden = Dict(
+        ("mse_bic", MAD) => (72, UInt64(18394097934875351018)),
+        ("mse_bic", Quantile) => (61, UInt64(18404503152402939754)),
+        ("mse_forced", MAD) => (331, UInt64(9153398030783347154)),
+        ("mse_forced", Quantile) => (391, UInt64(9130169035490933018)),
+        ("softmax_cat", MAD) => (121, UInt64(2251799644130564)),
+        ("softmax_cat", Quantile) => (121, UInt64(9221120236987907005)),
+        ("quantile_weighted", MAD) => (175, UInt64(9221989060130567109)),
+        ("quantile_weighted", Quantile) => (193, UInt64(9226809526271653953)),
+    )
+    for (name, X, y, loss0, kw) in partition_cases()
+        for loss in (MAD(), Quantile(0.3))
+            t = fit_tree(X, y, loss; kw...)
+            p = predict(t, X)
+            nnodes, hash = golden[(name, typeof(loss))]
+            @test length(t.nodes) == nnodes
+            @test reduce(xor, reinterpret(UInt64, p)) == hash
+        end
+    end
+end

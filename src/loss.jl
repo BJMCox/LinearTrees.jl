@@ -193,27 +193,124 @@ end
 """
     wquantile(y, w, τ) -> eltype(y)
 
-Weighted `τ`-quantile of `y` by frequency weights `w`: walk `y` in sorted
-order until the cumulative weight passes `τ · Σw`. When it lands exactly on
-that target, return the mean of the two adjacent order statistics, the tie a
-plain `quantile` takes on `y` duplicated `w[i]` times per row. Integer weights
-therefore equal row duplication, and `τ = 0.5` matches `Statistics.median` of
-the duplicated sample. Throws `ArgumentError` when `Σw` is not positive.
+Weighted `τ`-quantile of `y` by frequency weights `w`: the value the
+cumulative weight would cross `τ · Σw` at, in ascending order. When it lands
+exactly on that target, return the mean of the two adjacent order statistics,
+the tie a plain `quantile` takes on `y` duplicated `w[i]` times per row.
+Integer weights therefore equal row duplication, and `τ = 0.5` matches
+`Statistics.median` of the duplicated sample. Throws `ArgumentError` when `Σw`
+is not positive. Computed by `wquantile_select!` in expected `O(length(y))`
+time, not by a full sort.
 """
-wquantile(y, w, τ) = wquantile_sorted(y, w, sortperm(y), τ)
+wquantile(y, w, τ) = wquantile_select!(y, w, collect(eachindex(y)), τ)
 
-"`wquantile` given `o`, a permutation that sorts `y`. Allocation free."
-function wquantile_sorted(y, w, o, τ)
+"""
+    wquantile_select!(y, w, o, τ) -> eltype(y)
+
+`wquantile`'s value found by quickselect instead of a full sort: `o` (any
+starting order, holding the indices `eachindex(y)`) is mutated in place by
+partitioning around a value, never fully sorted, so this runs in expected
+`O(length(o))` time. Same contract as a sort-then-walk: the exact-boundary
+rule (`cum == target` returns the mean of the two adjacent order statistics,
+an equal-valued run counted as one order statistic) and the
+positive-total-weight `ArgumentError`. Pivot is median-of-three, not random:
+these buffers are per-task scratch reused while sibling subtrees grow
+concurrently, and a shared RNG would race across them.
+
+A zero-weight row contributes no copies to the duplicated sample `wquantile`
+means to match, so it is moved out of `o`'s active range up front: this is
+also what keeps the exact-boundary rule well-defined. A weighted run that
+mixes a zero- and a positive-weight row at the same value would otherwise let
+the *order* those two rows happen to land in decide whether the boundary
+average uses this run's own value (trivial) or the next run's -- ambiguous,
+since nothing here promises an order for equal values. Once zero-weight rows
+are excluded, every remaining run has positive total weight, so the run
+being summed to completion is the only way its total can land exactly on
+target: the boundary is between *runs*, never inside one.
+"""
+function wquantile_select!(y::AbstractVector, w::AbstractVector, o::AbstractVector{<:Integer}, τ)
+    n = length(o)
     total = sum(w)
     total > 0 || throw(ArgumentError("weights must have a positive sum"))
     target = τ * total
-    cum = zero(total)
-    for (k, i) in enumerate(o)
-        cum += w[i]
-        cum > target && return y[i]
-        cum == target && return k < length(o) ? (y[i] + y[o[k + 1]]) / 2 : y[i]
+
+    # partition o[1:n] into positive-weight rows (kept, o[1:m]) and zero-weight
+    # rows (dropped): a positive total weight guarantees m >= 1
+    m = 0
+    for k in 1:n
+        if w[o[k]] > 0
+            m += 1
+            o[k], o[m] = o[m], o[k]
+        end
     end
-    return y[o[end]]   # unreachable once total > 0; keeps the return type concrete
+
+    lo, hi = 1, m
+    base = zero(target)
+    hasbound = false
+    bound = zero(eltype(y))
+
+    while lo < hi
+        mid = (lo + hi) >>> 1
+        v1, v2, v3 = y[o[lo]], y[o[mid]], y[o[hi]]
+        pv = v1 <= v2 ? (v2 <= v3 ? v2 : max(v1, v3)) : (v1 <= v3 ? v1 : max(v2, v3))
+
+        # 3-way (Dutch-flag) partition of o[lo:hi]: < pv, == pv, > pv, so a run
+        # of duplicate values is grouped and skipped in one step, not recursed
+        i = lo; lt = lo; gt = hi
+        while i <= gt
+            vi = y[o[i]]
+            if vi < pv
+                o[i], o[lt] = o[lt], o[i]
+                lt += 1; i += 1
+            elseif vi > pv
+                o[i], o[gt] = o[gt], o[i]
+                gt -= 1
+            else
+                i += 1
+            end
+        end
+
+        WL = zero(target)
+        for k in lo:(lt - 1)
+            WL += w[o[k]]
+        end
+        WE = zero(target)
+        for k in lt:gt
+            WE += w[o[k]]
+        end
+
+        if base + WL > target
+            hi = lt - 1
+            hasbound = true
+            bound = pv
+        elseif base + WL == target
+            mx = y[o[lo]]
+            for k in (lo + 1):(lt - 1)
+                mx = max(mx, y[o[k]])
+            end
+            return (mx + pv) / 2
+        elseif base + WL + WE > target
+            return pv
+        elseif base + WL + WE == target
+            if gt < hi
+                nxt = y[o[gt + 1]]
+                for k in (gt + 2):hi
+                    nxt = min(nxt, y[o[k]])
+                end
+                return (pv + nxt) / 2
+            else
+                return hasbound ? (pv + bound) / 2 : pv
+            end
+        else
+            base += WL + WE
+            lo = gt + 1
+        end
+    end
+
+    i = o[lo]
+    cum = base + w[i]
+    cum == target && return hasbound ? (y[i] + bound) / 2 : y[i]
+    return y[i]   # cum > target, guaranteed once total > 0
 end
 
 """
@@ -222,12 +319,11 @@ end
 
 Weighted median of `abs.(r)` by `w`, the residual scale IRLS floors its ε on.
 The two-argument form allocates; `median_abs!` writes `abs.(r)` into the
-first `length(r)` slots of `buf` and the sort order into `perm` (an `Int32`
-buffer), so `irls_refit` can run it on per-worker scratch every pass without
-allocating. The sort is `QuickSort` because the default algorithm allocates a
-radix scratch; tie order among equal `|r|` never changes the median.
+first `length(r)` slots of `buf` and an index buffer into `perm` (an `Int32`
+buffer, partitioned in place by `wquantile_select!` rather than sorted), so
+`irls_refit` can run it on per-worker scratch every pass without allocating.
 """
-median_abs(r::AbstractVector, w::AbstractVector) = (a = abs.(r); wquantile_sorted(a, w, sortperm(a), 0.5))
+median_abs(r::AbstractVector, w::AbstractVector) = (a = abs.(r); wquantile_select!(a, w, collect(eachindex(a)), 0.5))
 
 function median_abs!(buf::Vector{T}, perm::Vector{Int32}, r::AbstractVector{T}, w::AbstractVector) where {T<:AbstractFloat}
     n = length(r)
@@ -235,8 +331,7 @@ function median_abs!(buf::Vector{T}, perm::Vector{Int32}, r::AbstractVector{T}, 
     a .= abs.(r)
     o = view(perm, 1:n)
     o .= 1:n
-    sort!(o; by = i -> a[i], alg = QuickSort)   # in place on the view; `sortperm!` here trips JET on a Base.Sort path
-    return wquantile_sorted(a, w, o, 0.5)
+    return wquantile_select!(a, w, o, 0.5)
 end
 
 """

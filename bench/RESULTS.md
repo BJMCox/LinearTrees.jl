@@ -105,3 +105,35 @@ Same machine as above, `-t 1`. 57-node tree: `StableRNG(3)`, `n = 600`,
 Per-row allocation is gone: what is left is the pool itself plus the result
 arrays, amortised over the whole call, and the recursion is 36% faster because
 it no longer runs the allocator once per branch.
+
+## Weighted median: quickselect instead of a full sort
+
+`median_abs!` sorted the node's entire `|r|` vector to read one weighted
+quantile; the profile put that `sort!` at 41% of a MAD fit (`bench/PROFILE.md`
+case 3). `median_abs!`, `median_abs`, and `wquantile` now share
+`wquantile_select!`, an `O(m)`-expected quickselect (median-of-three pivot, a
+3-way partition so a run of duplicate values is skipped in one step) that
+partitions the node's index buffer instead of sorting it. Zero-weight rows
+are moved out of the active range before selection starts, which is also what
+keeps the exact-boundary tie rule (`cum == target` averages the two adjacent
+order statistics) well-defined: 20,000 randomized cases mixing integer and
+fractional weights, zero weights, and heavy duplicates agree with a
+sort-then-walk oracle that drops zero-weight rows the same way, and MAD and
+Quantile(0.3) fits on the four `test/fixtures/partition/cases.jl` designs are
+bit-identical before and after (same node count, same `predict` bit pattern).
+
+Same machine as above, `-t 1`.
+
+| | median | memory | allocs |
+|---|---|---|---|
+| `median_abs!`, m = 1,000, before | 10.709 μs | 0 bytes | 0 |
+| `median_abs!`, m = 1,000, after | 3.009 μs | 0 bytes | 0 |
+| `median_abs!`, m = 100,000, before | 6.969 ms | 0 bytes | 0 |
+| `median_abs!`, m = 100,000, after | 1.070 ms | 0 bytes | 0 |
+| case 3 (MAD, n = 100,000, p = 10, max_depth = 12, niter = 5), before | 963.820 ms | 33.22 MiB | 20,228 |
+| case 3 (MAD, n = 100,000, p = 10, max_depth = 12, niter = 5), after | 679.667 ms | 32.46 MiB | 20,224 |
+
+`median_abs!` alone is 3.6x (m = 1,000) to 6.5x (m = 100,000) faster; the
+gain narrows for the full case 3 fit (1.42x) since `sort!` was 41% of that fit,
+not all of it, and `niter = 5` IRLS passes still pay for everything else the
+profile found (partitioning, gradient/Hessian, the MomentSums reduction).
