@@ -39,6 +39,14 @@ Base.@propagate_inbounds function Base.getindex(h::UnitHessians{V}, i::Int) wher
     return OneHessian{V}()
 end
 
+"True when every scalar or vector Hessian is exactly one in every coordinate."
+@inline unit_hessian_value(h::Number) = isone(h)
+@inline unit_hessian_value(h) = all(isone, h)
+@inline function unit_hessians(hs::AbstractVector{V}) where {V}
+    V === Union{} && return false
+    return all(unit_hessian_value, hs)
+end
+
 """
 Add one row. `h` and `z` have type `V`, `x` has the feature type. `h * x` and
 `hx * x` scale a `V` by the scalar feature value, which `*` already does for

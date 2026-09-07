@@ -205,8 +205,9 @@ Base.@kwdef mutable struct FitState{T,V,Y,L<:Loss,R<:SelectionRule}
     truncate::Bool
     nthreads::Int
     niter::Int
-    # `h` is exactly one on every row: `MSE` with unit weights. The split scan
-    # then reads `hs` as `UnitHessians` and accumulates without a multiply.
+    # `h` is exactly one on every row: unweighted MSE or a Frozen target whose
+    # supplied Hessian and frequency weight have that effective value. The split
+    # scan then reads `hs` as `UnitHessians` and accumulates without a multiply.
     unith::Bool
 end
 
@@ -327,6 +328,7 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{Y}, w::Vector{T}, loss::L, rule::R,
         unith = unit_hessian(loss) && all(isone, w))
     rows = view(st.roworder, 1:n)
     refresh!(st, rows, 1)
+    loss isa Frozen && (st.unith = unit_hessians(st.h))
     grow_subtree(st, rows, 1:n, 0, 0, 1, st.nodes, st.catmasks)
     # Fold the clamped start score into the root node: training accumulates it in
     # st.f before any node is fit, but prediction starts score_row at zero, so the
