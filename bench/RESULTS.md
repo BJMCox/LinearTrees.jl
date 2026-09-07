@@ -15,6 +15,49 @@ The headline tables are from `main` at `49ca56f` (2026-09-05), after the
 scratch-pool threading, the radix presort and the row-order slices; the
 sections further down record each change against the code before it.
 
+## Boosting compared with EvoTrees
+
+`bench/boost.jl` compares `fit_boost` with `EvoTrees.fit` on the MSE linear
+and step targets from `bench/run.jl`. Both use the first 50,000 rows for
+training and the remaining 50,000 for testing. Data are `n = 100,000`,
+`p = 20`, `StableRNG(1)`; the unused piecewise target is still drawn so the
+step target has the same RNG stream as `bench/run.jl`. The script first
+compiles and shape-checks direct predictions, then runs three one-evaluation
+samples. Its `RESULT` rows contain raw nanoseconds, bytes, allocations, and
+RMSE for easy capture.
+
+Measured on Apple M4 Pro (10 threads, 64.0 GiB memory), Julia 1.12.7,
+EvoTrees 0.19.0, source `9452ff9`, with `-t 1` and `-t auto` (10 threads).
+All runs use `nrounds = 100`, `eta = 0.1`, depth 5, and no row or column
+sampling. LinearTrees uses `MSE`, `min_fit = 10`, `min_leaf = 5`,
+`min_sum_hessian = 1.0`, `lambda_slope = lambda_intercept = 1.0`, `gamma =
+0.0`, `truncate = false`, and `StableRNG(1)`. EvoTrees uses
+`EvoTreeRegressor(loss = :mse, metric = :mse, bagging_size = 1,
+early_stopping_rounds = typemax(Int), early_stopping_tolerance = 0.0, L2 =
+1.0, lambda = 0.0, gamma = 0.0, min_weight = 1.0, nbins = 64, alpha = 0.5,
+alphas = [0.1, 0.5, 0.9], monotone_constraints = Dict(), tree_type =
+:binary, seed = 1, device = :cpu)`.
+
+| target | model | threads | median | minimum | memory | allocs | test RMSE |
+|---|---|---:|---:|---:|---:|---:|---:|
+| linear | LinearTrees `fit_boost` | 1 | 8.277 s | 8.269 s | 1.08 GiB | 12,005 | 0.15497 |
+| linear | EvoTrees `fit` | 1 | 277.640 ms | 277.345 ms | 14.84 MiB | 25,735 | 0.36751 |
+| step | LinearTrees `fit_boost` | 1 | 8.490 s | 8.478 s | 1.07 GiB | 12,393 | 0.19352 |
+| step | EvoTrees `fit` | 1 | 273.766 ms | 270.653 ms | 14.86 MiB | 26,153 | 0.34431 |
+| linear | LinearTrees `fit_boost` | 10 | 1.816 s | 1.804 s | 3.47 GiB | 196,813 | 0.15497 |
+| linear | EvoTrees `fit` | 10 | 111.702 ms | 110.395 ms | 24.09 MiB | 132,835 | 0.36751 |
+| step | LinearTrees `fit_boost` | 10 | 1.801 s | 1.735 s | 3.30 GiB | 190,001 | 0.19352 |
+| step | EvoTrees `fit` | 10 | 117.374 ms | 109.857 ms | 24.28 MiB | 134,963 | 0.34431 |
+
+EvoTrees is a constant-leaf histogram booster, while LinearTrees fits ridged
+linear leaves. The timings are therefore a scale reference rather than a
+like-for-like ridge comparison. On these targets the linear leaves reduce test
+RMSE by about 58% (linear) and 44% (step), while EvoTrees is faster and uses
+less memory. LinearTrees gains about 4.6--4.8x from 10 threads; EvoTrees gains
+about 2.5x, but also allocates more in its threaded run. Reproduce with
+`julia --project=bench -t 1 bench/boost.jl` and
+`julia --project=bench -t auto bench/boost.jl`.
+
 ## `-t 1` (`Threads.nthreads() == 1`)
 
 | dataset | benchmark | median | min | memory | allocs |
