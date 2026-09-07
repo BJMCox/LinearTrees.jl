@@ -24,6 +24,31 @@ At each node, `fit_tree` scans every feature and every legal split point,
 evaluates every model kind the selection rule allows there, and keeps the
 lowest-scoring candidate.
 
+## Split search
+
+`fit_tree` and `fit_boost` use [`ExactSearch`](@ref) by default. For large
+scalar-response fits, equal-count binning can reduce split-search work:
+
+```julia
+tree = fit_tree(X, y; split_search = BinnedSearch(nbins = 64))
+boost = fit_boost(X, y; split_search = BinnedSearch(nbins = 64, refine = true))
+```
+
+Bins are rebuilt from each node's rows, keep tied feature values together,
+and retain the raw weighted moments used to score candidates. Nodes with at
+most `nbins` rows and categorical features still use exact search. With
+`refine = true`, the winning coarse boundary is searched again within its two
+adjacent bins. Binning is approximate, so it can choose a different split or
+model from exact search. Larger bin budgets allow more thresholds and can cost
+more. Accuracy need not improve monotonically. `BinnedSearch` does not support
+vector-valued targets such as
+`Softmax`; use `ExactSearch` for those fits. The selection rule remains an
+independent choice through `rule`.
+
+The four MLJ models accept the same `split_search` option. Multiclass
+`LinearTreeClassifier` and `LinearBoostClassifier` fits use `Softmax`, so
+they require `ExactSearch()`.
+
 ## Selection: BIC
 
 The default rule is [`BIC`](@ref), the PILOT selection rule:

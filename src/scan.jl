@@ -116,29 +116,8 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
         t = xs[i]                                      # PILOT parity: split point and blin knot are the largest left value
         uright = nu - uleft
 
-        if dopcon
-            bl, rl = fit_con(left, rule); br, rr = fit_con(right, rule)
-            rss = rl + rr
-            dk = devkey(rule, sum(rss), dmin)
-            dk < pcon.score && (pcon = Candidate{T,V}(PCON, t, zero(V), bl, zero(V), br, rss, dk))
-        end
-        if doblin
-            r = fit_blin(left, right, t)
-            if r !== nothing
-                al, bl, ar, br, rss = r
-                dk = devkey(rule, sum(rss), dmin)
-                dk < blin.score && (blin = Candidate{T,V}(BLIN, t, al, bl, ar, br, rss, dk))
-            end
-        end
-        if doplin && uleft >= MIN_UNIQUE_LIN && uright >= MIN_UNIQUE_LIN
-            rl = fit_lin(left, rule); rr = fit_lin(right, rule)
-            if rl !== nothing && rr !== nothing
-                al, bl, rssl = rl; ar, br, rssr = rr
-                rss = rssl + rssr
-                dk = devkey(rule, sum(rss), dmin)
-                dk < plin.score && (plin = Candidate{T,V}(PLIN, t, al, bl, ar, br, rss, dk))
-            end
-        end
+        pcon, blin, plin = split_candidates((pcon, blin, plin), left, right, t,
+            uleft, uright, rule, dmin, dopcon, doblin, doplin)
     end
 
     # con and lin are already in `best`, so scoring pcon, blin and plin in that
@@ -152,4 +131,39 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
             cand.lintercept, cand.rcoef, cand.rintercept, cand.surrogate, sc))
     end
     return best
+end
+
+@inline better_split(key, threshold, candidate, ::Val{false}) = key < candidate.score
+@inline better_split(key, threshold, candidate, ::Val{true}) = key < candidate.score ||
+    (isfinite(key) && key == candidate.score && threshold < candidate.threshold)
+
+# Keep raw deviance keys until each kind has its best threshold.
+@inline function split_candidates(candidates, left, right, t, uleft, uright, rule, dmin,
+        dopcon, doblin, doplin, revisit::Val = Val(false))
+    pcon, blin, plin = candidates
+    T = typeof(t); V = typeof(left.sw)
+    if dopcon
+        bl, rl = fit_con(left, rule); br, rr = fit_con(right, rule)
+        rss = rl + rr
+        dk = devkey(rule, sum(rss), dmin)
+        better_split(dk, t, pcon, revisit) && (pcon = Candidate{T,V}(PCON, t, zero(V), bl, zero(V), br, rss, dk))
+    end
+    if doblin
+        r = fit_blin(left, right, t)
+        if r !== nothing
+            al, bl, ar, br, rss = r
+            dk = devkey(rule, sum(rss), dmin)
+            better_split(dk, t, blin, revisit) && (blin = Candidate{T,V}(BLIN, t, al, bl, ar, br, rss, dk))
+        end
+    end
+    if doplin && uleft >= MIN_UNIQUE_LIN && uright >= MIN_UNIQUE_LIN
+        rl = fit_lin(left, rule); rr = fit_lin(right, rule)
+        if rl !== nothing && rr !== nothing
+            al, bl, rssl = rl; ar, br, rssr = rr
+            rss = rssl + rssr
+            dk = devkey(rule, sum(rss), dmin)
+            better_split(dk, t, plin, revisit) && (plin = Candidate{T,V}(PLIN, t, al, bl, ar, br, rss, dk))
+        end
+    end
+    return pcon, blin, plin
 end

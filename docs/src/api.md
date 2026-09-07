@@ -29,6 +29,14 @@ MinDeviance
 GainRule
 ```
 
+## Split search
+
+```@docs
+SplitSearch
+ExactSearch
+BinnedSearch
+```
+
 ## Boosting API
 
 ```@docs

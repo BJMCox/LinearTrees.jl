@@ -31,7 +31,7 @@ affordable. `ids` is the worker-id list one node's `best_split` and
 `partition!` are called with; it belongs to the set because the task that owns
 the set is its only writer.
 """
-struct Scratch{T,V}
+struct Scratch{T,V,B}
     xs::Vector{T}
     zs::Vector{V}
     hs::Vector{V}
@@ -39,8 +39,13 @@ struct Scratch{T,V}
     perm::Vector{Int32}
     ids::Vector{Int}
     levels::LevelSums{V}
+    search::B
 end
-Scratch{T,V}() where {T,V} = Scratch{T,V}(T[], V[], V[], T[], Int32[], Int[], LevelSums{V}())
+function Scratch{T,V}(search::SplitSearch) where {T,V}
+    buffer = search_workspace(search, T, V)
+    return Scratch{T,V,typeof(buffer)}(T[], V[], V[], T[], Int32[], Int[], LevelSums{V}(), buffer)
+end
+Scratch{T,V}() where {T,V} = Scratch{T,V}(ExactSearch())
 
 """
 Scratch buffers are sized on demand, never shrunk, and only ever by the one
@@ -150,15 +155,17 @@ end
 const SCRATCH_PER_THREAD = 2
 
 "Partition indices and worker buffers reused across sequential boosting rounds of the same size."
-struct TreeWorkspace{T,V}
+struct TreeWorkspace{T,V,B}
     idx::Matrix{Int32}
-    scratch::Vector{Scratch{T,V}}
+    scratch::Vector{Scratch{T,V,B}}
 end
 
-function TreeWorkspace{T,V}(n, p, nthreads) where {T,V}
+function TreeWorkspace{T,V}(n, p, nthreads, search::SplitSearch) where {T,V}
     nsets = nthreads == 1 ? 1 : SCRATCH_PER_THREAD * nthreads
-    return TreeWorkspace{T,V}(Matrix{Int32}(undef, n, p), [Scratch{T,V}() for _ in 1:nsets])
+    scratch = [Scratch{T,V}(search) for _ in 1:nsets]
+    return TreeWorkspace(Matrix{Int32}(undef, n, p), scratch)
 end
+TreeWorkspace{T,V}(n, p, nthreads) where {T,V} = TreeWorkspace{T,V}(n, p, nthreads, ExactSearch())
 
 "Row-count gate for sibling-subtree parallelism: a split whose right child has at least this many rows may run as its own task."
 const SUBTREE_MIN_ROWS = 256
@@ -175,7 +182,7 @@ Everything one `fit_tree` call carries through growth. Built by keyword
 (`Base.@kwdef`) because the positional form is twenty arguments wide and a
 field reorder in it would corrupt a fit silently.
 """
-Base.@kwdef mutable struct FitState{T,V,Y,L<:Loss,R<:SelectionRule}
+Base.@kwdef mutable struct FitState{T,V,Y,L<:Loss,R<:SelectionRule,S<:SplitSearch,B}
     X::Matrix{T}
     y::Vector{Y}
     w::Vector{T}
@@ -186,7 +193,7 @@ Base.@kwdef mutable struct FitState{T,V,Y,L<:Loss,R<:SelectionRule}
     idx::Matrix{Int32}          # n × p, selected columns hold feature-sorted row orders, partitioned node by node
     roworder::Vector{Int32}     # n, the same rows in the order every node's sums run over, partitioned alongside `idx`
     isleft::Vector{Bool}        # n, per-row left marker used by `partition!`; each node touches only its own rows
-    scratch::Vector{Scratch{T,V}}   # SCRATCH_PER_THREAD per worker, one when nthreads == 1
+    scratch::Vector{Scratch{T,V,B}}   # SCRATCH_PER_THREAD per worker, one when nthreads == 1
     pool::ScratchPool = ScratchPool(Int[])   # the ids of `scratch` no task owns, so the two are built and live together
     nodes::Vector{Node{T,V}}
     catmasks::Vector{UInt64}
@@ -195,6 +202,7 @@ Base.@kwdef mutable struct FitState{T,V,Y,L<:Loss,R<:SelectionRule}
     features::Vector{Int}       # sorted unique feature indices considered for split scans
     loss::L
     rule::R
+    split_search::S
     lo::V
     hi::V
     max_depth::Int
@@ -211,25 +219,34 @@ Base.@kwdef mutable struct FitState{T,V,Y,L<:Loss,R<:SelectionRule}
     unith::Bool
 end
 
+function FitState{T,V,Y,L,R}(; scratch, split_search::SplitSearch = ExactSearch(), kwargs...) where {T,V,Y,L<:Loss,R<:SelectionRule}
+    B = eltype(scratch).parameters[3]
+    return FitState{T,V,Y,L,R,typeof(split_search),B}(; scratch, split_search, kwargs...)
+end
+
 """
     fit_tree(X, y, loss=MSE(); kwargs...)
 
 Fit a PILOT-style linear model tree. See the design spec section 4 for the
 keyword contract. `niter` is the number of IRLS refit passes non-smooth
 losses (`MAD`, `Quantile`) take at each node; smooth losses ignore it.
+`split_search=ExactSearch()` evaluates all eligible numeric thresholds.
+Use `BinnedSearch()` for optional approximate scalar-score fitting.
 """
 function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         weights = nothing, categorical = Int[], rule::SelectionRule = BIC(),
+        split_search::SplitSearch = ExactSearch(),
         max_depth = 12, min_fit = 10, min_leaf = 5, min_sum_hessian = 1.0,
         max_lin_chain = 10, truncate = true, truncation_factor = 3,
         features = 1:size(X, 2), presort::Union{Nothing,AbstractMatrix{Int32}} = nothing,
         nthreads = Threads.nthreads(), niter = 5)
     return _fit_tree(X, y, loss, nothing; weights, categorical, rule, max_depth, min_fit, min_leaf,
-        min_sum_hessian, max_lin_chain, truncate, truncation_factor, features, presort, nthreads, niter)
+        min_sum_hessian, max_lin_chain, truncate, truncation_factor, features, presort, nthreads, niter, split_search)
 end
 
 function _fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss, workspace;
         weights = nothing, categorical = Int[], rule::SelectionRule = BIC(),
+        split_search::SplitSearch = ExactSearch(),
         max_depth = 12, min_fit = 10, min_leaf = 5, min_sum_hessian = 1.0,
         max_lin_chain = 10, truncate = true, truncation_factor = 3,
         features = 1:size(X, 2), presort::Union{Nothing,AbstractMatrix{Int32}} = nothing,
@@ -247,6 +264,9 @@ function _fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss, workspace;
     truncation_factor >= 1 || throw(ArgumentError("truncation_factor must be >= 1, got $truncation_factor"))
     nthreads = clamp(nthreads, 1, Threads.nthreads())
     T = float(promote_type(eltype(X), target_eltype(loss, y)))
+    V = coeftype(loss, T)
+    V <: Real || split_search isa ExactSearch ||
+        throw(ArgumentError("$(typeof(split_search)) requires scalar coefficients; use ExactSearch() with $(typeof(loss))"))
     n, p = size(X)
     feats = sort!(unique!(collect(Int, features)))
     isempty(feats) && throw(ArgumentError("features must not be empty"))
@@ -275,9 +295,9 @@ function _fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss, workspace;
         nlevels[j] = Int(maximum(col))
         iscat[j] = true
     end
-    return _fit_tree(Xm, yv, w, loss, rule, coeftype(loss, T), iscat, nlevels, keep, feats, presort, workspace;
+    return _fit_tree(Xm, yv, w, loss, rule, V, iscat, nlevels, keep, feats, presort, workspace;
         max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
-        nthreads, niter)
+        nthreads, niter, split_search)
 end
 
 """
@@ -300,14 +320,16 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{Y}, w::Vector{T}, loss::L, rule::R,
         iscat::Vector{Bool}, nlevels::Vector{Int}, keep::Vector{Int}, features::Vector{Int},
         presort::Union{Nothing,AbstractMatrix{Int32}}, workspace;
         max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
-        nthreads, niter) where {T,V,Y,L<:Loss,R<:SelectionRule}
+        nthreads, niter, split_search::S) where {T,V,Y,L<:Loss,R<:SelectionRule,S<:SplitSearch}
+    V <: Real || split_search isa ExactSearch ||
+        throw(ArgumentError("$(typeof(split_search)) requires scalar coefficients; use ExactSearch() with $(typeof(loss))"))
     n, p = size(Xm)
     f0 = V(initscore(loss, yv, w))
     # every `scorebound` method returns bounds in its own working type (often
     # `Float64`, regardless of `V`), so convert here rather than trust each method
     lo, hi = truncate ? map(V, scorebound(loss, yv; truncation_factor)) : infbounds(V)
     f = fill(clampscore(f0, lo, hi), n)
-    workspace === nothing && (workspace = TreeWorkspace{T,V}(n, p, nthreads))
+    workspace === nothing && (workspace = TreeWorkspace{T,V}(n, p, nthreads, split_search))
     idx = workspace.idx
     if presort === nothing
         presort!(idx, Xm, nthreads)
@@ -317,11 +339,12 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{Y}, w::Vector{T}, loss::L, rule::R,
     # Models own their nodes and masks. Only fully overwritten work buffers are
     # shared across rounds; a fresh pool starts each fit with no borrowed ids.
     nsets = length(workspace.scratch)
-    st = FitState{T,V,Y,L,R}(; X = Xm, y = yv, w, f, g = zeros(V, n), h = zeros(V, n), z = zeros(V, n),
+    st = FitState{T,V,Y,L,R,S,eltype(workspace.scratch).parameters[3]}(; X = Xm, y = yv, w, f,
+        g = zeros(V, n), h = zeros(V, n), z = zeros(V, n),
         idx, roworder = collect(Int32(1):Int32(n)), isleft = zeros(Bool, n),
         scratch = workspace.scratch,
         pool = ScratchPool(nsets:-1:2),   # id 1 is the root task's own and never enters the pool
-        nodes = Node{T,V}[], catmasks = UInt64[], iscat, nlevels, features, loss, rule, lo, hi,
+        nodes = Node{T,V}[], catmasks = UInt64[], iscat, nlevels, features, loss, rule, split_search, lo, hi,
         max_depth = Int(max_depth), min_fit = T(min_fit), min_leaf = T(min_leaf),
         min_sum_hessian = T(min_sum_hessian), max_lin_chain = Int(max_lin_chain),
         truncate = Bool(truncate), nthreads = Int(nthreads), niter = Int(niter),
@@ -632,8 +655,10 @@ the multiply dropped is by exactly one.
 """
 @inline function scan_gathered(st::FitState{T,V}, sc::Scratch{T,V}, m, rule, dmin) where {T,V}
     xs = view(sc.xs, 1:m); zs = view(sc.zs, 1:m); ws = view(sc.ws, 1:m)
-    st.unith && return scan_feature(xs, zs, UnitHessians{V}(m), ws, rule, st.min_leaf, dmin)
-    return scan_feature(xs, zs, view(sc.hs, 1:m), ws, rule, st.min_leaf, dmin)
+    search = rule isa PconOnly ? ExactSearch() : st.split_search
+    buffer = rule isa PconOnly ? nothing : sc.search
+    st.unith && return scan_feature(xs, zs, UnitHessians{V}(m), ws, rule, st.min_leaf, dmin, search, buffer)
+    return scan_feature(xs, zs, view(sc.hs, 1:m), ws, rule, st.min_leaf, dmin, search, buffer)
 end
 
 """

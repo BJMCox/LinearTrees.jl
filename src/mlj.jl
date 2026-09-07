@@ -6,6 +6,7 @@ using Random: AbstractRNG, Xoshiro, default_rng
 MMI.@mlj_model mutable struct LinearTreeRegressor <: MMI.Deterministic
     loss::Loss = MSE()
     rule::SelectionRule = BIC()
+    split_search::SplitSearch = ExactSearch()
     max_depth::Int = 12::(_ >= 0)
     min_samples_split::Int = 10::(_ >= 1)
     min_samples_leaf::Int = 5::(_ >= 1)
@@ -17,6 +18,7 @@ end
 
 MMI.@mlj_model mutable struct LinearTreeClassifier <: MMI.Probabilistic
     rule::SelectionRule = BIC()
+    split_search::SplitSearch = ExactSearch()
     max_depth::Int = 12::(_ >= 0)
     min_samples_split::Int = 10::(_ >= 1)
     min_samples_leaf::Int = 5::(_ >= 1)
@@ -28,6 +30,7 @@ end
 
 MMI.@mlj_model mutable struct LinearBoostRegressor <: MMI.Deterministic
     loss::Loss = MSE()::(!(_ isa Frozen) && coeftype(_, Float64) <: Number)
+    split_search::SplitSearch = ExactSearch()
     nrounds::Int = 100::(_ >= 1)
     eta::Float64 = 0.1::(isfinite(_) && _ > 0)
     max_depth::Int = 5::(_ >= 0)
@@ -44,6 +47,7 @@ MMI.@mlj_model mutable struct LinearBoostRegressor <: MMI.Deterministic
 end
 
 MMI.@mlj_model mutable struct LinearBoostClassifier <: MMI.Probabilistic
+    split_search::SplitSearch = ExactSearch()
     nrounds::Int = 100::(_ >= 1)
     eta::Float64 = 0.1::(isfinite(_) && _ > 0)
     max_depth::Int = 5::(_ >= 0)
@@ -60,7 +64,8 @@ MMI.@mlj_model mutable struct LinearBoostClassifier <: MMI.Probabilistic
 end
 
 "Fields shared by both models, renamed to the `fit_tree` keyword contract."
-corekw(m::Union{LinearTreeRegressor,LinearTreeClassifier}) = (rule = m.rule, max_depth = m.max_depth,
+corekw(m::Union{LinearTreeRegressor,LinearTreeClassifier}) = (rule = m.rule, split_search = m.split_search,
+    max_depth = m.max_depth,
     min_fit = m.min_samples_split, min_leaf = m.min_samples_leaf, min_sum_hessian = m.min_sum_hessian,
     max_lin_chain = m.max_lin_chain, truncate = m.truncate, truncation_factor = m.truncation_factor)
 
@@ -69,6 +74,7 @@ mljrng(rng::AbstractRNG) = rng
 mljrng(seed::Integer) = Xoshiro(seed)
 
 boostkw(m::Union{LinearBoostRegressor,LinearBoostClassifier}) = (nrounds = m.nrounds, eta = m.eta,
+    split_search = m.split_search,
     max_depth = m.max_depth, min_fit = m.min_samples_split, min_leaf = m.min_samples_leaf,
     min_sum_hessian = m.min_sum_hessian, lambda_slope = m.lambda_slope,
     lambda_intercept = m.lambda_intercept, gamma = m.gamma, subsample = m.subsample,

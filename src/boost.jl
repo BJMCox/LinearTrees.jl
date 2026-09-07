@@ -60,6 +60,7 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         lambda_slope = 1.0, lambda_intercept = 1.0, gamma = 0.0,
         subsample = 1.0, colsample = 1.0, rng::AbstractRNG = default_rng(),
         weights = nothing, categorical = Int[], truncate = true,
+        split_search::SplitSearch = ExactSearch(),
         Xval = nothing, yval = nothing, wval = nothing, patience = 10,
         nthreads = Threads.nthreads())
     nthreads = clamp(nthreads, 1, Threads.nthreads())
@@ -87,6 +88,8 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     all(isfinite, Xm) || throw(ArgumentError("X contains NaN or Inf"))
     n = length(keep)
     V = coeftype(loss, T)
+    V <: Real || split_search isa ExactSearch ||
+        throw(ArgumentError("$(typeof(split_search)) requires scalar coefficients; use ExactSearch() with $(typeof(loss))"))
     f0 = V(initscore(loss, yv, w))
     lo, hi = truncate ? map(V, scorebound(loss, yv)) : infbounds(V)
     F = fill(f0, n)
@@ -119,7 +122,7 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     allfeat = collect(1:p)
     nrow = max(1, round(Int, subsample * n))
     nfeat = max(1, ceil(Int, colsample * p))
-    workspace = TreeWorkspace{T,V}(nrow, p, nthreads)
+    workspace = TreeWorkspace{T,V}(nrow, p, nthreads, split_search)
     for t in 1:nrounds
         frozen_target!(target, g0, h0, loss, yv, F, w)
         if subsample < 1
@@ -132,7 +135,7 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         end
         features = colsample < 1 ? sort!(randperm(rng, p)[1:nfeat]) : allfeat
         tree = _fit_tree(Xm, target, frozen, workspace; weights = wr, categorical, rule, max_depth, min_fit, min_leaf,
-            min_sum_hessian, truncate, features, presort = idx, nthreads)::LinearTree{T,V,Frozen{V}}
+            min_sum_hessian, truncate, features, presort = idx, nthreads, split_search)::LinearTree{T,V,Frozen{V}}
         push!(trees, tree)
         add_tree_score!(F, tree, Xm, etaT, nthreads)
         if hasval

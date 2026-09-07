@@ -8,6 +8,7 @@ include("node.jl")
 include("accumulate.jl")
 include("select.jl")
 include("scan.jl")
+include("search.jl")
 include("fit.jl")
 include("predict.jl")
 include("importance.jl")
@@ -20,6 +21,7 @@ include("serialize.jl")
 
 export ModelKind, CON, LIN, PCON, BLIN, PLIN, Node, LinearTree
 export BIC, MinDeviance, GainRule
+export SplitSearch, ExactSearch, BinnedSearch
 export score, predict, predict!, fit_tree
 export feature_importance, coeftable
 export shap, shap!, ShapResult
