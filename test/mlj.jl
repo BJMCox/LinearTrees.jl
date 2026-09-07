@@ -66,10 +66,19 @@ end
     @test MLJBase.training_losses(mach) == rep.history
     mach2 = machine(model, X, y) |> fit!
     @test MLJBase.predict(mach2, X) == yhat
-    bad = @test_logs (:warn, r"subsample") LinearBoostRegressor(subsample = 1.5)
-    @test bad.subsample == 1.0
-    badloss = @test_logs (:warn, r"loss") LinearBoostRegressor(loss = Softmax(3))
-    @test badloss.loss == MSE()
+end
+
+@testset "MLJ boosting constructors restore invalid controls" begin
+    finite_controls = (:eta, :min_sum_hessian, :lambda_slope, :lambda_intercept, :gamma, :subsample, :colsample)
+    for T in (LinearBoostRegressor, LinearBoostClassifier), name in finite_controls, value in (NaN, Inf)
+        default = getfield(T(), name)
+        bad = @test_logs (:warn, Regex(String(name))) T(; NamedTuple{(name,)}((value,))...)
+        @test getfield(bad, name) == default
+    end
+    for loss in (Softmax(3), Frozen{Float64}())
+        bad = @test_logs (:warn, r"loss") LinearBoostRegressor(loss = loss)
+        @test bad.loss == MSE()
+    end
 end
 
 @testset "MLJ boosting forwards weights and rng" begin
@@ -79,10 +88,13 @@ end
     mr = machine(LinearBoostRegressor(nrounds = 1, max_depth = 0), X, yr, wr) |> fit!
     @test MLJBase.predict(mr, X) ≈ fill(6.0, 3)
 
-    yc = categorical(["no", "yes", "yes"])
-    wc = [2.0, 1.0, 1.0]
+    yc = categorical(["yes", "no", "no"]; levels = ["yes", "no"], ordered = true)
+    wc = [4.0, 1.0, 2.0]
     mc = machine(LinearBoostClassifier(nrounds = 1, max_depth = 0), X, yc, wc) |> fit!
-    @test pdf.(MLJBase.predict(mc, X), yc[1]) ≈ fill(0.5, 3)
+    yhatc = MLJBase.predict(mc, X)
+    @test String.(MLJBase.classes(first(yhatc))) == ["yes", "no"]
+    @test pdf.(yhatc, yc[1]) ≈ fill(4 / 7, 3)
+    @test pdf.(yhatc, yc[2]) ≈ fill(3 / 7, 3)
 
     stream = StableRNG(8)
     seeded = LinearBoostRegressor(nrounds = 2, max_depth = 0, subsample = 0.7, rng = stream)
