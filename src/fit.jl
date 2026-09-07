@@ -262,7 +262,7 @@ end
 
 """
 The body of `fit_tree` once every argument is concrete: `Xm::Matrix{T}`,
-`yv`/`w::Vector{T}`, a concrete loss and rule, and the coefficient type `V`.
+`yv::Vector{Y}`, `w::Vector{T}`, a concrete loss and rule, and coefficient type `V`.
 A function barrier, so growth specializes on those types instead of
 re-dispatching on them at run time in every node. `fit_tree` stays the
 validating front end.
