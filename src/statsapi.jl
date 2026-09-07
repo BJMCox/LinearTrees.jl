@@ -134,6 +134,7 @@ end
 # method never reads names or levels. Revisit if a third encoder kind appears.
 reshape_row(enc::TableEncoder, x::AbstractVector) = isempty(enc.categorical) ? reshape(collect(x), 1, length(x)) :
     NamedTuple{Tuple(enc.names)}(Tuple(Any[v] for v in x))
+reshape_row(enc::TableEncoder, x) = reshape_row(enc, Any[v for v in x])
 
 """
     LinearTreeRegressorFit{Tr}
@@ -191,19 +192,26 @@ function StatsAPI.fit(::Type{LinearTreeRegressorFit}, X, y; loss::Loss = MSE(), 
     return LinearTreeRegressorFit(tree, enc, Xm, Vector{Float64}(y), w)
 end
 
+"""
+Sorted class list, per-row class codes, and the label-to-code map.
+`Vector{eltype(sorted)}`, not `collect`: a `CategoricalArray`'s own
+`sort`/`unique` stay `CategoricalArray`-typed (not a `Vector`, so it cannot
+match a `classes::Vector{C}` field), but converting element by element keeps
+each `CategoricalValue` and the pool it carries intact.
+"""
+function class_codes(y)
+    sorted = sort(unique(y))
+    classes = Vector{eltype(sorted)}(sorted)
+    code = Dict(c => i for (i, c) in enumerate(classes))
+    return classes, [code[v] for v in y], code
+end
+
 function StatsAPI.fit(::Type{LinearTreeClassifierFit}, X, y; weights = nothing, unseen = :error,
         nthreads = Threads.nthreads(), kwargs...)
     enc = TableEncoder(X, unseen)
     Xm = encode(enc, X; nthreads)
-    sorted = sort(unique(y))
-    # `Vector{eltype(sorted)}`, not `collect`: a `CategoricalArray`'s own `sort`/`unique`
-    # stay `CategoricalArray`-typed (not a `Vector`, so it can't match the struct's
-    # `classes::Vector{C}` field), but converting element-by-element to a `Vector`
-    # keeps each `CategoricalValue` (and the pool it carries) intact.
-    classes = Vector{eltype(sorted)}(sorted)
+    classes, yi, _ = class_codes(y)
     K = length(classes)
-    code = Dict(c => i for (i, c) in enumerate(classes))
-    yi = [code[v] for v in y]
     w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
     loss = K == 2 ? Logistic() : Softmax(K)
     ytarget = K == 2 ? Float64.(yi .== 1) : yi
@@ -264,3 +272,97 @@ end
 
 StatsAPI.coeftable(m::AnyFit, x) = coeftable(m.tree, vec(encode(m.encoder, reshape_row(m.encoder, x))))
 feature_importance(m::AnyFit) = feature_importance(m.tree)
+
+"""
+    LinearBoostRegressorFit{B}
+
+A [`fit_boost`](@ref) result wrapped with its input encoder and training data
+as a `StatsAPI.RegressionModel`. Build with
+`fit(LinearBoostRegressorFit, X, y; loss=MSE(), weights=nothing, unseen=:error, Xval=nothing, yval=nothing, wval=nothing, kwargs...)`;
+`Xval` may be a matrix or table and is encoded like `X`; `kwargs` forward to `fit_boost`.
+"""
+struct LinearBoostRegressorFit{B<:LinearBoost} <: StatsAPI.RegressionModel
+    boost::B
+    encoder::TableEncoder
+    X::Matrix{Float64}
+    y::Vector{Float64}
+    w::Vector{Float64}
+end
+
+"""
+    LinearBoostClassifierFit{B,C}
+
+A [`fit_boost`](@ref) result for a categorical target, with the same class
+conventions as [`LinearTreeClassifierFit`](@ref): `classes[1]` is the
+`Logistic` positive outcome for two classes, and column `k` of `predict` is
+`P(classes[k])`. Build with
+`fit(LinearBoostClassifierFit, X, y; weights=nothing, unseen=:error, Xval=nothing, yval=nothing, wval=nothing, kwargs...)`.
+"""
+struct LinearBoostClassifierFit{B<:LinearBoost,C} <: StatsAPI.StatisticalModel
+    boost::B
+    encoder::TableEncoder
+    X::Matrix{Float64}
+    y::Vector{Int}
+    w::Vector{Float64}
+    classes::Vector{C}
+end
+
+encode_val(enc, Xval, nthreads) = Xval === nothing ? nothing : encode(enc, Xval; nthreads)
+
+function StatsAPI.fit(::Type{LinearBoostRegressorFit}, X, y; loss::Loss = MSE(), weights = nothing, unseen = :error,
+        Xval = nothing, yval = nothing, wval = nothing, nthreads = Threads.nthreads(), kwargs...)
+    enc = TableEncoder(X, unseen)
+    Xm = encode(enc, X; nthreads)
+    w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
+    boost = fit_boost(Xm, y, loss; weights = w, categorical = enc.categorical, nthreads,
+        Xval = encode_val(enc, Xval, nthreads), yval, wval, kwargs...)
+    return LinearBoostRegressorFit(boost, enc, Xm, Vector{Float64}(y), w)
+end
+
+function StatsAPI.fit(::Type{LinearBoostClassifierFit}, X, y; weights = nothing, unseen = :error,
+        Xval = nothing, yval = nothing, wval = nothing, nthreads = Threads.nthreads(), kwargs...)
+    enc = TableEncoder(X, unseen)
+    Xm = encode(enc, X; nthreads)
+    classes, yi, code = class_codes(y)
+    K = length(classes)
+    w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
+    loss = K == 2 ? Logistic() : Softmax(K)
+    encode_y(v) = K == 2 ? Float64.(v .== 1) : v
+    yvi = yval === nothing ? nothing : [get(code, v) do
+            throw(ArgumentError("validation label $v is not a training class"))
+        end for v in yval]
+    boost = fit_boost(Xm, encode_y(yi), loss; weights = w, categorical = enc.categorical, nthreads,
+        Xval = encode_val(enc, Xval, nthreads), yval = yvi === nothing ? nothing : encode_y(yvi), wval, kwargs...)
+    return LinearBoostClassifierFit(boost, enc, Xm, yi, w, classes)
+end
+
+StatsAPI.predict(m::LinearBoostRegressorFit, X) = predict(m.boost, encode(m.encoder, X))
+
+function StatsAPI.predict(m::LinearBoostClassifierFit, X)
+    Xm = encode(m.encoder, X)
+    if m.boost.loss isa Logistic
+        p1 = predict(m.boost, Xm)
+        return hcat(p1, 1 .- p1)
+    end
+    return predict(m.boost, Xm)
+end
+
+const AnyBoostFit = Union{LinearBoostRegressorFit,LinearBoostClassifierFit}
+StatsAPI.nobs(m::AnyBoostFit) = length(m.y)
+StatsAPI.weights(m::AnyBoostFit) = m.w
+StatsAPI.dof(m::AnyBoostFit) = sum(ncoef(n) for t in m.boost.trees for n in t.nodes; init = 0)
+StatsAPI.residuals(m::LinearBoostRegressorFit) = m.y .- predict(m.boost, m.X)
+StatsAPI.deviance(m::LinearBoostRegressorFit) = deviance(m.boost.loss, m.y, score(m.boost, m.X), m.w)
+
+function StatsAPI.deviance(m::LinearBoostClassifierFit)
+    loss = m.boost.loss
+    if loss isa Logistic
+        return deviance(loss, Float64.(m.y .== 1), score(m.boost, m.X), m.w)
+    end
+    s = score(m.boost, m.X)
+    f = [SVector{nclasses(loss) - 1}(view(s, i, :)) for i in axes(s, 1)]
+    return deviance(loss, m.y, f, m.w)
+end
+
+StatsAPI.coeftable(m::AnyBoostFit, x) = coeftable(m.boost, vec(encode(m.encoder, reshape_row(m.encoder, x))))
+feature_importance(m::AnyBoostFit) = feature_importance(m.boost)
