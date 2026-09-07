@@ -151,4 +151,4 @@ fit. Use `machine(LinearBoostRegressor(...), X, y)` or
 `machine(LinearBoostClassifier(...), X, y)` for MLJ. The direct and StatsAPI
 interfaces accept `Xval`, `yval`, and `wval` for early stopping; the MLJ
 models expose `nrounds` as their iteration parameter instead. See
-[Boosting](boosting.md) for the fitting contract.
+[Boosting](@ref) for the fitting contract.

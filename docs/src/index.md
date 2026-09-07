@@ -13,7 +13,7 @@ TreeSHAP. [`fit_boost`](@ref) adds second-order gradient boosting with these
 linear trees as base learners.
 
 See the [Guide](@ref) for model kinds, selection, and truncation, and
-[Losses](@ref) for the loss table. See [Boosting](boosting.md) for ensembles,
+[Losses](@ref) for the loss table. See [Boosting](@ref) for ensembles,
 validation stopping, sampling, interpretation, and persistence.
 
 ## Quick start

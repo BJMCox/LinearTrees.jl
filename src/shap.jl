@@ -16,7 +16,7 @@ end
 
 """
 One path element. The four fields stay in one struct rather than in parallel
-arrays on [`PathPool`](@ref): the split was measured on case 6 and lost, by 25%
+arrays on `PathPool`: the split was measured on case 6 and lost, by 25%
 with all four fields split apart and by 20% with `weight` alone split out. The
 paths are at most one element per tree level and stay in L1, so there is no
 locality to win, while every extra array costs another bounds check per read

@@ -21,6 +21,23 @@ beyond the conditional mean are not implemented.
 ## Quick start
 
 ```julia
+using LinearTrees
+using AbstractTrees     # for print_tree
+
+X = rand(1000, 4)
+y = sin.(3 .* X[:, 1]) .+ 2 .* X[:, 2] .* (X[:, 3] .> 0.5) .+ 0.05 .* randn(1000)
+
+tree = fit_tree(X, y; max_depth = 4)
+ŷ = predict(tree, X)
+
+print_tree(TreeView(tree))
+
+φ = shap(tree, X)          # φ.values[i, j] is feature j's SHAP value for row i
+```
+
+## Boosting
+
+```julia
 using LinearTrees, Random
 
 rng = Xoshiro(42)

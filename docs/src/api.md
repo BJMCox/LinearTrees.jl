@@ -29,7 +29,7 @@ MinDeviance
 GainRule
 ```
 
-## Boosting
+## Boosting API
 
 ```@docs
 fit_boost
@@ -80,7 +80,6 @@ shap
 shap!
 ShapResult
 expected_score
-PathPool
 ```
 
 ## StatsAPI and Tables.jl

@@ -194,7 +194,7 @@ boost_shap_min_rows(b::LinearBoost) =
 In-place [`shap`](@ref) for an ensemble: `eta` times the sum of every tree's
 path-dependent SHAP values, base `f0 + eta Σ expected_score(tree)`, so each
 row sums to `score(boost, x; clip = false) − base`. `clipped[i]` is true when
-the ensemble clamp changed row `i`. One [`PathPool`](@ref) per row block,
+the ensemble clamp changed row `i`. One `PathPool` per row block,
 reused across the ensemble's trees.
 """
 function shap!(values, clipped::Vector{Bool}, b::LinearBoost{T,V}, X::AbstractMatrix;

@@ -59,7 +59,7 @@ is exact under a row permutation.
 Boosting freezes the IRLS weight once per ensemble round and fits one weighted
 least-squares [`Frozen`](@ref) tree. It does not run this tree's five-pass
 non-smooth refit, so a `Quantile` or `MAD` boost is IRLS boosting rather than
-exact L1 boosting. See [Boosting](boosting.md).
+exact L1 boosting. See [Boosting](@ref).
 
 ## The LossFunctions.jl adapter
 
