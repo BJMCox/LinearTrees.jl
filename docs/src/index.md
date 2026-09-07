@@ -9,10 +9,12 @@ constant, a simple line, a broken line, or a pair of lines, chosen by a BIC
 selection rule at every split. The fitter works for any twice-differentiable
 loss (or an IRLS-approximated one), covers categorical features and sample
 weights, and includes split-gain feature importance and path-dependent
-TreeSHAP.
+TreeSHAP. [`fit_boost`](@ref) adds second-order gradient boosting with these
+linear trees as base learners.
 
 See the [Guide](@ref) for model kinds, selection, and truncation, and
-[Losses](@ref) for the loss table.
+[Losses](@ref) for the loss table. See [Boosting](boosting.md) for ensembles,
+validation stopping, sampling, interpretation, and persistence.
 
 ## Quick start
 

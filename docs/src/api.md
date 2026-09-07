@@ -29,6 +29,15 @@ MinDeviance
 GainRule
 ```
 
+## Boosting
+
+```@docs
+fit_boost
+LinearBoost
+nrounds
+Frozen
+```
+
 ## Loss types and functions
 
 ```@docs
@@ -71,6 +80,7 @@ shap
 shap!
 ShapResult
 expected_score
+PathPool
 ```
 
 ## StatsAPI and Tables.jl
@@ -78,6 +88,8 @@ expected_score
 ```@docs
 LinearTreeRegressorFit
 LinearTreeClassifierFit
+LinearBoostRegressorFit
+LinearBoostClassifierFit
 fit
 nobs
 dof
@@ -90,6 +102,8 @@ residuals
 ```@docs
 LinearTreeRegressor
 LinearTreeClassifier
+LinearBoostRegressor
+LinearBoostClassifier
 ```
 
 ## Printing and serialisation

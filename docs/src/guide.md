@@ -143,3 +143,12 @@ makes the bare name `predict` ambiguous. Qualify it:
   or a `LinearTreeRegressorFit`/`LinearTreeClassifierFit` obtained directly
   from `fit_tree` or `StatsAPI.fit`.
 - `predict(mach, Xnew)` (MLJ's own, unqualified) for an MLJ `machine`.
+
+The same distinction applies to boosting. Call
+`LinearTrees.fit(LinearBoostRegressorFit, X, y; kwargs...)` or
+`LinearTrees.fit(LinearBoostClassifierFit, X, y; kwargs...)` for a StatsAPI
+fit. Use `machine(LinearBoostRegressor(...), X, y)` or
+`machine(LinearBoostClassifier(...), X, y)` for MLJ. The direct and StatsAPI
+interfaces accept `Xval`, `yval`, and `wval` for early stopping; the MLJ
+models expose `nrounds` as their iteration parameter instead. See
+[Boosting](boosting.md) for the fitting contract.

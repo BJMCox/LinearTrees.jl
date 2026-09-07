@@ -13,27 +13,27 @@ a BIC selection rule; the package covers regression, binary and multiclass
 classification, count and rate targets, categorical features, sample
 weights, split-gain feature importance, and a local linear model
 (`coeftable`) at any point. SHAP is path-dependent TreeSHAP on the unclipped
-score, exact for this tree type rather than sampling-based. Not implemented
-in this sub-project: pruning, gradient boosting, histogram-binned splits, and
-a predictive distribution beyond the conditional mean; see
-`docs/superpowers/specs/2026-09-03-lineartrees-design.md` for the full scope.
+score, exact for this tree type rather than sampling-based. The package also
+fits second-order gradient-boosted ensembles of linear trees with validation
+early stopping. Pruning, histogram-binned splits, and predictive distributions
+beyond the conditional mean are not implemented.
 
 ## Quick start
 
 ```julia
-using LinearTrees
-using AbstractTrees     # for print_tree
+using LinearTrees, Random
 
-X = rand(1000, 4)
-y = sin.(3 .* X[:, 1]) .+ 2 .* X[:, 2] .* (X[:, 3] .> 0.5) .+ 0.05 .* randn(1000)
+rng = Xoshiro(42)
+X = rand(rng, 2000, 5)
+y = sin.(3 .* X[:, 1]) .+ X[:, 2] .* X[:, 3] .+ 0.1 .* randn(rng, 2000)
+train, valid = 401:2000, 1:400
 
-tree = fit_tree(X, y; max_depth = 4)
-ŷ = predict(tree, X)
-
-print_tree(TreeView(tree))
-
-φ = shap(tree, X)          # φ.values[i, j] is feature j's SHAP value for row i
+b = fit_boost(X[train, :], y[train]; nrounds = 200, eta = 0.05,
+    max_depth = 4, Xval = X[valid, :], yval = y[valid], patience = 20)
+yhat = predict(b, X)
+r = shap(b, X)
 ```
 
 See the [documentation](https://BJMCox.github.io/LinearTrees.jl/dev/) for the
-full guide, the loss table, and the API reference.
+full guide, the [boosting guide](https://BJMCox.github.io/LinearTrees.jl/dev/boosting/),
+the loss table, and the API reference.

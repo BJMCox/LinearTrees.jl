@@ -39,7 +39,7 @@ exactly, since there is only one non-reference logit.
 `Quantile` and `MAD` have zero Hessian almost everywhere ([`issmooth`](@ref)
 is `false` for both), so they cannot use the Newton step directly:
 
-1. **Split search** uses [`irls_weights!`](@ref): the parent residual
+1. **Split search** uses `irls_weights!`: the parent residual
    `r = y - f`, `Quantile`'s one-sided weight or `MAD`'s flat weight
    (`l1weight`), divided by `max(|r|, ε)` with a strictly positive
    scale-aware floor `ε = max(1e-3 · median(|r|), sqrt(eps(T)) ·
@@ -55,6 +55,11 @@ is `false` for both), so they cannot use the Newton step directly:
 relative, since each IRLS pass re-solves the pseudo-Hessian and amplifies
 summation-order differences by about `1/ε`; every smooth loss's Newton step
 is exact under a row permutation.
+
+Boosting freezes the IRLS weight once per ensemble round and fits one weighted
+least-squares [`Frozen`](@ref) tree. It does not run this tree's five-pass
+non-smooth refit, so a `Quantile` or `MAD` boost is IRLS boosting rather than
+exact L1 boosting. See [Boosting](boosting.md).
 
 ## The LossFunctions.jl adapter
 
