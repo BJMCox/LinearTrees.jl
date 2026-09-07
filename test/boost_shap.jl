@@ -2,7 +2,7 @@ using StableRNGs
 
 @testset "ensemble SHAP satisfies efficiency on the unclipped score" begin
     # Three losses across the scalar and SVector output shapes, with a
-    # categorical column. Logistic walks the scalar path again.
+    # categorical column. MSE and Logistic cover distinct scalar links.
     rng = StableRNG(120)
     n = 300
     lvl = Float64.(rand(rng, 1:4, n))
@@ -38,6 +38,28 @@ end
     r = shap(b, X)
     @test any(r.clipped)
     @test r.clipped == (score(b, X; clip = true) .!= score(b, X; clip = false))
+    N = Node{Float64,Float64}
+    tree = LinearTree{Float64,Float64,Frozen{Float64}}(
+        [N(lintercept = 5.0)], UInt64[], Frozen{Float64}(), -1.0, 1.0, 5.0, 1, true)
+    wide = LinearBoost{Float64,Float64,Logistic}(
+        [tree], Logistic(), 0.0, 1.0, -10.0, 10.0, 1, true, false, Float64[])
+    narrow = LinearBoost{Float64,Float64,Logistic}(
+        [tree], Logistic(), 0.0, 1.0, -1.0, 1.0, 1, true, false, Float64[])
+    X0 = zeros(1, 1)
+    @test only(score(wide, X0)) == 5.0
+    @test !only(shap(wide, X0).clipped)
+    @test only(shap(narrow, X0).clipped)
+end
+
+@testset "ensemble shap! validates output shapes" begin
+    rng = StableRNG(126)
+    X = rand(rng, 20, 3); y = X[:, 1]
+    b = fit_boost(X, y; nrounds = 1, max_depth = 1)
+    @test_throws DimensionMismatch shap!(zeros(20, 4), fill(false, 20), b, X)
+    @test_throws DimensionMismatch shap!(zeros(20, 3), fill(false, 21), b, X)
+    yk = [i <= 7 ? 1 : i <= 14 ? 2 : 3 for i in axes(X, 1)]
+    bs = fit_boost(X, yk, Softmax(3); nrounds = 1, max_depth = 1)
+    @test_throws DimensionMismatch shap!(zeros(20, 3, 1), fill(false, 20), bs, X)
 end
 
 @testset "ensemble SHAP is the eta-weighted sum of tree SHAP" begin

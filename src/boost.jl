@@ -200,6 +200,9 @@ reused across the ensemble's trees.
 function shap!(values, clipped::Vector{Bool}, b::LinearBoost{T,V}, X::AbstractMatrix;
         nthreads = Threads.nthreads()) where {T,V}
     n = size(X, 1)
+    expected = V <: SVector ? (n, b.nfeatures, length(V)) : (n, b.nfeatures)
+    size(values) == expected || throw(DimensionMismatch("values must have size $expected, got $(size(values))"))
+    length(clipped) == n || throw(DimensionMismatch("clipped must have length $n, got $(length(clipped))"))
     fill!(values, 0)
     row_blocks(n, nthreads; minrows = boost_shap_min_rows(b)) do rs
         pool = PathPool()   # one per block: never shared between tasks, see PathPool
