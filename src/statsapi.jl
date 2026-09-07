@@ -320,7 +320,13 @@ function subset_rows(X, rows)
 end
 
 validation_nrows(X::AbstractMatrix) = size(X, 1)
-validation_nrows(X) = Tables.rowcount(Tables.columns(X))
+function validation_nrows(X)
+    cols = Tables.columns(X)
+    nrows = Tables.rowcount(cols)
+    nrows === nothing || return nrows
+    names = Tables.columnnames(cols)
+    return isempty(names) ? 0 : length(Tables.getcolumn(cols, first(names)))
+end
 
 function validation_length(Xval, yval, wval)
     (Xval === nothing) == (yval === nothing) || throw(ArgumentError("Xval and yval must be given together"))

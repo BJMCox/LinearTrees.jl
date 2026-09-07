@@ -12,6 +12,7 @@ Tables.columns(t::SchemaUnknownTable) = t
 Tables.columnnames(::SchemaUnknownTable) = (:a, :b, :c)
 Tables.getcolumn(t::SchemaUnknownTable, nm::Symbol) = getproperty(t, nm)
 Tables.schema(::SchemaUnknownTable) = nothing
+Tables.rowcount(::SchemaUnknownTable) = nothing
 
 @testset "LinearBoost JLD2 round trip is exact" begin
     rng = StableRNG(130)
