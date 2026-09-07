@@ -181,3 +181,18 @@ end
     @test fit_tree(X, y; weights = w, max_depth = 6, features = [1, 4], presort = idx, nthreads = 1).nodes == tf.nodes
     @test all(nd -> LinearTrees.isleaf(nd) || nd.feature in (1, 4), tf.nodes)
 end
+
+@testset "filter_presort! stably renumbers retained rows" begin
+    # `fit_tree` does not expose its filtered index columns, and a tree cannot
+    # force every feature to win under ties. Check this exact mapping seam
+    # directly, with kept and removed rows interleaved in the full presort.
+    X = Float64[2 3; 1 2; 2 1; 1 2; 1 2; 3 1; 3 1; 2 3]
+    keep = [1, 3, 5, 7]
+    presort = LinearTrees.presort!(Matrix{Int32}(undef, 8, 2), X, 1)
+    saved = copy(presort)
+    idx = LinearTrees.filter_presort!(Matrix{Int32}(undef, length(keep), 2), presort, keep, 1)
+    for j in axes(X, 2)
+        @test idx[:, j] == Int32.(sortperm(view(X[keep, :], :, j); alg = MergeSort))
+    end
+    @test presort == saved
+end
