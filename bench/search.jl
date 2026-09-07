@@ -10,7 +10,7 @@ function bench_search(; ntrain = 20_000, ntest = 10_000, seeds = 1:3, samples = 
             0.1 .* randn(rng, size(X, 1))
         Xt = X[(ntrain + 1):end, :]; yt = y[(ntrain + 1):end]
         X = X[1:ntrain, :]; y = y[1:ntrain]
-        methods = circshift([ExactSearch(), BinnedSearch()], seed - 1)
+        methods = circshift([ExactSearch(), BinnedSearch(), HybridSearch()], seed - 1)
         for split_search in methods
             fitfun = () -> fit_tree(X, y; split_search, max_depth = 10, nthreads)
             model = fitfun()

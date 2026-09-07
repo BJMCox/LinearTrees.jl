@@ -163,7 +163,7 @@ end
 function TreeWorkspace{T,V}(n, p, nthreads, search::SplitSearch) where {T,V}
     nsets = nthreads == 1 ? 1 : SCRATCH_PER_THREAD * nthreads
     scratch = [Scratch{T,V}(search) for _ in 1:nsets]
-    return TreeWorkspace(Matrix{Int32}(undef, n, p), scratch)
+    return TreeWorkspace(index_workspace(search, n, p), scratch)
 end
 TreeWorkspace{T,V}(n, p, nthreads) where {T,V} = TreeWorkspace{T,V}(n, p, nthreads, ExactSearch())
 
@@ -231,7 +231,8 @@ Fit a PILOT-style linear model tree. See the design spec section 4 for the
 keyword contract. `niter` is the number of IRLS refit passes non-smooth
 losses (`MAD`, `Quantile`) take at each node; smooth losses ignore it.
 `split_search=ExactSearch()` evaluates all eligible numeric thresholds.
-Use `BinnedSearch()` for optional approximate scalar-score fitting.
+Use [`BinnedSearch`](@ref) for node-local bins, or [`HybridSearch`](@ref) for
+global bins with local refinement. Both offer approximate scalar-score fitting.
 """
 function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         weights = nothing, categorical = Int[], rule::SelectionRule = BIC(),
@@ -295,9 +296,10 @@ function _fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss, workspace;
         nlevels[j] = Int(maximum(col))
         iscat[j] = true
     end
+    prepared_search = prepare_search(split_search, Xm, feats, iscat, keep)
     return _fit_tree(Xm, yv, w, loss, rule, V, iscat, nlevels, keep, feats, presort, workspace;
         max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
-        nthreads, niter, split_search)
+        nthreads, niter, split_search = prepared_search)
 end
 
 """
@@ -331,11 +333,7 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{Y}, w::Vector{T}, loss::L, rule::R,
     f = fill(clampscore(f0, lo, hi), n)
     workspace === nothing && (workspace = TreeWorkspace{T,V}(n, p, nthreads, split_search))
     idx = workspace.idx
-    if presort === nothing
-        presort!(idx, Xm, nthreads)
-    else
-        filter_presort!(idx, presort, keep, nthreads, features)
-    end
+    initialize_index!(idx, Xm, presort, keep, features, nthreads, split_search)
     # Models own their nodes and masks. Only fully overwritten work buffers are
     # shared across rounds; a fresh pool starts each fit with no borrowed ids.
     nsets = length(workspace.scratch)
@@ -723,6 +721,9 @@ function partition!(idx::Matrix{Int32}, roworder::Vector{Int32}, span::UnitRange
     return nleft
 end
 
+partition_node!(st, span, ids) =
+    partition!(st.idx, st.roworder, span, st.isleft, st.scratch, ids, st.features)
+
 "Wrap a rule so only `con` and `pcon` are offered, for categorical scans."
 struct PconOnly{R<:SelectionRule} <: SelectionRule
     inner::R
@@ -1022,7 +1023,7 @@ function grow_subtree(st::FitState{T,V}, rows::RowView, span::UnitRange{Int}, de
     end
     ids = worker_ids!(sc, st.pool, tid, nborrow)
     nl = try
-        partition!(st.idx, st.roworder, span, st.isleft, st.scratch, ids, st.features)
+        partition_node!(st, span, ids)
     finally
         giveback!(st.pool, ids)
     end

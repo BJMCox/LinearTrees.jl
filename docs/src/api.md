@@ -35,6 +35,7 @@ GainRule
 SplitSearch
 ExactSearch
 BinnedSearch
+HybridSearch
 ```
 
 ## Boosting API

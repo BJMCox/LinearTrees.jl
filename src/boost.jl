@@ -37,7 +37,7 @@ end
               subsample = 1.0, colsample = 1.0, rng = Random.default_rng(),
               weights = nothing, categorical = Int[], truncate = true,
               Xval = nothing, yval = nothing, wval = nothing, patience = 10,
-              nthreads = Threads.nthreads()) -> LinearBoost
+              split_search = ExactSearch(), nthreads = Threads.nthreads()) -> LinearBoost
 
 Second-order gradient boosting (Guryanov 2019) with the linear model tree as
 base learner. Each round computes the gradient and Hessian of `loss` at the
@@ -46,8 +46,11 @@ tree with [`GainRule`](@ref)`(lambda_slope, lambda_intercept, gamma)`, depth
 `max_depth`, and the row and column samples drawn from `rng`. The tree's raw
 score times `eta` is added to the ensemble. With `Xval`/`yval`, the
 validation deviance is recorded per round and fitting stops after `patience`
-rounds without improvement, keeping the trees up to the best round. `X` is
-presorted once; every round reuses the sort. Sampled-out rows have weight
+rounds without improvement, keeping the trees up to the best round. Exact and
+node-local binned searches presort `X` once. [`HybridSearch`](@ref) prepares
+global bin IDs once from all positive-weight training rows, then selects the
+sampled rows' IDs each round. It supports numeric features and scalar losses.
+Sampled-out rows have weight
 zero for that tree only. `history` holds the per-round deviance and the
 ensemble's `validated` flag says whether it is the validation deviance, and so
 whether early stopping was in play.
@@ -95,7 +98,16 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     F = fill(f0, n)
     g0 = zeros(V, n); h0 = zeros(V, n)
     target = Vector{Tuple{V,V}}(undef, n)
-    idx = presort!(Matrix{Int32}(undef, n, p), Xm, nthreads)
+    allfeat = collect(1:p)
+    iscat = falses(p)
+    for j in categorical
+        1 <= j <= p || throw(ArgumentError("categorical column $j is outside 1:$p"))
+        iscat[j] = true
+    end
+    split_search = prepare_search(split_search, Xm, allfeat, iscat)
+    idx = index_workspace(split_search, n, p)
+    initialize_index!(idx, Xm, nothing, keep, allfeat, nthreads, split_search)
+    presort = isempty(idx) ? nothing : idx
     rule = GainRule(; lambda_slope, lambda_intercept, gamma)
     frozen = Frozen{V}()
     trees = LinearTree{T,V,Frozen{V}}[]
@@ -119,7 +131,6 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         Fv = fill(f0, length(yvv))
     end
     wr = similar(w)
-    allfeat = collect(1:p)
     nrow = max(1, round(Int, subsample * n))
     nfeat = max(1, ceil(Int, colsample * p))
     workspace = TreeWorkspace{T,V}(nrow, p, nthreads, split_search)
@@ -135,7 +146,7 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         end
         features = colsample < 1 ? sort!(randperm(rng, p)[1:nfeat]) : allfeat
         tree = _fit_tree(Xm, target, frozen, workspace; weights = wr, categorical, rule, max_depth, min_fit, min_leaf,
-            min_sum_hessian, truncate, features, presort = idx, nthreads, split_search)::LinearTree{T,V,Frozen{V}}
+            min_sum_hessian, truncate, features, presort, nthreads, split_search)::LinearTree{T,V,Frozen{V}}
         push!(trees, tree)
         add_tree_score!(F, tree, Xm, etaT, nthreads)
         if hasval

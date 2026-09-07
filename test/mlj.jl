@@ -1,5 +1,24 @@
 using MLJBase, MLJTestInterface, CategoricalArrays, StableRNGs, Statistics
 
+@testset "hybrid search through StatsAPI and MLJ" begin
+    x = collect(range(0.0, 1.0; length = 200))
+    table = (x = x, z = sin.(x))
+    X = hcat(table.x, table.z)
+    y = Float64.(x .> 0.43) .+ 0.2 .* x
+    search = HybridSearch(nbins = 8)
+    direct = fit_tree(X, y; split_search = search, max_depth = 2)
+    wrapped = StatsAPI.fit(LinearTreeRegressorFit, table, y;
+        split_search = search, max_depth = 2)
+    mach = machine(LinearTreeRegressor(split_search = search, max_depth = 2), table, y) |> fit!
+    @test StatsAPI.predict(wrapped, table) ≈ LinearTrees.predict(direct, X)
+    @test MLJBase.predict(mach, table) ≈ LinearTrees.predict(direct, X)
+
+    directboost = fit_boost(X, y; split_search = search, nrounds = 3, max_depth = 2)
+    boostmach = machine(LinearBoostRegressor(split_search = search, nrounds = 3,
+        max_depth = 2), table, y) |> fit!
+    @test MLJBase.predict(boostmach, table) ≈ LinearTrees.predict(directboost, X)
+end
+
 @testset "MLJ generic interface tests" begin
     fails, _ = MLJTestInterface.test([LinearTreeRegressor], MLJTestInterface.make_regression()...;
         mod = @__MODULE__, verbosity = 0, throw = true)

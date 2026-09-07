@@ -20,7 +20,7 @@ working response `z` and weight `h` from the current loss (see [Losses](@ref)):
 - `PLIN`: two independent lines, one per side of a threshold. Needs at least 5
   unique feature values on each side.
 
-At each node, `fit_tree` scans every feature and every legal split point,
+With exact search, `fit_tree` scans every feature and every legal split point,
 evaluates every model kind the selection rule allows there, and keeps the
 lowest-scoring candidate.
 
@@ -44,6 +44,27 @@ more. Accuracy need not improve monotonically. `BinnedSearch` does not support
 vector-valued targets such as
 `Softmax`; use `ExactSearch` for those fits. The selection rule remains an
 independent choice through `rule`.
+
+[`HybridSearch`](@ref) prepares global equal-count bins once, accumulates raw
+moments within each node, then refines the winning boundary using the raw rows
+in its two adjacent occupied bins:
+
+```julia
+tree = fit_tree(X, y; split_search = HybridSearch(nbins = 64))
+boost = fit_boost(X, y; split_search = HybridSearch(nbins = 64))
+```
+
+It avoids the full sorted index matrix and its repeated partitioning. Small
+nodes and nodes confined to one multi-value bin use exact search. A constant
+or unsplit-line coarse winner is not refined. Like local binning, this has no
+error bound and can miss the exact optimum. Use held-out data to compare quality.
+Hybrid search supports only numeric features and scalar losses. Its bin budget
+must lie in `2:65535`. Global bin preparation is serial.
+
+Boosting learns global bins from all positive-weight training rows once, then
+selects the sampled rows' IDs each round. It refreshes gradients and Hessians
+each round. Validation data never determines bins. Local binning can be faster
+on small datasets or threaded fits, while hybrid search can allocate fewer bytes.
 
 The four MLJ models accept the same `split_search` option. Multiclass
 `LinearTreeClassifier` and `LinearBoostClassifier` fits use `Softmax`, so

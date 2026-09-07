@@ -26,6 +26,7 @@ using LinearAlgebra
     include("boost_interfaces.jl")
     include("scan.jl")
     include("search.jl")
+    include("hybrid.jl")
     include("fit.jl")
     include("fit_losses.jl")
     include("pilot_reference.jl")
