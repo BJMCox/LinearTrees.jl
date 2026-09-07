@@ -134,7 +134,12 @@ end
 # method never reads names or levels. Revisit if a third encoder kind appears.
 reshape_row(enc::TableEncoder, x::AbstractVector) = isempty(enc.categorical) ? reshape(collect(x), 1, length(x)) :
     NamedTuple{Tuple(enc.names)}(Tuple(Any[v] for v in x))
-reshape_row(enc::TableEncoder, x) = reshape_row(enc, Any[v for v in x])
+
+function reshape_row(enc::TableEncoder, x)
+    values = Any[Tables.getcolumn(x, nm) for nm in enc.names]
+    return isempty(enc.categorical) ? reshape(values, 1, length(values)) :
+        NamedTuple{Tuple(enc.names)}(Tuple(Any[v] for v in values))
+end
 
 """
     LinearTreeRegressorFit{Tr}
@@ -309,11 +314,24 @@ end
 
 encode_val(enc, Xval, nthreads) = Xval === nothing ? nothing : encode(enc, Xval; nthreads)
 
+subset_rows(X::AbstractMatrix, rows) = X[rows, :]
+subset_rows(X, rows) = Tables.subset(X, rows)
+
+function validation_rows(Xval, yval, wval)
+    (Xval === nothing || yval === nothing || wval === nothing) && return Xval, yval, wval
+    length(wval) == length(yval) || throw(DimensionMismatch("wval has length $(length(wval)), yval has $(length(yval))"))
+    all(v -> isfinite(v) && v >= 0, wval) || throw(ArgumentError("wval must be finite and non-negative"))
+    rows = findall(>(0), wval)
+    isempty(rows) && throw(ArgumentError("total validation weight must be positive"))
+    return subset_rows(Xval, rows), yval[rows], wval[rows]
+end
+
 function StatsAPI.fit(::Type{LinearBoostRegressorFit}, X, y; loss::Loss = MSE(), weights = nothing, unseen = :error,
         Xval = nothing, yval = nothing, wval = nothing, nthreads = Threads.nthreads(), kwargs...)
     enc = TableEncoder(X, unseen)
     Xm = encode(enc, X; nthreads)
     w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
+    Xval, yval, wval = validation_rows(Xval, yval, wval)
     boost = fit_boost(Xm, y, loss; weights = w, categorical = enc.categorical, nthreads,
         Xval = encode_val(enc, Xval, nthreads), yval, wval, kwargs...)
     return LinearBoostRegressorFit(boost, enc, Xm, Vector{Float64}(y), w)
@@ -328,6 +346,7 @@ function StatsAPI.fit(::Type{LinearBoostClassifierFit}, X, y; weights = nothing,
     w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
     loss = K == 2 ? Logistic() : Softmax(K)
     encode_y(v) = K == 2 ? Float64.(v .== 1) : v
+    Xval, yval, wval = validation_rows(Xval, yval, wval)
     yvi = yval === nothing ? nothing : [get(code, v) do
             throw(ArgumentError("validation label $v is not a training class"))
         end for v in yval]

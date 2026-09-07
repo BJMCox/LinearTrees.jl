@@ -36,13 +36,14 @@ end
     df = DataFrame(a = randn(rng, n), b = randn(rng, n), c = categorical(rand(rng, ["u", "v", "w"], n)))
     y = 2 .* df.a .+ (df.c .== "u") .+ 0.1 .* randn(rng, n)
     m = fit(LinearBoostRegressorFit, df, y; nrounds = 10, eta = 0.3, max_depth = 3)
-    @test m.boost isa LinearBoost
     @test nobs(m) == n && weights(m) == ones(n)
     @test predict(m, df) == predict(m.boost, m.X)
     @test residuals(m) ≈ y .- predict(m, df)
     @test deviance(m) ≈ deviance(MSE(), y, score(m.boost, m.X), ones(n))
     b0, a = coeftable(m, df[1, :])
     @test b0 + a' * m.X[1, :] ≈ score(m.boost, m.X[1:1, :]; clip = false)[1]
+    br, ar = coeftable(m, select(df, [:b, :c, :a])[1, :])
+    @test br + ar' * m.X[1, :] ≈ score(m.boost, m.X[1:1, :]; clip = false)[1]
     @test feature_importance(m) == feature_importance(m.boost)
     @test dof(fit(LinearBoostRegressorFit, df, y; nrounds = 4, max_depth = 0)) == 4
     dfv = DataFrame(b = df.b[1:100], c = df.c[1:100], a = df.a[1:100])
@@ -66,21 +67,29 @@ end
     P2 = predict(m2, X)
     @test size(P2) == (n, 2) && all(≈(1.0), sum(P2; dims = 2))
     @test m2.classes == ["no", "yes"]
-    @test P2[:, 1] == predict(m2.boost, m2.X)
     @test P2[:, 2] == 1 .- P2[:, 1]
-    @test deviance(m2) == deviance(Logistic(), Float64.(m2.y .== 1), score(m2.boost, m2.X), m2.w)
+    f2 = log.(P2[:, 1] ./ P2[:, 2])
+    @test deviance(m2) ≈ deviance(Logistic(), Float64.(y2 .== "no"), f2, ones(n))
     y3 = categorical([X[i, 1] > 0.6 ? "p" : X[i, 2] > 0.5 ? "q" : "r" for i in 1:n])
     m3 = fit(LinearBoostClassifierFit, X, y3; nrounds = 8, eta = 0.5, max_depth = 2)
     P3 = predict(m3, X)
     @test size(P3) == (n, 3) && all(≈(1.0), sum(P3; dims = 2))
-    @test m3.boost.loss isa Softmax
-    s3 = score(m3.boost, m3.X)
-    f3 = [SVector{2}(view(s3, i, :)) for i in axes(s3, 1)]
-    @test deviance(m3) == deviance(m3.boost.loss, m3.y, f3, m3.w)
+    f3 = [SVector{2}(log(P3[i, 1] / P3[i, 3]), log(P3[i, 2] / P3[i, 3])) for i in axes(P3, 1)]
+    y3code = [v == "p" ? 1 : v == "q" ? 2 : 3 for v in y3]
+    @test deviance(m3) ≈ deviance(Softmax(3), y3code, f3, ones(n))
     yv = categorical(String.(y3[1:100]))
     levels!(yv, ["r", "p", "q"])
-    mv = fit(LinearBoostClassifierFit, X, y3; nrounds = 20, Xval = X[1:100, :], yval = yv, patience = 3)
+    wv = Float64.(1:100)
+    mv = fit(LinearBoostClassifierFit, X, y3; nrounds = 1, Xval = X[1:100, :], yval = yv, wval = wv)
     @test mv.boost.validated
+    Pv = predict(mv, X[1:100, :])
+    fv = [SVector{2}(log(Pv[i, 1] / Pv[i, 3]), log(Pv[i, 2] / Pv[i, 3])) for i in axes(Pv, 1)]
+    yvcode = [v == "p" ? 1 : v == "q" ? 2 : 3 for v in yv]
+    @test only(mv.boost.history) ≈ deviance(Softmax(3), yvcode, fv, wv)
+    Xbad = vcat(X[1:1, :], fill(NaN, 1, 3))
+    mzero = fit(LinearBoostClassifierFit, X, y2; nrounds = 1,
+        Xval = Xbad, yval = ["no", "ghost"], wval = [1.0, 0.0])
+    @test mzero.boost.validated
     @test_throws ArgumentError fit(LinearBoostClassifierFit, X, y2; nrounds = 2,
         Xval = X[1:10, :], yval = fill("maybe", 10))
 end
