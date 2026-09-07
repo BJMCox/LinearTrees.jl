@@ -26,10 +26,12 @@ compiles and shape-checks direct predictions, then runs three one-evaluation
 samples. Its `RESULT` rows contain raw nanoseconds, bytes, allocations, and
 RMSE for easy capture.
 
-Measured on Apple M4 Pro (10 threads, 64.0 GiB memory), Julia 1.12.7,
-EvoTrees 0.19.0, source `9452ff9`, with `-t 1` and `-t auto` (10 threads).
-All runs use `nrounds = 100`, `eta = 0.1`, depth 5, and no row or column
-sampling. LinearTrees uses `MSE`, `min_fit = 10`, `min_leaf = 5`,
+Measured on Apple M4 Pro (10 threads, 64.0 GiB memory), Julia 1.12.7, and
+EvoTrees 0.19.0, with `-t 1` and `-t auto` (10 threads). The measurements ran
+against LinearTrees implementation `9452ff9`; commit `3b9c930` subsequently
+introduced this harness and its recorded results. All runs use `nrounds = 100`,
+`eta = 0.1`, depth 5, and no row or column sampling. LinearTrees uses `MSE`,
+`min_fit = 10`, `min_leaf = 5`,
 `min_sum_hessian = 1.0`, `lambda_slope = lambda_intercept = 1.0`, `gamma =
 0.0`, `truncate = false`, and `StableRNG(1)`. EvoTrees uses
 `EvoTreeRegressor(loss = :mse, metric = :mse, bagging_size = 1,
