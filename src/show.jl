@@ -8,6 +8,9 @@ struct TreeView{Tr<:LinearTree}
 end
 TreeView(tree::LinearTree) = TreeView(tree, [Symbol("x", j) for j in 1:tree.nfeatures])
 
+"View of tree `t` of a [`LinearBoost`](@ref) for `AbstractTrees` printing."
+TreeView(b::LinearBoost, t::Integer) = TreeView(b.trees[t], [Symbol("x", j) for j in 1:b.nfeatures])
+
 "A handle to one node plus the branch it was reached by, for `AbstractTrees` traversal."
 struct NodeHandle{Tr}
     view::TreeView{Tr}
@@ -62,4 +65,13 @@ function Base.show(io::IO, ::MIME"text/plain", t::LinearTree{T,V,L}) where {T,V,
         println(io)
         print_tree(io, TreeView(t); maxdepth = 3)
     end
+end
+
+function Base.show(io::IO, ::MIME"text/plain", b::LinearBoost{T,V,L}) where {T,V,L}
+    nn = sum(length(t.nodes) for t in b.trees; init = 0)
+    print(io, "LinearBoost{", T, ", ", V, ", ", nameof(L), "} with ", length(b.trees), " trees, ",
+        nn, " nodes, eta = ", fmtnum(b.eta), ", ", b.nfeatures, " features")
+    isempty(b.history) ||
+        print(io, b.validated ? "\n  best validation deviance = " : "\n  final deviance = ",
+            fmtnum(b.history[end]))
 end

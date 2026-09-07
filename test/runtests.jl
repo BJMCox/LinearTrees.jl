@@ -23,6 +23,7 @@ using LinearAlgebra
     include("boost_frozen.jl")
     include("boost_fit.jl")
     include("boost_shap.jl")
+    include("boost_interfaces.jl")
     include("scan.jl")
     include("fit.jl")
     include("fit_losses.jl")
