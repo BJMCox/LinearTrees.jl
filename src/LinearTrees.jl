@@ -29,7 +29,7 @@ export AdaptedLoss, IdentityLink, LogitLink, LogLink, canonical_scale
 export gradhess!, linkinv, initscore, deviance, scorebound, validate_target, issmooth
 export fit_boost, LinearBoost, nrounds
 export LinearTreeRegressorFit, LinearTreeClassifierFit, LinearBoostRegressorFit, LinearBoostClassifierFit
-export LinearTreeRegressor, LinearTreeClassifier
+export LinearTreeRegressor, LinearTreeClassifier, LinearBoostRegressor, LinearBoostClassifier
 export fit, nobs, dof, weights, residuals
 export TreeView, to_dict, from_dict
 
