@@ -312,18 +312,38 @@ struct LinearBoostClassifierFit{B<:LinearBoost,C} <: StatsAPI.StatisticalModel
     classes::Vector{C}
 end
 
-encode_val(enc, Xval, nthreads) = Xval === nothing ? nothing : encode(enc, Xval; nthreads)
-
 subset_rows(X::AbstractMatrix, rows) = X[rows, :]
 subset_rows(X, rows) = Tables.subset(X, rows)
 
-function validation_rows(Xval, yval, wval)
-    (Xval === nothing || yval === nothing || wval === nothing) && return Xval, yval, wval
-    length(wval) == length(yval) || throw(DimensionMismatch("wval has length $(length(wval)), yval has $(length(yval))"))
-    all(v -> isfinite(v) && v >= 0, wval) || throw(ArgumentError("wval must be finite and non-negative"))
-    rows = findall(>(0), wval)
+validation_nrows(X::AbstractMatrix) = size(X, 1)
+validation_nrows(X) = Tables.rowcount(Tables.columns(X))
+
+function validation_length(Xval, yval, wval)
+    (Xval === nothing) == (yval === nothing) || throw(ArgumentError("Xval and yval must be given together"))
+    wval === nothing || Xval !== nothing || throw(ArgumentError("wval requires Xval and yval"))
+    Xval === nothing && return nothing
+    nval = validation_nrows(Xval)
+    length(yval) == nval || throw(DimensionMismatch("Xval has $nval rows, yval has $(length(yval))"))
+    return nval
+end
+
+function positive_validation_rows(wval, nval)
+    wval === nothing && return nothing
+    w = Vector{Float64}(wval)
+    length(w) == nval || throw(DimensionMismatch("wval has length $(length(w)), yval has $nval"))
+    all(v -> isfinite(v) && v >= 0, w) || throw(ArgumentError("wval must be finite and non-negative"))
+    rows = findall(>(0), w)
     isempty(rows) && throw(ArgumentError("total validation weight must be positive"))
-    return subset_rows(Xval, rows), yval[rows], wval[rows]
+    return rows
+end
+
+function encode_validation(enc, Xval, nval, rows, nthreads)
+    Xval === nothing && return nothing
+    rows === nothing && return encode(enc, Xval; nthreads)
+    Xkeep = encode(enc, subset_rows(Xval, rows); nthreads)
+    Xout = zeros(Float64, nval, size(Xkeep, 2))
+    Xout[rows, :] = Xkeep
+    return Xout
 end
 
 function StatsAPI.fit(::Type{LinearBoostRegressorFit}, X, y; loss::Loss = MSE(), weights = nothing, unseen = :error,
@@ -331,9 +351,11 @@ function StatsAPI.fit(::Type{LinearBoostRegressorFit}, X, y; loss::Loss = MSE(),
     enc = TableEncoder(X, unseen)
     Xm = encode(enc, X; nthreads)
     w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
-    Xval, yval, wval = validation_rows(Xval, yval, wval)
+    nval = validation_length(Xval, yval, wval)
+    yval === nothing || validate_target(loss, yval)
+    rows = positive_validation_rows(wval, nval)
     boost = fit_boost(Xm, y, loss; weights = w, categorical = enc.categorical, nthreads,
-        Xval = encode_val(enc, Xval, nthreads), yval, wval, kwargs...)
+        Xval = encode_validation(enc, Xval, nval, rows, nthreads), yval, wval, kwargs...)
     return LinearBoostRegressorFit(boost, enc, Xm, Vector{Float64}(y), w)
 end
 
@@ -346,12 +368,14 @@ function StatsAPI.fit(::Type{LinearBoostClassifierFit}, X, y; weights = nothing,
     w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
     loss = K == 2 ? Logistic() : Softmax(K)
     encode_y(v) = K == 2 ? Float64.(v .== 1) : v
-    Xval, yval, wval = validation_rows(Xval, yval, wval)
+    nval = validation_length(Xval, yval, wval)
     yvi = yval === nothing ? nothing : [get(code, v) do
             throw(ArgumentError("validation label $v is not a training class"))
         end for v in yval]
+    yvi === nothing || validate_target(loss, encode_y(yvi))
+    rows = positive_validation_rows(wval, nval)
     boost = fit_boost(Xm, encode_y(yi), loss; weights = w, categorical = enc.categorical, nthreads,
-        Xval = encode_val(enc, Xval, nthreads), yval = yvi === nothing ? nothing : encode_y(yvi), wval, kwargs...)
+        Xval = encode_validation(enc, Xval, nval, rows, nthreads), yval = yvi === nothing ? nothing : encode_y(yvi), wval, kwargs...)
     return LinearBoostClassifierFit(boost, enc, Xm, yi, w, classes)
 end
 

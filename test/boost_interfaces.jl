@@ -56,6 +56,8 @@ end
     @test_throws ArgumentError predict(m, dfu)
     mr = fit(LinearBoostRegressorFit, df, y; nrounds = 2, unseen = :right)
     @test length(predict(mr, dfu)) == 1
+    @test_throws ArgumentError fit(LinearBoostRegressorFit, df, exp.(df.a); loss = Poisson(), nrounds = 1,
+        Xval = df[1:2, :], yval = [1.0, -1.0], wval = [1.0, 0.0])
 end
 
 @testset "StatsAPI boosting classifier: binary and multiclass" begin
@@ -88,8 +90,16 @@ end
     @test only(mv.boost.history) ≈ deviance(Softmax(3), yvcode, fv, wv)
     Xbad = vcat(X[1:1, :], fill(NaN, 1, 3))
     mzero = fit(LinearBoostClassifierFit, X, y2; nrounds = 1,
-        Xval = Xbad, yval = ["no", "ghost"], wval = [1.0, 0.0])
+        Xval = Xbad, yval = ["no", "yes"], wval = [1.0, 0.0])
     @test mzero.boost.validated
+    @test_throws ArgumentError fit(LinearBoostClassifierFit, X, y2; nrounds = 1,
+        Xval = Xbad, yval = ["no", "ghost"], wval = [1.0, 0.0])
+    @test_throws DimensionMismatch fit(LinearBoostClassifierFit, X, y2; nrounds = 1,
+        Xval = X[1:2, :], yval = ["no"], wval = [1.0])
+    @test_throws DimensionMismatch fit(LinearBoostClassifierFit, X, y2; nrounds = 1,
+        Xval = X[1:1, :], yval = ["no", "yes"], wval = [1.0, 1.0])
+    @test_throws DimensionMismatch fit(LinearBoostClassifierFit, X, y2; nrounds = 1,
+        Xval = X[1:1, :], yval = ["no"], wval = [1.0, 1.0])
     @test_throws ArgumentError fit(LinearBoostClassifierFit, X, y2; nrounds = 2,
         Xval = X[1:10, :], yval = fill("maybe", 10))
 end
