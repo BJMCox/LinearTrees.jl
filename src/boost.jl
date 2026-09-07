@@ -148,3 +148,84 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     end
     return LinearBoost{T,V,typeof(loss)}(trees, loss, f0, etaT, lo, hi, p, truncate, hasval, history)
 end
+
+"""
+    feature_importance(boost)
+
+Positive split gains summed over every tree, normalised to sum to one.
+"""
+function feature_importance(b::LinearBoost)
+    imp = zeros(Float64, b.nfeatures)
+    for t in b.trees
+        gain_sums!(imp, t)
+    end
+    return normalise_importance(imp)
+end
+
+"""
+    coeftable(boost, x)
+
+Intercept and per-feature slopes of the unclipped ensemble score at `x`:
+`f0` plus `eta` times the sum of each tree's `coeftable`.
+"""
+function coeftable(b::LinearBoost{T,V}, x::AbstractVector) where {T,V}
+    slopes = zeros(V, b.nfeatures)
+    intercept = b.f0
+    for t in b.trees
+        bi, si = coeftable(t, x)
+        intercept += b.eta * bi
+        slopes .+= b.eta .* si
+    end
+    return intercept, slopes
+end
+
+"""
+Row gate for an ensemble's `row_blocks`, the tree rule of `shap_min_rows`
+applied to the ensemble's total node count: one SHAP row visits every node of
+every tree. An empty hand-built ensemble uses one node as the divisor.
+"""
+boost_shap_min_rows(b::LinearBoost) =
+    max(2, cld(PARALLEL_MIN_ROWS,
+        max(1, sum(length(t.nodes) for t in b.trees; init = 0))))
+
+"""
+    shap!(values, clipped, boost, X; nthreads=Threads.nthreads())
+
+In-place [`shap`](@ref) for an ensemble: `eta` times the sum of every tree's
+path-dependent SHAP values, base `f0 + eta Σ expected_score(tree)`, so each
+row sums to `score(boost, x; clip = false) − base`. `clipped[i]` is true when
+the ensemble clamp changed row `i`. One [`PathPool`](@ref) per row block,
+reused across the ensemble's trees.
+"""
+function shap!(values, clipped::Vector{Bool}, b::LinearBoost{T,V}, X::AbstractMatrix;
+        nthreads = Threads.nthreads()) where {T,V}
+    n = size(X, 1)
+    fill!(values, 0)
+    row_blocks(n, nthreads; minrows = boost_shap_min_rows(b)) do rs
+        pool = PathPool()   # one per block: never shared between tasks, see PathPool
+        for i in rs
+            x = view(X, i, :)
+            for t in b.trees
+                shap_recurse!(values, t, x, i, 1, pool, 1.0, 1.0, 0)
+            end
+            clipped[i] = score_row(b, X, i, true) != score_row(b, X, i, false)
+        end
+    end
+    values .*= b.eta
+    base = b.f0
+    for t in b.trees
+        base += b.eta * expected_score(t)
+    end
+    return ShapResult(values, base, clipped)
+end
+
+"""
+    shap(boost, X; nthreads=Threads.nthreads()) -> ShapResult
+
+Path-dependent TreeSHAP for a [`LinearBoost`](@ref); see [`shap!`](@ref).
+"""
+function shap(b::LinearBoost{T,V}, X::AbstractMatrix; nthreads = Threads.nthreads()) where {T,V}
+    n = size(X, 1); p = b.nfeatures
+    values = V <: SVector ? zeros(T, n, p, length(V)) : zeros(T, n, p)
+    return shap!(values, Vector{Bool}(undef, n), b, X; nthreads)
+end

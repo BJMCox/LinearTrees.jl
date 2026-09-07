@@ -1,5 +1,16 @@
 # Split-gain feature importance.
 
+"Add each split node's positive gain to `imp[feature]`."
+function gain_sums!(imp::Vector{Float64}, tree::LinearTree)
+    for n in tree.nodes
+        isleaf(n) && continue
+        imp[n.feature] += max(n.gain, 0)
+    end
+    return imp
+end
+
+normalise_importance(imp) = (tot = sum(imp); tot > 0 ? imp ./ tot : imp)
+
 """
     feature_importance(tree)
 
@@ -7,13 +18,8 @@ Surrogate-deviance drop per feature, normalised to sum to one. Zeros when
 no node has positive gain.
 """
 function feature_importance(tree::LinearTree)
-    imp = zeros(Float64, tree.nfeatures)
-    for n in tree.nodes
-        isleaf(n) && continue
-        imp[n.feature] += max(n.gain, 0)
-    end
-    tot = sum(imp)
-    return tot > 0 ? imp ./ tot : imp
+    imp = gain_sums!(zeros(Float64, tree.nfeatures), tree)
+    return normalise_importance(imp)
 end
 
 """
