@@ -6,9 +6,11 @@ CurrentModule = LinearTrees
 
 [`fit_boost`](@ref) fits a gradient-boosted ensemble of PILOT-style linear
 model trees. At each round it evaluates the base loss at the current ensemble
-score, floors its Hessian `h0` at `HMIN`, and forms `z0 = -g0 / h0`. It then
-fits a [`Frozen`](@ref) tree to minimise
-`1/2 * sum(w[i] * h0[i] * (tree(x[i]) - z0[i])^2 for i in eachindex(y))`.
+score, floors each Hessian coordinate `h0[i, k]` at `HMIN`, and forms
+`z0[i, k] = -g0[i, k] / h0[i, k]`. It then fits a [`Frozen`](@ref) tree to
+minimise `½ Σᵢ Σₖ wᵢ h0ᵢₖ (τₖ(xᵢ) - z0ᵢₖ)²`. Scalar losses have one score
+coordinate. `Softmax(K)` has `K - 1` coordinates, and `τₖ` is the new tree's
+score in coordinate `k`.
 The new raw tree score is multiplied by `eta` and added to the ensemble. This
 is the second-order piecewise-linear boosting objective of [Guryanov
 (2019)](https://doi.org/10.1007/978-3-030-37334-4_4) and [Shi, Li, and Li
@@ -43,8 +45,11 @@ Each base tree uses [`GainRule`](@ref), which permits constant, piecewise
 constant, and piecewise linear nodes. `lambda_slope` and
 `lambda_intercept` add L2 penalties to the slope and intercept closed forms,
 as derived by [Guryanov (2019)](https://doi.org/10.1007/978-3-030-37334-4_4).
-A split is accepted exactly when
-`dev_con(parent) - dev_lin(left) - dev_lin(right) > gamma * ncoord`.
+A split candidate is accepted exactly when
+`dev_con(parent) - (dev_candidate(left) + dev_candidate(right)) > gamma * ncoord`.
+Here `dev_candidate` is the candidate child's regularised deviance. `PCON`
+uses constant children, while `PLIN` uses linear children; each child deviance
+includes the corresponding ridge penalty.
 The strict `gamma` gain floor follows [Chen and
 Guestrin (2016)](https://doi.org/10.1145/2939672.2939785).
 
@@ -64,7 +69,7 @@ round. Fitting stops after `patience` rounds without an improvement and keeps
 only trees through the best validation round. Then `history` stores the kept
 validation deviances and `validated` is true. Without validation data,
 `history` stores training deviance for every fitted tree and no early stopping
-runs. `nrounds(b)` is the number of retained trees, not attempted rounds.
+runs. `nrounds(boost)` is the number of retained trees, not attempted rounds.
 
 The ensemble forms `f0 + eta * sum(tree scores)` before it clamps the score
 once to the training loss bounds. This score clamp applies only when
@@ -87,14 +92,14 @@ five-pass node refit; see [IRLS for non-smooth losses](@ref).
 
 ## Printing and persistence
 
-Use `TreeView(b, t)` to print base tree `t` with `AbstractTrees.print_tree`.
+Use `TreeView(boost, t)` to print base tree `t` with `AbstractTrees.print_tree`.
 The package writes no boosted-model schema. Persist a `LinearBoost` directly
 with JLD2, then load the same object graph:
 
 ```julia
 using JLD2
-JLD2.jldsave("boost.jld2"; boost = b)
-b = JLD2.load("boost.jld2", "boost")
+JLD2.jldsave("boost.jld2"; boost)
+boost = JLD2.load("boost.jld2", "boost")
 ```
 
 ## Interfaces
