@@ -1,3 +1,4 @@
+using Random: randperm
 using StableRNGs, Statistics
 
 @testset "one root-only round is a regularised Newton step" begin
@@ -60,7 +61,8 @@ end
     X = rand(rng, n, 5)
     y = sin.(3 .* X[:, 1]) .+ X[:, 2] .* X[:, 3] .+ 0.1 .* randn(rng, n)
     kw = (nrounds = 8, eta = 0.3, max_depth = 4, subsample = 0.5, colsample = 0.6)
-    b1 = fit_boost(X, y; rng = StableRNG(1), nthreads = 1, kw...)
+    fitrng = StableRNG(1)
+    b1 = fit_boost(X, y; rng = fitrng, nthreads = 1, kw...)
     bn = fit_boost(X, y; rng = StableRNG(1), kw...)
     @test all(a.nodes == c.nodes for (a, c) in zip(b1.trees, bn.trees))
     @test b1.history == bn.history
@@ -68,8 +70,14 @@ end
     @test b1.trees[1].nodes != bfull.trees[1].nodes
     b2 = fit_boost(X, y; rng = StableRNG(2), nthreads = 1, kw...)
     @test b1.trees[1].nodes != b2.trees[1].nodes
-    used = [Set(nd.feature for nd in t.nodes if !LinearTrees.isleaf(nd)) for t in b1.trees]
-    @test all(length(u) <= 3 for u in used)
+    oracle = StableRNG(1)
+    for t in b1.trees
+        randperm(oracle, n)
+        sampled = Set(randperm(oracle, 5)[1:3])
+        used = Set(nd.feature for nd in t.nodes if !LinearTrees.isleaf(nd))
+        @test used ⊆ sampled
+    end
+    @test rand(fitrng) == rand(oracle)
     @test_throws ArgumentError fit_boost(X, y; subsample = 0.0)
     @test_throws ArgumentError fit_boost(X, y; colsample = 1.5)
 end
@@ -136,9 +144,22 @@ end
     @test_throws ArgumentError fit_boost(X, y; eta = Inf)
     @test_throws ArgumentError fit_boost(X, y; patience = 0)
     @test_throws ArgumentError fit_boost(X, y; patience = 1.5)
+    X16 = Float16.(X); y16 = Float16.(y)
+    @test_throws ArgumentError fit_boost(X16, y16; eta = 1e-20)
+    @test_throws ArgumentError fit_boost(X16, y16; eta = 1e100)
+    @test_throws ArgumentError fit_boost(X, y; wval = ones(length(y)))
     Xv = copy(X); Xv[1, 1] = NaN
     @test_throws ArgumentError fit_boost(X, y; Xval = Xv, yval = y)
     y01 = Float64.(y .> 0.5)
     @test_throws ArgumentError fit_boost(X, y01, Logistic(); Xval = X, yval = fill(2, length(y)))
+    yv = copy(y01); yv[1] = 1 + 1e-12
+    @test_throws ArgumentError fit_boost(Float32.(X), Float32.(y01), Logistic(); Xval = X, yval = yv)
     @test_throws ArgumentError fit_boost(X, y; Xval = X, yval = y, wval = zeros(length(y)))
+    Xv = copy(X); Xv[end, 1] = NaN
+    yv = copy(y); yv[end] = floatmax(Float64)
+    wv = ones(length(y)); wv[end] = 0
+    b = fit_boost(X, y; nrounds = 1, Xval = Xv, yval = yv, wval = wv)
+    @test isfinite(only(b.history))
+    @test only(b.history) ≈ deviance(MSE(), yv[1:(end - 1)],
+        score(b, Xv[1:(end - 1), :]; clip = false), wv[1:(end - 1)])
 end
