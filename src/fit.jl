@@ -155,15 +155,17 @@ end
 const SCRATCH_PER_THREAD = 2
 
 "Partition indices and worker buffers reused across sequential boosting rounds of the same size."
-struct TreeWorkspace{T,V,B}
+struct TreeWorkspace{T,V,B,I}
     idx::Matrix{Int32}
     scratch::Vector{Scratch{T,V,B}}
+    sampled_ids::I
 end
 
 function TreeWorkspace{T,V}(n, p, nthreads, search::SplitSearch) where {T,V}
     nsets = nthreads == 1 ? 1 : SCRATCH_PER_THREAD * nthreads
     scratch = [Scratch{T,V}(search) for _ in 1:nsets]
-    return TreeWorkspace(index_workspace(search, n, p), scratch)
+    return TreeWorkspace(index_workspace(search, n, p), scratch,
+        sampled_index_workspace(search, n, p))
 end
 TreeWorkspace{T,V}(n, p, nthreads) where {T,V} = TreeWorkspace{T,V}(n, p, nthreads, ExactSearch())
 
@@ -296,7 +298,7 @@ function _fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss, workspace;
         nlevels[j] = Int(maximum(col))
         iscat[j] = true
     end
-    prepared_search = prepare_search(split_search, Xm, feats, iscat, keep)
+    prepared_search = prepare_search(split_search, Xm, feats, iscat, keep, workspace, nthreads)
     return _fit_tree(Xm, yv, w, loss, rule, V, iscat, nlevels, keep, feats, presort, workspace;
         max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
         nthreads, niter, split_search = prepared_search)

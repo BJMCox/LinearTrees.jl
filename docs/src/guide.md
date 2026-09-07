@@ -59,7 +59,9 @@ nodes and nodes confined to one multi-value bin use exact search. A constant
 or unsplit-line coarse winner is not refined. Like local binning, this has no
 error bound and can miss the exact optimum. Use held-out data to compare quality.
 Hybrid search supports only numeric features and scalar losses. Its bin budget
-must lie in `2:65535`. Global bin preparation is serial.
+must lie in `2:65535`. Large fits prepare feature columns in parallel, with
+separate sort scratch per column block, using the requested `nthreads` limit.
+Preparation uses at most four workers to limit sort-buffer allocation.
 
 Boosting learns global bins from all positive-weight training rows once, then
 selects the sampled rows' IDs each round. It refreshes gradients and Hessians

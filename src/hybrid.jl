@@ -55,24 +55,40 @@ search_workspace(search::PreparedHybridSearch, ::Type{T}, ::Type{V}) where {T,V}
     HybridBinWorkspace{T,V}(search.nbins)
 
 index_workspace(::PreparedHybridSearch, n, p) = Matrix{Int32}(undef, 0, 0)
+sampled_index_workspace(search::PreparedHybridSearch, n, p) =
+    n == size(search.ids, 1) ? nothing : Matrix{UInt16}(undef, n, p)
 initialize_index!(idx, X, presort, keep, features, nthreads, ::PreparedHybridSearch) = idx
 
-function prepare_search(search::HybridSearch, X::Matrix{T}, features::Vector{Int}, iscat) where {T}
+function prepare_search(search::HybridSearch, X::Matrix{T}, features::Vector{Int},
+        iscat, keep, workspace, nthreads) where {T}
     any(iscat[features]) &&
         throw(ArgumentError("HybridSearch supports numeric features only; use ExactSearch() with categorical features"))
     n, p = size(X)
     ids = Matrix{UInt16}(undef, n, p)
+    # Sort scratch grows with rows per worker. Four blocks retain most of the
+    # measured parallel gain without allocating a full sort set for every thread.
+    column_blocks(length(features), n, min(nthreads, 4)) do columns, _
+        prepare_hybrid_columns!(ids, search.nbins, X, features, columns)
+    end
+    return PreparedHybridSearch(search.nbins, ids)
+end
+
+function prepare_hybrid_columns!(ids, nbins, X::Matrix{T}, features::Vector{Int},
+        columns::UnitRange{Int}) where {T}
+    n = size(X, 1)
+    # Each column block owns its sort scratch and writes disjoint ID columns.
     order = Vector{Int32}(undef, n)
     U = radix_uint(T)
     buffer = U === nothing ? nothing : RadixBuffers(U, n)
-    for j in features
+    for k in columns
+        j = features[k]
         x = view(X, :, j)
         if buffer === nothing
             copyto!(order, sortperm(x; alg = MergeSort))
         else
             radix_sortperm!(order, x, buffer)
         end
-        width = cld(n, search.nbins)
+        width = cld(n, nbins)
         lo = 1
         bin = 1
         while lo <= n
@@ -87,16 +103,23 @@ function prepare_search(search::HybridSearch, X::Matrix{T}, features::Vector{Int
             lo = hi + 1
         end
     end
-    return PreparedHybridSearch(search.nbins, ids)
+    return ids
 end
 
-function prepare_search(search::PreparedHybridSearch, X, features, iscat, keep)
+function prepare_search(search::PreparedHybridSearch, X, features, iscat, keep, workspace, nthreads)
     any(iscat[features]) &&
         throw(ArgumentError("HybridSearch supports numeric features only; use ExactSearch() with categorical features"))
     size(search.ids, 2) == size(X, 2) ||
         throw(DimensionMismatch("prepared HybridSearch has $(size(search.ids, 2)) columns, X has $(size(X, 2))"))
     length(keep) == size(search.ids, 1) && return search
-    return PreparedHybridSearch(search.nbins, search.ids[keep, :])
+    # Boosting rounds are sequential and fitted trees retain no search state.
+    # Copy into fit-owned scratch without changing the full training IDs.
+    ids = workspace === nothing ? nothing : workspace.sampled_ids
+    ids === nothing && (ids = Matrix{UInt16}(undef, length(keep), size(X, 2)))
+    for j in features, i in eachindex(keep)
+        ids[i, j] = search.ids[keep[i], j]
+    end
+    return PreparedHybridSearch(search.nbins, ids)
 end
 
 @inline function record_unique!(buffer::HybridBinWorkspace{T}, bin, x) where {T}
@@ -191,7 +214,9 @@ function hybrid_scan_feature(st::FitState{T,V}, rows, j, dmin,
     fill!(buffer.masses, zero(T))
     fill!(buffer.counts, 0)
     fill!(buffer.maxima, typemin(T))
-    for i in rows
+    # Membership rows and selected columns are validated by the fit. Preparation
+    # assigns every selected entry a bin in 1:nbins, matching these buffers.
+    @inbounds for i in rows
         bin = Int(st.split_search.ids[i, j])
         x = st.X[i, j]
         buffer.moments[bin] = addrow(buffer.moments[bin], x, st.z[i], st.h[i])

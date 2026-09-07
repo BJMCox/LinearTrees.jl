@@ -47,11 +47,10 @@ search_workspace(::BinnedSearch, ::Type{T}, ::Type{V}) where {T,V} =
 
 # Search policies may prepare data-dependent state once, after zero-weight rows
 # have been removed, and may opt out of the per-feature presort.
-prepare_search(search::SplitSearch, X, features, iscat) = search
-prepare_search(search::SplitSearch, X, features, iscat, keep) =
-    prepare_search(search, X, features, iscat)
+prepare_search(search::SplitSearch, X, features, iscat, keep, workspace, nthreads) = search
 
 index_workspace(::SplitSearch, n, p) = Matrix{Int32}(undef, n, p)
+sampled_index_workspace(::SplitSearch, n, p) = nothing
 
 function initialize_index!(idx, X, presort, keep, features, nthreads, ::SplitSearch)
     if presort === nothing

@@ -132,4 +132,24 @@ using Statistics
         @test rand(rng1) == rand(rngn)
         @test mean(abs2, predict(a, X) .- y) < mean(abs2, y .- mean(y))
     end
+
+    @testset "sampled ID reuse preserves weighted rows and columns across threads" begin
+        rng = StableRNG(601)
+        # Each global bin retains one tied value, so every legal numeric
+        # threshold is available to both hybrid and exact search.
+        X = Float64.(rand(rng, 1:16, 30_000, 4))
+        y = Float64.(X[:, 1] .> 7) .+ 0.1 .* X[:, 2] .+ 0.03 .* sin.(X[:, 3])
+        w = Float64.(rand(rng, 1:3, length(y)))
+        w[1:7:end] .= 0
+        kw = (weights = w, nrounds = 4, max_depth = 2, subsample = 0.8, colsample = 0.75)
+        rexact, rserial, rthread = StableRNG(602), StableRNG(602), StableRNG(602)
+        exact = fit_boost(X, y; rng = rexact, nthreads = 1, kw...)
+        serial = fit_boost(X, y; rng = rserial, nthreads = 1,
+            split_search = HybridSearch(), kw...)
+        threaded = fit_boost(X, y; rng = rthread,
+            split_search = HybridSearch(), kw...)
+        @test predict(serial, X) ≈ predict(exact, X) atol = 1e-10
+        @test predict(threaded, X) ≈ predict(serial, X) atol = 1e-10
+        @test rand(rexact) == rand(rserial) == rand(rthread)
+    end
 end

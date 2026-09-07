@@ -104,7 +104,7 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         1 <= j <= p || throw(ArgumentError("categorical column $j is outside 1:$p"))
         iscat[j] = true
     end
-    split_search = prepare_search(split_search, Xm, allfeat, iscat)
+    split_search = prepare_search(split_search, Xm, allfeat, iscat, axes(Xm, 1), nothing, nthreads)
     idx = index_workspace(split_search, n, p)
     initialize_index!(idx, Xm, nothing, keep, allfeat, nthreads, split_search)
     presort = isempty(idx) ? nothing : idx
