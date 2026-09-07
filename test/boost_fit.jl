@@ -142,6 +142,9 @@ end
     @test_throws ArgumentError fit_boost(X, y; nrounds = 1.5)
     @test_throws ArgumentError fit_boost(X, y; eta = 0.0)
     @test_throws ArgumentError fit_boost(X, y; eta = Inf)
+    for name in (:lambda_slope, :lambda_intercept, :gamma), value in (-1.0, Inf)
+        @test_throws ArgumentError fit_boost(X, y; NamedTuple{(name,)}((value,))...)
+    end
     @test_throws ArgumentError fit_boost(X, y; patience = 0)
     @test_throws ArgumentError fit_boost(X, y; patience = 1.5)
     X16 = Float16.(X); y16 = Float16.(y)

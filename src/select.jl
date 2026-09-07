@@ -32,7 +32,15 @@ struct GainRule <: SelectionRule
     lambda_slope::Float64
     lambda_intercept::Float64
     gamma::Float64
+    function GainRule(lambda_slope::Float64, lambda_intercept::Float64, gamma::Float64)
+        isfinite(lambda_slope) && lambda_slope >= 0 || throw(ArgumentError("lambda_slope must be finite and non-negative"))
+        isfinite(lambda_intercept) && lambda_intercept >= 0 || throw(ArgumentError("lambda_intercept must be finite and non-negative"))
+        isfinite(gamma) && gamma >= 0 || throw(ArgumentError("gamma must be finite and non-negative"))
+        return new(lambda_slope, lambda_intercept, gamma)
+    end
 end
+GainRule(lambda_slope, lambda_intercept, gamma) =
+    GainRule(Float64(lambda_slope), Float64(lambda_intercept), Float64(gamma))
 GainRule(; lambda_slope = 1.0, lambda_intercept = 1.0, gamma = 0.0) =
     GainRule(Float64(lambda_slope), Float64(lambda_intercept), Float64(gamma))
 

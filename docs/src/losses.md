@@ -24,10 +24,10 @@ with `f` the raw score.
 | [`Tweedie`](@ref)`(ρ)` | `μ^(2-ρ) - y μ^(1-ρ)` | `(2-ρ)μ^(2-ρ) - (1-ρ) y μ^(1-ρ)` | log | `[-S, S]` |
 
 `[lo, hi]` comes from [`scorebound`](@ref) applied to the training target;
-`S = log(max(maximum(y), 1)) + 3` for the log-link losses. Every unweighted
-row Hessian is floored to `1e-6` (see `HMIN` in the source) before frequency
-weights are applied, so a tiny weight scales the floor down with it.
-Zero-weight rows are dropped before fitting, so the floor never meets a zero.
+`S = log(max(maximum(y), 1)) + 3` for the log-link losses. Ordinary losses
+floor every unweighted row Hessian to `1e-6` before applying frequency
+weights. `Frozen` preserves its supplied Hessian, including zero. Zero-weight
+rows are dropped before fitting.
 
 `Softmax(K)` uses the diagonal of the true reference-logit Hessian,
 `diag(p) - p pᵀ` restricted to its diagonal: a per-class approximation, not

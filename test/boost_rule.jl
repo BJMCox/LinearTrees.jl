@@ -1,5 +1,11 @@
 using StableRNGs, StaticArrays
 
+@testset "GainRule rejects invalid penalties" begin
+    for name in (:lambda_slope, :lambda_intercept, :gamma), value in (-1.0, Inf)
+        @test_throws ArgumentError GainRule(; NamedTuple{(name,)}((value,))...)
+    end
+end
+
 @testset "ridge closed forms match the explicit normal equations" begin
     rng = StableRNG(101)
     n = 40

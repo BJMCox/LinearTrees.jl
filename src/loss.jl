@@ -6,7 +6,7 @@ A twice-differentiable or IRLS-approximated loss. Implement `gradhess!`,
 """
 abstract type Loss end
 
-"Floor applied to every unweighted row hessian before frequency weighting."
+"Floor applied to ordinary unweighted row Hessians before frequency weighting."
 const HMIN = 1e-6
 
 "Squared-error loss for a real-valued target. Identity link."
@@ -73,7 +73,7 @@ Boosting's per-tree loss. Each target row is a pair `(z0, h0)` of working
 response and frozen Hessian at the ensemble score, both of type `V`, so one
 tree minimises `Σ w h0 (f − z0)² / 2`: the second-order objective of a
 boosting round with `z0 = −g0 / h0`. `gradhess!` returns `g = (f − z0) h0`
-and `h = h0` (floored at `HMIN`), the start score is zero, the score bounds
+and `h = h0`, including exact zero components, the start score is zero, the score bounds
 are infinite so `truncate = true` keeps only the feature clamp, and the loss
 is smooth so no IRLS refit runs. A tree fitted with `Frozen` predicts its raw
 score; only a [`LinearBoost`](@ref) gives it a link.
@@ -176,8 +176,9 @@ unit_hessian(::MSE) = true
 """
     gradhess!(g, h, loss, y, f)
 
-Unweighted `g = ∂ℓ/∂f` and `h = max(∂²ℓ/∂f², HMIN)` per row. Frequency
-weights are applied by the caller after the floor.
+Unweighted `g = ∂ℓ/∂f` and `h = max(∂²ℓ/∂f², HMIN)` per row. `Frozen`
+preserves its supplied Hessian, including zero. The caller applies frequency
+weights after any floor.
 """
 function gradhess!(g::AbstractVector, h::AbstractVector, loss::Loss, y::AbstractVector, f::AbstractVector)
     for i in eachindex(g, h, y, f)
@@ -206,14 +207,17 @@ function gradhess!(g::AbstractVector{V}, h::AbstractVector{V}, l::Softmax, y::Ab
 end
 
 function gradhess!(g::AbstractVector{V}, h::AbstractVector{V}, ::Frozen{V}, y::AbstractVector, f::AbstractVector{V}) where {V}
-    floor = eltype(V)(HMIN)
     for i in eachindex(g, h, y, f)
         z0, h0 = y[i]
         g[i] = (f[i] .- z0) .* h0
-        h[i] = max.(h0, floor)
+        h[i] = h0
     end
     return g
 end
+
+@inline working_response(::Loss, y, f, g, h) = -g ./ h
+@inline working_response(::Frozen, y, f, g, h) =
+    ifelse.(iszero.(h), zero(f), first(y) - f)
 
 """
     irls_weights!(h, loss, y, f; ε)

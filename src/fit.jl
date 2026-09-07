@@ -564,7 +564,7 @@ function refresh_chunk!(st::FitState, rows, ε)
     for i in rows
         st.g[i] *= st.w[i]
         st.h[i] *= st.w[i]
-        st.z[i] = -st.g[i] ./ st.h[i]   # `./` since `/` between two `V`s is undefined for `SVector`
+        st.z[i] = working_response(st.loss, st.y[i], st.f[i], st.g[i], st.h[i])
     end
     return st
 end

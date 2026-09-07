@@ -71,24 +71,27 @@ const SINGULAR_TOL = 1e-12
 
 """
 Constant fit: intercept and surrogate deviance. Dotted so `V` may be a
-scalar or an `SVector` (independent per-coordinate fits).
+scalar or an `SVector` (independent per-coordinate fits). A coordinate with
+zero total mass takes the minimum-norm intercept zero.
 """
 @inline function fit_con(s::MomentSums)
-    b = s.sz ./ s.sw
+    b = ifelse.(iszero.(s.sw), zero(s.sz), s.sz ./ s.sw)
     return b, s.szz .- s.sz .* b
 end
 
 """
 Simple linear fit `a x + b`. Returns `nothing` when the Gram determinant is
 below `tol · sw · sxx` for any coordinate, which covers a constant feature.
-Dotted so `V` may be a scalar or an `SVector` (independent per-coordinate
-fits).
+A zero-mass coordinate takes zero coefficients and does not reject other
+coordinates. Dotted so `V` may be a scalar or an `SVector` (independent
+per-coordinate fits).
 """
 @inline function fit_lin(s::MomentSums; tol = SINGULAR_TOL)
     d = s.sw .* s.sxx .- s.sx .* s.sx
-    any(d .<= tol .* s.sw .* s.sxx) && return nothing
-    a = (s.sw .* s.sxz .- s.sx .* s.sz) ./ d
-    b = (s.sz .- a .* s.sx) ./ s.sw
+    massless = iszero.(s.sw)
+    any((.!massless) .& (d .<= tol .* s.sw .* s.sxx)) && return nothing
+    a = ifelse.(massless, zero(s.sxz), (s.sw .* s.sxz .- s.sx .* s.sz) ./ d)
+    b = ifelse.(massless, zero(s.sz), (s.sz .- a .* s.sx) ./ s.sw)
     rss = s.szz .- a .* s.sxz .- b .* s.sz
     return a, b, rss
 end
@@ -100,7 +103,7 @@ converted to the coordinate type so `Float32` sums stay `Float32`.
 """
 @inline function fit_con(s::MomentSums, λb::Real)
     sww = s.sw .+ convert(eltype(s.sw), λb)
-    b = s.sz ./ sww
+    b = ifelse.(iszero.(sww), zero(s.sz), s.sz ./ sww)
     return b, s.szz .- s.sz .* b
 end
 
@@ -110,16 +113,18 @@ Simple linear fit `a x + b` with slope ridge `λw` and intercept ridge `λb`
 is below `tol · (sw + λb)(sxx + λw)` for any coordinate, which covers a
 constant feature at zero ridge. The returned deviance is the minimum of
 `Σ h (z − a x − b)² + λw a² + λb b²`, which at the optimum equals
-`szz − a·sxz − b·sz` exactly as in the unregularised case.
+`szz − a·sxz − b·sz` exactly as in the unregularised case. A zero-mass
+coordinate takes zero coefficients.
 """
 @inline function fit_lin(s::MomentSums, λw::Real, λb::Real; tol = SINGULAR_TOL)
     E = eltype(s.sw)
     sww = s.sw .+ convert(E, λb)
     sxxw = s.sxx .+ convert(E, λw)
     d = sww .* sxxw .- s.sx .* s.sx
-    any(d .<= tol .* sww .* sxxw) && return nothing
-    a = (sww .* s.sxz .- s.sx .* s.sz) ./ d
-    b = (s.sz .- a .* s.sx) ./ sww
+    massless = iszero.(s.sw)
+    any((.!massless) .& (d .<= tol .* sww .* sxxw)) && return nothing
+    a = ifelse.(massless, zero(s.sxz), (sww .* s.sxz .- s.sx .* s.sz) ./ d)
+    b = ifelse.(massless, zero(s.sz), (s.sz .- a .* s.sx) ./ sww)
     rss = s.szz .- a .* s.sxz .- b .* s.sz
     return a, b, rss
 end
