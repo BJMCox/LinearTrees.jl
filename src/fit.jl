@@ -149,6 +149,17 @@ end
 "Scratch sets per worker. Two, because a task blocked in `wait` still owns its set and would otherwise deny a runnable task any buffers."
 const SCRATCH_PER_THREAD = 2
 
+"Partition indices and worker buffers reused across sequential boosting rounds of the same size."
+struct TreeWorkspace{T,V}
+    idx::Matrix{Int32}
+    scratch::Vector{Scratch{T,V}}
+end
+
+function TreeWorkspace{T,V}(n, p, nthreads) where {T,V}
+    nsets = nthreads == 1 ? 1 : SCRATCH_PER_THREAD * nthreads
+    return TreeWorkspace{T,V}(Matrix{Int32}(undef, n, p), [Scratch{T,V}() for _ in 1:nsets])
+end
+
 "Row-count gate for sibling-subtree parallelism: a split whose right child has at least this many rows may run as its own task."
 const SUBTREE_MIN_ROWS = 256
 
@@ -212,6 +223,16 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         max_lin_chain = 10, truncate = true, truncation_factor = 3,
         features = 1:size(X, 2), presort::Union{Nothing,AbstractMatrix{Int32}} = nothing,
         nthreads = Threads.nthreads(), niter = 5)
+    return _fit_tree(X, y, loss, nothing; weights, categorical, rule, max_depth, min_fit, min_leaf,
+        min_sum_hessian, max_lin_chain, truncate, truncation_factor, features, presort, nthreads, niter)
+end
+
+function _fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss, workspace;
+        weights = nothing, categorical = Int[], rule::SelectionRule = BIC(),
+        max_depth = 12, min_fit = 10, min_leaf = 5, min_sum_hessian = 1.0,
+        max_lin_chain = 10, truncate = true, truncation_factor = 3,
+        features = 1:size(X, 2), presort::Union{Nothing,AbstractMatrix{Int32}} = nothing,
+        nthreads = Threads.nthreads(), niter = 5)
     # `niter` reaches an `Int` field, so a non-integer would surface as an
     # `InexactError` from deep inside the fit rather than as a rejected argument
     isinteger(niter) && niter >= 1 || throw(ArgumentError("niter must be an integer >= 1, got $niter"))
@@ -253,7 +274,7 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         nlevels[j] = Int(maximum(col))
         iscat[j] = true
     end
-    return _fit_tree(Xm, yv, w, loss, rule, coeftype(loss, T), iscat, nlevels, keep, feats, presort;
+    return _fit_tree(Xm, yv, w, loss, rule, coeftype(loss, T), iscat, nlevels, keep, feats, presort, workspace;
         max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
         nthreads, niter)
 end
@@ -276,7 +297,7 @@ validating front end.
 """
 function _fit_tree(Xm::Matrix{T}, yv::Vector{Y}, w::Vector{T}, loss::L, rule::R, ::Type{V},
         iscat::Vector{Bool}, nlevels::Vector{Int}, keep::Vector{Int}, features::Vector{Int},
-        presort::Union{Nothing,AbstractMatrix{Int32}};
+        presort::Union{Nothing,AbstractMatrix{Int32}}, workspace;
         max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
         nthreads, niter) where {T,V,Y,L<:Loss,R<:SelectionRule}
     n, p = size(Xm)
@@ -285,18 +306,19 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{Y}, w::Vector{T}, loss::L, rule::R,
     # `Float64`, regardless of `V`), so convert here rather than trust each method
     lo, hi = truncate ? map(V, scorebound(loss, yv; truncation_factor)) : infbounds(V)
     f = fill(clampscore(f0, lo, hi), n)
-    idx = Matrix{Int32}(undef, n, p)
+    workspace === nothing && (workspace = TreeWorkspace{T,V}(n, p, nthreads))
+    idx = workspace.idx
     if presort === nothing
         presort!(idx, Xm, nthreads)
     else
         filter_presort!(idx, presort, keep, nthreads)
     end
-    # one set on the serial path: the pool is then empty, `trytake!` always returns
-    # 0, and the fit allocates no more scratch than a single-worker fit needs
-    nsets = nthreads == 1 ? 1 : SCRATCH_PER_THREAD * nthreads
+    # Models own their nodes and masks. Only fully overwritten work buffers are
+    # shared across rounds; a fresh pool starts each fit with no borrowed ids.
+    nsets = length(workspace.scratch)
     st = FitState{T,V,Y,L,R}(; X = Xm, y = yv, w, f, g = zeros(V, n), h = zeros(V, n), z = zeros(V, n),
         idx, roworder = collect(Int32(1):Int32(n)), isleft = zeros(Bool, n),
-        scratch = [Scratch{T,V}() for _ in 1:nsets],
+        scratch = workspace.scratch,
         pool = ScratchPool(nsets:-1:2),   # id 1 is the root task's own and never enters the pool
         nodes = Node{T,V}[], catmasks = UInt64[], iscat, nlevels, features, loss, rule, lo, hi,
         max_depth = Int(max_depth), min_fit = T(min_fit), min_leaf = T(min_leaf),

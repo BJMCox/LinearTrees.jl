@@ -119,6 +119,7 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     allfeat = collect(1:p)
     nrow = max(1, round(Int, subsample * n))
     nfeat = max(1, ceil(Int, colsample * p))
+    workspace = TreeWorkspace{T,V}(nrow, p, nthreads)
     for t in 1:nrounds
         frozen_target!(target, g0, h0, loss, yv, F, w)
         if subsample < 1
@@ -130,7 +131,7 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
             copyto!(wr, w)
         end
         features = colsample < 1 ? sort!(randperm(rng, p)[1:nfeat]) : allfeat
-        tree = fit_tree(Xm, target, frozen; weights = wr, categorical, rule, max_depth, min_fit, min_leaf,
+        tree = _fit_tree(Xm, target, frozen, workspace; weights = wr, categorical, rule, max_depth, min_fit, min_leaf,
             min_sum_hessian, truncate, features, presort = idx, nthreads)::LinearTree{T,V,Frozen{V}}
         push!(trees, tree)
         F .+= etaT .* score(tree, Xm; clip = false, nthreads)

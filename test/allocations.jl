@@ -88,3 +88,15 @@ end
     # anything per row would be 5_000 allocations and megabytes on top
     @test encode_alloc() < 200_000
 end
+
+@testset "boosting reuses tree work buffers across rounds" begin
+    function boost_fit_alloc()
+        rng = StableRNG(144)
+        X = rand(rng, 4_000, 20)
+        y = sum(floor.(4 .* X[:, j]) for j in 1:3)
+        fit_boost(X, y; nrounds = 8, max_depth = 3, nthreads = 1)
+        return @allocated fit_boost(X, y; nrounds = 8, max_depth = 3, nthreads = 1)
+    end
+    # Measured 9.46 MB with fresh indices and scratch each round, 6.81 MB reused.
+    @test boost_fit_alloc() < 8_000_000
+end

@@ -166,3 +166,34 @@ end
     @test only(b.history) ≈ deviance(MSE(), yv[1:(end - 1)],
         score(b, Xv[1:(end - 1), :]; clip = false), wv[1:(end - 1)])
 end
+
+@testset "sampled categorical boosting equals fresh-tree recurrence" begin
+    rng = StableRNG(145)
+    X = rand(rng, 400, 3)
+    X[:, 1] .= rand(rng, 1:6, 400)
+    X[end, 1] = 7   # sampling can remove the highest category in later rounds
+    y = [X[i, 1] <= 2 ? 1 : X[i, 2] > 0.5 ? 2 : 3 for i in 1:400]
+    loss = Softmax(3)
+    w = Float64.(rand(rng, 1:3, 400))
+    fitrng = StableRNG(146)
+    b = fit_boost(X, y, loss; weights = w, categorical = [1], nrounds = 5,
+        subsample = 0.6, colsample = 0.6, eta = 0.2, max_depth = 3, rng = fitrng)
+    oracle_rng = StableRNG(146)
+    F = fill(initscore(loss, y, w), length(y))
+    g = similar(F); h = similar(F)
+    for tree in b.trees
+        gradhess!(g, h, loss, y, F)
+        target = [(-g[i] ./ h[i], h[i]) for i in eachindex(y)]
+        wr = zeros(length(y))
+        rows = randperm(oracle_rng, length(y))[1:240]
+        wr[rows] .= w[rows]
+        features = sort!(randperm(oracle_rng, 3)[1:2])
+        fresh = fit_tree(X, target, Frozen{eltype(F)}(); weights = wr, categorical = [1],
+            features, rule = GainRule(), max_depth = 3, nthreads = 1)
+        @test tree.nodes == fresh.nodes
+        @test tree.catmasks == fresh.catmasks
+        F .+= 0.2 .* score(fresh, X; clip = false, nthreads = 1)
+    end
+    @test score(b, X; clip = false) == reduce(hcat, F)'
+    @test rand(fitrng) == rand(oracle_rng)
+end
