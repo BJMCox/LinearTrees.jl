@@ -20,6 +20,7 @@ using LinearAlgebra
     include("accumulate.jl")
     include("select.jl")
     include("boost_rule.jl")
+    include("boost_frozen.jl")
     include("scan.jl")
     include("fit.jl")
     include("fit_losses.jl")

@@ -67,6 +67,28 @@ Softmax(K::Integer) = Softmax{Int(K)}()
 nclasses(::Softmax{K}) where {K} = K
 
 """
+    Frozen{V}() <: Loss
+
+Boosting's per-tree loss. Each target row is a pair `(z0, h0)` of working
+response and frozen Hessian at the ensemble score, both of type `V`, so one
+tree minimises `Σ w h0 (f − z0)² / 2`: the second-order objective of a
+boosting round with `z0 = −g0 / h0`. `gradhess!` returns `g = (f − z0) h0`
+and `h = h0` (floored at `HMIN`), the start score is zero, the score bounds
+are infinite so `truncate = true` keeps only the feature clamp, and the loss
+is smooth so no IRLS refit runs. A tree fitted with `Frozen` predicts its raw
+score; only a [`LinearBoost`](@ref) gives it a link.
+"""
+struct Frozen{V} <: Loss end
+
+"Element type of the numeric part of a loss's target vector: `eltype(y)` unless the loss says otherwise."
+target_eltype(::Loss, y) = eltype(y)
+target_eltype(::Frozen{V}, y) where {V} = eltype(V)
+
+"Target vector the fitter stores for rows `keep`, in working type `T`."
+prepare_target(::Loss, y, keep, ::Type{T}) where {T} = Vector{T}(y[keep])
+prepare_target(::Frozen{V}, y, keep, ::Type{T}) where {V,T} = Vector{Tuple{V,V}}(y[keep])
+
+"""
     issmooth(loss)
 
 `true` when `loss` has a well-defined Hessian everywhere and fits by Newton
@@ -83,6 +105,7 @@ loss, `SVector{K-1,T}` for `Softmax(K)`.
 """
 coeftype(::Loss, ::Type{T}) where {T} = T
 coeftype(::Softmax{K}, ::Type{T}) where {K,T} = SVector{K - 1,T}
+coeftype(::Frozen{V}, ::Type{T}) where {V,T} = V
 
 # ---- links -----------------------------------------------------------------
 """
@@ -93,6 +116,7 @@ Map raw score `s` to the response scale: the identity for `MSE`, `Huber`,
 count and rate losses, and class probabilities for `Softmax`.
 """
 linkinv(::Union{MSE,Huber,Quantile,MAD}, s) = s
+linkinv(::Frozen, s) = s
 linkinv(::Logistic, s) = 1 / (1 + exp(-s))
 linkinv(::Union{Poisson,NegBin,Gamma,Tweedie}, s) = exp(s)
 
@@ -177,6 +201,16 @@ function gradhess!(g::AbstractVector{V}, h::AbstractVector{V}, l::Softmax, y::Ab
         onehot = SVector{Km1,T}(ntuple(k -> T(y[i] == k), Km1))
         g[i] = pk .- onehot
         h[i] = max.(pk .* (1 .- pk), T(HMIN))
+    end
+    return g
+end
+
+function gradhess!(g::AbstractVector{V}, h::AbstractVector{V}, ::Frozen{V}, y::AbstractVector, f::AbstractVector{V}) where {V}
+    floor = eltype(V)(HMIN)
+    for i in eachindex(g, h, y, f)
+        z0, h0 = y[i]
+        g[i] = (f[i] .- z0) .* h0
+        h[i] = max.(h0, floor)
     end
     return g
 end
@@ -392,6 +426,7 @@ wmean(y, w) = sum(w .* y) / sum(w)
 
 
 initscore(::Union{MSE,Huber}, y, w) = wmean(y, w)
+initscore(::Frozen{V}, y, w) where {V} = zero(V)
 initscore(l::Quantile, y, w) = wquantile(y, w, l.τ)
 initscore(::MAD, y, w) = wquantile(y, w, 0.5)
 function initscore(::Logistic, y, w)
@@ -430,6 +465,11 @@ pointloss(l::Tweedie, y, f) = (μ = exp(f); ρ = l.ρ; -y * μ^(1 - ρ) / (1 - �
 pointloss(l::NegBin, y, f) = (μ = exp(f); θ = l.θ; -y * log(μ / (μ + θ)) + θ * log1p(μ / θ))
 
 pointloss(l::Softmax, y, f::SVector) = -log(probs(l, f)[Int(y)])
+function pointloss(::Frozen, y::Tuple, f)
+    z0, h0 = y
+    r = f .- z0
+    return sum(h0 .* r .* r) / 2
+end
 
 """
     deviance(loss, y, f, w)
@@ -463,6 +503,7 @@ function scorebound(::Softmax{K}, y; truncation_factor = 3) where {K}
     T = float(eltype(y))
     return (fill(T(-10), SVector{K - 1}), fill(T(10), SVector{K - 1}))
 end
+scorebound(::Frozen{V}, y; truncation_factor = 3) where {V} = infbounds(V)
 
 # ---- target validation -----------------------------------------------------
 """
@@ -475,6 +516,13 @@ Throw `ArgumentError` if `y` is not finite everywhere or does not satisfy
 function validate_target(loss::Loss, y)
     all(isfinite, y) || throw(ArgumentError("target contains NaN or Inf"))
     _validate(loss, y)
+    return nothing
+end
+function validate_target(::Frozen, y)
+    for (z0, h0) in y
+        all(isfinite, z0) || throw(ArgumentError("Frozen target z0 contains NaN or Inf"))
+        all(v -> isfinite(v) && v >= 0, h0) || throw(ArgumentError("Frozen Hessian h0 must be finite and non-negative"))
+    end
     return nothing
 end
 _validate(::Union{MSE,Huber,Quantile,MAD}, y) = nothing

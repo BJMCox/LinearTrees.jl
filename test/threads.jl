@@ -41,10 +41,11 @@ end
     X = hcat(Xn, lvl)
     yr = sum(floor.(3 .* Xn[:, j]) for j in 1:3) .+ Xn[:, 4] .* Xn[:, 5] .+ 0.3 .* lvl .+ 0.1 .* randn(rng, n)
     ycls = Float64.([Xn[i, 1] > 0.5 ? 1 : (lvl[i] <= 4 ? 2 : 3) for i in 1:n])
-    # one design per scratch user: the plain scan, the IRLS refit, and the
-    # vector-valued scan. A weighted design adds no scratch user of its own
-    # (test/partition.jl records a weighted fixture).
-    designs = ((yr, MSE(), (;)), (yr, MAD(), (; niter = 5)), (ycls, Softmax(3), (;)))
+    # one design per scratch user: the plain scan, Frozen's non-unit Hessian,
+    # the IRLS refit, and the vector-valued scan. A weighted design adds no
+    # scratch user of its own (test/partition.jl records a weighted fixture).
+    designs = ((yr, MSE(), (;)), (collect(zip(yr, ones(n))), LinearTrees.Frozen{Float64}(), (;)),
+        (yr, MAD(), (; niter = 5)), (ycls, Softmax(3), (;)))
     for (y, loss, kw) in designs
         ref = fit_tree(X, y, loss; categorical = [7], max_depth = 8, nthreads = 1, kw...)
         for k in 1:Threads.nthreads(), _ in 1:2
@@ -161,7 +162,7 @@ function poolstate(loss, rule, nt; data = stepdata())
     nsets = nt == 1 ? 1 : LinearTrees.SCRATCH_PER_THREAD * nt
     idx = Matrix{Int32}(undef, n, p)
     LinearTrees.presort!(idx, X, nt)
-    st = LinearTrees.FitState{Float64,Float64,typeof(loss),typeof(rule)}(; X, y, w = ones(n),
+    st = LinearTrees.FitState{Float64,Float64,Float64,typeof(loss),typeof(rule)}(; X, y, w = ones(n),
         f = zeros(n), g = zeros(n), h = zeros(n), z = zeros(n), idx, roworder = collect(Int32(1):Int32(n)), isleft = zeros(Bool, n),
         scratch = [LinearTrees.Scratch{Float64,Float64}() for _ in 1:nsets],
         pool = LinearTrees.ScratchPool(nsets:-1:2),

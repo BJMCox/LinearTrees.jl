@@ -80,15 +80,16 @@ end
     end
 end
 
-# Every exported loss is a public contract, so each gets one fit through
+# Every Loss subtype is a public contract, so each gets one fit through
 # `fit_tree` and one prediction on its response scale. The last assertion
 # fails when a `Loss` subtype is added without a row here, so pruning or
 # extension cannot leave a loss unexercised again.
-@testset "every exported loss fits and predicts on its response scale" begin
+@testset "every Loss subtype fits and predicts on its response scale" begin
     rng = StableRNG(13)
     n = 300
     X = rand(rng, n, 3)
     yreal = X[:, 1] .- 2 .* X[:, 2] .+ 0.05 .* randn(rng, n)
+    yfrozen = collect(zip(yreal, ones(n)))
     ypos = exp.(yreal)
     ycount = Float64.(rand(rng, 0:5, n))
     ybin = Float64.(X[:, 1] .> 0.5)
@@ -100,6 +101,7 @@ end
         (Logistic(), ybin, (0.0, 1.0)),
         (Poisson(), ycount, (0.0, Inf)), (NegBin(2.0), ycount, (0.0, Inf)),
         (Gamma(), ypos, (0.0, Inf)), (Tweedie(1.5), ypos, (0.0, Inf)),
+        (LinearTrees.Frozen{Float64}(), yfrozen, unbounded),
     ]
     for (loss, y, (lo, hi)) in cases
         pr = predict(fit_tree(X, y, loss), X)

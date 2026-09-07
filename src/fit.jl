@@ -164,9 +164,9 @@ Everything one `fit_tree` call carries through growth. Built by keyword
 (`Base.@kwdef`) because the positional form is twenty arguments wide and a
 field reorder in it would corrupt a fit silently.
 """
-Base.@kwdef mutable struct FitState{T,V,L<:Loss,R<:SelectionRule}
+Base.@kwdef mutable struct FitState{T,V,Y,L<:Loss,R<:SelectionRule}
     X::Matrix{T}
-    y::Vector{T}
+    y::Vector{Y}
     w::Vector{T}
     f::Vector{V}
     g::Vector{V}
@@ -222,7 +222,7 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     # observed range of `y` and every extreme score is pulled toward the middle
     truncation_factor >= 1 || throw(ArgumentError("truncation_factor must be >= 1, got $truncation_factor"))
     nthreads = clamp(nthreads, 1, Threads.nthreads())
-    T = float(promote_type(eltype(X), eltype(y)))
+    T = float(promote_type(eltype(X), target_eltype(loss, y)))
     n, p = size(X)
     length(y) == n || throw(DimensionMismatch("X has $n rows, y has $(length(y))"))
     validate_target(loss, y)
@@ -234,7 +234,7 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     # the copy would be pure cost. `st.X` is read-only for the whole fit, so the
     # tree holds a reference to the caller's matrix only until `fit_tree` returns.
     Xm = length(keep) == n && X isa Matrix{T} ? X : Matrix{T}(X[keep, :])
-    yv = Vector{T}(y[keep]); w = w[keep]
+    yv = prepare_target(loss, y, keep, T); w = w[keep]
     all(isfinite, Xm) || throw(ArgumentError("X contains NaN or Inf"))
     nlevels = zeros(Int, p)
     iscat = zeros(Bool, p)
@@ -267,10 +267,10 @@ A function barrier, so growth specializes on those types instead of
 re-dispatching on them at run time in every node. `fit_tree` stays the
 validating front end.
 """
-function _fit_tree(Xm::Matrix{T}, yv::Vector{T}, w::Vector{T}, loss::L, rule::R, ::Type{V},
+function _fit_tree(Xm::Matrix{T}, yv::Vector{Y}, w::Vector{T}, loss::L, rule::R, ::Type{V},
         iscat::Vector{Bool}, nlevels::Vector{Int};
         max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
-        nthreads, niter) where {T,V,L<:Loss,R<:SelectionRule}
+        nthreads, niter) where {T,V,Y,L<:Loss,R<:SelectionRule}
     n, p = size(Xm)
     f0 = V(initscore(loss, yv, w))
     # every `scorebound` method returns bounds in its own working type (often
@@ -282,7 +282,7 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{T}, w::Vector{T}, loss::L, rule::R,
     # one set on the serial path: the pool is then empty, `trytake!` always returns
     # 0, and the fit allocates no more scratch than a single-worker fit needs
     nsets = nthreads == 1 ? 1 : SCRATCH_PER_THREAD * nthreads
-    st = FitState{T,V,L,R}(; X = Xm, y = yv, w, f, g = zeros(V, n), h = zeros(V, n), z = zeros(V, n),
+    st = FitState{T,V,Y,L,R}(; X = Xm, y = yv, w, f, g = zeros(V, n), h = zeros(V, n), z = zeros(V, n),
         idx, roworder = collect(Int32(1):Int32(n)), isleft = zeros(Bool, n),
         scratch = [Scratch{T,V}() for _ in 1:nsets],
         pool = ScratchPool(nsets:-1:2),   # id 1 is the root task's own and never enters the pool
