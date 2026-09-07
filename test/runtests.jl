@@ -21,6 +21,7 @@ using LinearAlgebra
     include("select.jl")
     include("boost_rule.jl")
     include("boost_frozen.jl")
+    include("boost_fit.jl")
     include("scan.jl")
     include("fit.jl")
     include("fit_losses.jl")

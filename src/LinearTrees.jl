@@ -12,6 +12,7 @@ include("fit.jl")
 include("predict.jl")
 include("importance.jl")
 include("shap.jl")
+include("boost.jl")
 include("statsapi.jl")
 include("mlj.jl")
 include("show.jl")
@@ -23,9 +24,10 @@ export score, predict, predict!, fit_tree
 export feature_importance, coeftable
 export shap, shap!, ShapResult
 export expected_score
-export Loss, MSE, Huber, Quantile, MAD, Logistic, Poisson, NegBin, Gamma, Tweedie, Softmax
+export Loss, MSE, Huber, Quantile, MAD, Logistic, Poisson, NegBin, Gamma, Tweedie, Softmax, Frozen
 export AdaptedLoss, IdentityLink, LogitLink, LogLink, canonical_scale
 export gradhess!, linkinv, initscore, deviance, scorebound, validate_target, issmooth
+export fit_boost, LinearBoost, nrounds
 export LinearTreeRegressorFit, LinearTreeClassifierFit
 export LinearTreeRegressor, LinearTreeClassifier
 export fit, nobs, dof, weights, residuals

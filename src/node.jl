@@ -92,3 +92,33 @@ function category_is_left(masks::Vector{UInt64}, n::Node, code::Integer)
 end
 
 category_is_left(tree::LinearTree, n::Node, code::Integer) = category_is_left(tree.catmasks, n, code)
+
+"""
+    LinearBoost{T,V,L}
+
+A gradient boosting ensemble of [`Frozen`](@ref)-loss linear model trees.
+The score is `f0 + eta Σ_t score(trees[t], x)`, clamped to `[lo, hi]` (the
+base `loss`'s [`scorebound`](@ref) on the training target) when `truncate`,
+then passed through the base loss's link. `history[t]` is the validation
+deviance after round `t` when validation data was given, else the training
+deviance; `validated` says which, so a reader can tell whether early stopping
+was in play. Build with [`fit_boost`](@ref).
+"""
+struct LinearBoost{T,V,L<:Loss}
+    trees::Vector{LinearTree{T,V,Frozen{V}}}
+    loss::L
+    f0::V
+    eta::T
+    lo::V
+    hi::V
+    nfeatures::Int
+    truncate::Bool
+    validated::Bool
+    history::Vector{Float64}
+end
+
+"Number of trees in the ensemble."
+nrounds(b::LinearBoost) = length(b.trees)
+
+"A tree or a boosted ensemble: everything `score`, `predict`, and `shap` accept."
+const Model = Union{LinearTree,LinearBoost}

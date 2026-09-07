@@ -44,36 +44,38 @@ clamp and drops the score clamp, which is what SHAP explains.
 end
 
 """
-    score(tree, X; clip=true, nthreads=Threads.nthreads())
+    score(tree_or_ensemble, X; clip=true, nthreads=Threads.nthreads())
 
 Raw path sum per row on the link scale. `clip=false` returns the additive
 unclipped sum. Rows split into `nthreads` contiguous blocks when there are at
 least `PARALLEL_MIN_ROWS` of them; each row writes only its own output slot,
 so the result matches the serial loop exactly.
 """
-function score(tree::LinearTree{T,V}, X::AbstractMatrix; clip::Bool = true, nthreads = Threads.nthreads()) where {T,V}
+function score(m::Union{LinearTree{T,V},LinearBoost{T,V}}, X::AbstractMatrix;
+        clip::Bool = true, nthreads = Threads.nthreads()) where {T,V}
     n = size(X, 1)
     out = Vector{V}(undef, n)
     row_blocks(n, nthreads) do rs
         for i in rs
-            out[i] = score_row(tree, X, i, clip)
+            out[i] = score_row(m, X, i, clip)
         end
     end
     return out
 end
 
 """
-    score(tree, X; clip=true, nthreads=Threads.nthreads())
+    score(tree_or_ensemble, X; clip=true, nthreads=Threads.nthreads())
 
 `Softmax` override: `n × (K-1)` matrix of raw reference-class logits.
 """
-function score(tree::LinearTree{T,V,<:Softmax}, X::AbstractMatrix; clip::Bool = true, nthreads = Threads.nthreads()) where {T,V}
+function score(m::Union{LinearTree{T,V,<:Softmax},LinearBoost{T,V,<:Softmax}}, X::AbstractMatrix;
+        clip::Bool = true, nthreads = Threads.nthreads()) where {T,V}
     n = size(X, 1)
-    Km1 = nclasses(tree.loss) - 1
+    Km1 = nclasses(m.loss) - 1
     out = Matrix{T}(undef, n, Km1)
     row_blocks(n, nthreads) do rs
         for i in rs
-            s = score_row(tree, X, i, clip)
+            s = score_row(m, X, i, clip)
             for k in 1:Km1
                 out[i, k] = s[k]
             end
@@ -83,44 +85,48 @@ function score(tree::LinearTree{T,V,<:Softmax}, X::AbstractMatrix; clip::Bool = 
 end
 
 score_type(::LinearTree{T,V}) where {T,V} = V
+score_type(::LinearBoost{T,V}) where {T,V} = V
 
 """
-    predict(tree, X; nthreads=Threads.nthreads())
+    predict(tree_or_ensemble, X; nthreads=Threads.nthreads())
 
-Prediction on the response scale, `linkinv(tree.loss, score)`.
+Prediction on the response scale, `linkinv(tree_or_ensemble.loss, score)`.
 """
-predict(tree::LinearTree, X::AbstractMatrix; nthreads = Threads.nthreads()) =
-    predict!(Vector{eltype(score_type(tree))}(undef, size(X, 1)), tree, X; nthreads)
+predict(m::Union{LinearTree{T,V},LinearBoost{T,V}}, X::AbstractMatrix; nthreads = Threads.nthreads()) where {T,V} =
+    predict!(Vector{eltype(V)}(undef, size(X, 1)), m, X; nthreads)
 
-function predict!(out::AbstractVector, tree::LinearTree, X::AbstractMatrix; nthreads = Threads.nthreads())
+function predict!(out::AbstractVector, m::Union{LinearTree{T,V},LinearBoost{T,V}}, X::AbstractMatrix;
+        nthreads = Threads.nthreads()) where {T,V}
     length(out) == size(X, 1) || throw(DimensionMismatch("out has length $(length(out)), X has $(size(X, 1)) rows"))
     row_blocks(length(out), nthreads) do rs
         for i in rs
-            out[i] = linkinv(tree.loss, score_row(tree, X, i, true))
+            out[i] = linkinv(m.loss, score_row(m, X, i, true))
         end
     end
     return out
 end
 
 """
-    predict(tree, X; nthreads=Threads.nthreads())
+    predict(tree_or_ensemble, X; nthreads=Threads.nthreads())
 
 `Softmax` override: `n × K` matrix of class probabilities, `linkinv` applied
 row by row to the `K-1`-vector score.
 """
-function predict(tree::LinearTree{T,V,<:Softmax}, X::AbstractMatrix; nthreads = Threads.nthreads()) where {T,V}
+function predict(m::Union{LinearTree{T,V,<:Softmax},LinearBoost{T,V,<:Softmax}}, X::AbstractMatrix;
+        nthreads = Threads.nthreads()) where {T,V}
     n = size(X, 1)
-    K = nclasses(tree.loss)
-    return predict!(Matrix{T}(undef, n, K), tree, X; nthreads)
+    K = nclasses(m.loss)
+    return predict!(Matrix{T}(undef, n, K), m, X; nthreads)
 end
 
 "In-place `Softmax` prediction into an `n × K` matrix."
-function predict!(out::AbstractMatrix, tree::LinearTree{T,V,<:Softmax}, X::AbstractMatrix; nthreads = Threads.nthreads()) where {T,V}
-    n = size(X, 1); K = nclasses(tree.loss)
+function predict!(out::AbstractMatrix, m::Union{LinearTree{T,V,<:Softmax},LinearBoost{T,V,<:Softmax}}, X::AbstractMatrix;
+        nthreads = Threads.nthreads()) where {T,V}
+    n = size(X, 1); K = nclasses(m.loss)
     size(out) == (n, K) || throw(DimensionMismatch("out must be $n × $K, got $(size(out))"))
     row_blocks(n, nthreads) do rs
         for i in rs
-            p = linkinv(tree.loss, score_row(tree, X, i, true))
+            p = linkinv(m.loss, score_row(m, X, i, true))
             for k in 1:K
                 out[i, k] = p[k]
             end
@@ -128,7 +134,7 @@ function predict!(out::AbstractMatrix, tree::LinearTree{T,V,<:Softmax}, X::Abstr
     end
     return out
 end
-predict!(::AbstractVector, ::LinearTree{T,V,<:Softmax}, ::AbstractMatrix; kw...) where {T,V} =
+predict!(::AbstractVector, ::Union{LinearTree{T,V,<:Softmax},LinearBoost{T,V,<:Softmax}}, ::AbstractMatrix; kw...) where {T,V} =
     throw(ArgumentError("Softmax prediction needs an n × K matrix output"))
 
 """
