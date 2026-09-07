@@ -154,6 +154,14 @@ end
     end
     oracle_median_abs(r, w) = oracle_wquantile(abs.(r), w, 0.5)
 
+    # Equal positive weights give the ordinary median, including the even
+    # sample's average of two distinct central values.
+    for y in ([9.0, -1.0, 4.0, -2.0], [9.0, -1.0, 4.0, -2.0, 7.0])
+        buf = similar(y)
+        perm = Vector{Int32}(undef, length(y))
+        @test LinearTrees.median_abs!(buf, perm, y, fill(2.0, length(y))) == median(abs.(y))
+    end
+
     # A general agreement check over mixed inputs, not the branch cover: n is
     # mostly small (1:64) because ties, which drive the interesting branches,
     # are far more common per draw at small n, and counted on this seed the 200

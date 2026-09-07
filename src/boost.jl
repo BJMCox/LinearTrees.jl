@@ -83,7 +83,7 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     all(v -> isfinite(v) && v >= 0, w) || throw(ArgumentError("weights must be finite and non-negative"))
     keep = findall(>(0), w)
     isempty(keep) && throw(ArgumentError("total weight must be positive"))
-    Xm = Matrix{T}(X[keep, :]); yv = Vector{T}(y[keep]); w = w[keep]
+    Xm = Matrix{T}(view(X, keep, :)); yv = Vector{T}(view(y, keep)); w = w[keep]
     all(isfinite, Xm) || throw(ArgumentError("X contains NaN or Inf"))
     n = length(keep)
     V = coeftype(loss, T)
@@ -111,7 +111,7 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         all(v -> isfinite(v) && v >= 0, wv) || throw(ArgumentError("wval must be finite and non-negative"))
         keepv = findall(>(0), wv)
         isempty(keepv) && throw(ArgumentError("total validation weight must be positive"))
-        Xv = Matrix{T}(Xval[keepv, :]); yvv = Vector{T}(yval[keepv]); wv = wv[keepv]
+        Xv = Matrix{T}(view(Xval, keepv, :)); yvv = Vector{T}(view(yval, keepv)); wv = wv[keepv]
         all(isfinite, Xv) || throw(ArgumentError("Xval contains NaN or Inf"))
         Fv = fill(f0, length(yvv))
     end
@@ -134,9 +134,9 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         tree = _fit_tree(Xm, target, frozen, workspace; weights = wr, categorical, rule, max_depth, min_fit, min_leaf,
             min_sum_hessian, truncate, features, presort = idx, nthreads)::LinearTree{T,V,Frozen{V}}
         push!(trees, tree)
-        F .+= etaT .* score(tree, Xm; clip = false, nthreads)
+        add_tree_score!(F, tree, Xm, etaT, nthreads)
         if hasval
-            Fv .+= etaT .* score(tree, Xv; clip = false, nthreads)
+            add_tree_score!(Fv, tree, Xv, etaT, nthreads)
             push!(history, deviance(loss, yvv, Fv, wv))
             t - argmin(history) >= patience && break
         else
@@ -148,6 +148,16 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         resize!(trees, best); resize!(history, best)
     end
     return LinearBoost{T,V,typeof(loss)}(trees, loss, f0, etaT, lo, hi, p, truncate, hasval, history)
+end
+
+"Add one tree's raw scores directly to the ensemble scores without a temporary vector."
+function add_tree_score!(F, tree::LinearTree, X, eta, nthreads)
+    row_blocks(length(F), nthreads) do rows
+        for i in rows
+            F[i] += eta * score_row(tree, X, i, false)
+        end
+    end
+    return F
 end
 
 """

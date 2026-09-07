@@ -183,7 +183,7 @@ Base.@kwdef mutable struct FitState{T,V,Y,L<:Loss,R<:SelectionRule}
     g::Vector{V}
     h::Vector{V}
     z::Vector{V}
-    idx::Matrix{Int32}          # n × p, column j = row order sorted by feature j, partitioned node by node
+    idx::Matrix{Int32}          # n × p, selected columns hold feature-sorted row orders, partitioned node by node
     roworder::Vector{Int32}     # n, the same rows in the order every node's sums run over, partitioned alongside `idx`
     isleft::Vector{Bool}        # n, per-row left marker used by `partition!`; each node touches only its own rows
     scratch::Vector{Scratch{T,V}}   # SCRATCH_PER_THREAD per worker, one when nthreads == 1
@@ -262,7 +262,7 @@ function _fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss, workspace;
     # No row is dropped and the caller already has the working element type, so
     # the copy would be pure cost. `st.X` is read-only for the whole fit, so the
     # tree holds a reference to the caller's matrix only until `fit_tree` returns.
-    Xm = length(keep) == n && X isa Matrix{T} ? X : Matrix{T}(X[keep, :])
+    Xm = length(keep) == n && X isa Matrix{T} ? X : Matrix{T}(view(X, keep, :))
     yv = prepare_target(loss, y, keep, T); w = w[keep]
     all(isfinite, Xm) || throw(ArgumentError("X contains NaN or Inf"))
     nlevels = zeros(Int, p)
@@ -312,7 +312,7 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{Y}, w::Vector{T}, loss::L, rule::R,
     if presort === nothing
         presort!(idx, Xm, nthreads)
     else
-        filter_presort!(idx, presort, keep, nthreads)
+        filter_presort!(idx, presort, keep, nthreads, features)
     end
     # Models own their nodes and masks. Only fully overwritten work buffers are
     # shared across rounds; a fresh pool starts each fit with no borrowed ids.
@@ -511,18 +511,21 @@ end
 
 """
 Stable filter of a full-data presort to the rows in `keep`, renumbered to
-`1:length(keep)`. `O(n p)`, threaded over columns by `column_blocks` exactly as
-`presort!` is. Used by `fit_boost`, which presorts once and fits many trees on
-row subsets. The caller's `presort` is read only, never permuted.
+`1:length(keep)`. `O(n length(features))`, threaded over selected columns by
+`column_blocks` exactly as `presort!` is. Used by `fit_boost`, which presorts once and fits many trees on
+row subsets. The caller's `presort` is read only, never permuted. Unselected
+columns are untouched and are never read during this tree's growth.
 """
-function filter_presort!(idx::Matrix{Int32}, presort::AbstractMatrix{Int32}, keep::Vector{Int}, nthreads)
+function filter_presort!(idx::Matrix{Int32}, presort::AbstractMatrix{Int32}, keep::Vector{Int}, nthreads,
+        features = axes(idx, 2))
     pos = zeros(Int32, size(presort, 1))
     for (k, i) in enumerate(keep)
         pos[i] = Int32(k)
     end
     m0 = size(idx, 1)
-    column_blocks(size(idx, 2), m0, nthreads) do cols, _
-        for j in cols
+    column_blocks(length(features), m0, nthreads) do cols, _
+        for posj in cols
+            j = features[posj]
             m = 0
             for i in view(presort, :, j)
                 k = pos[i]
@@ -643,6 +646,11 @@ function partition_column!(idx::AbstractVector{Int32}, span::UnitRange{Int}, isl
     for k in span
         nleft += isleft[idx[k]]
     end
+    return partition_column!(idx, span, isleft, perm, nleft)
+end
+
+# Every feature column has the same row set, so partition! counts it once.
+function partition_column!(idx::AbstractVector{Int32}, span::UnitRange{Int}, isleft::Vector{Bool}, perm::Vector{Int32}, nleft::Int)
     a = 0; b = nleft
     for k in span
         i = idx[k]
@@ -657,9 +665,9 @@ function partition_column!(idx::AbstractVector{Int32}, span::UnitRange{Int}, isl
 end
 
 """
-Partition every column of `idx`, and `roworder` with them, over `span` so that
+Partition selected columns of `idx`, and `roworder` with them, over `span` so that
 the rows marked in `isleft` come first, in place and stable. Each child's rows
-then stay sorted by every feature, and `roworder[span]` keeps them in the order
+then stay sorted by every selected feature, and `roworder[span]` keeps them in the order
 the parent's sums ran over. Columns are independent: with at least
 `PARALLEL_MIN_ROWS` rows they split across the scratch ids in `ids`, each task
 using its own `scratch[id].perm` buffer. The caller owns the marks -- it sets
@@ -668,17 +676,20 @@ subtrees, which own disjoint rows, never see each other's. Returns the left
 count.
 """
 function partition!(idx::Matrix{Int32}, roworder::Vector{Int32}, span::UnitRange{Int}, isleft::Vector{Bool},
-        scratch, ids::AbstractVector{Int})
+        scratch, ids::AbstractVector{Int}, features = axes(idx, 2))
     # every column returns the same left count, so take it here rather than from
     # whichever task happens to finish last
     nleft = 0
     for k in span
-        nleft += isleft[idx[k, 1]]
+        nleft += isleft[idx[k, first(features)]]
     end
-    column_blocks(size(idx, 2), length(span), length(ids)) do cols, t
-        perm = ensure_len!(scratch[ids[t]].perm, length(span))
-        for j in cols
-            partition_column!(view(idx, :, j), span, isleft, perm)
+    let nleft = nleft
+        column_blocks(length(features), length(span), length(ids)) do cols, t
+            perm = ensure_len!(scratch[ids[t]].perm, length(span))
+            for k in cols
+                j = features[k]
+                partition_column!(view(idx, :, j), span, isleft, perm, nleft)
+            end
         end
     end
     # `roworder` is not a feature column, so it goes outside the threaded block,
@@ -986,7 +997,7 @@ function grow_subtree(st::FitState{T,V}, rows::RowView, span::UnitRange{Int}, de
     end
     ids = worker_ids!(sc, st.pool, tid, nborrow)
     nl = try
-        partition!(st.idx, st.roworder, span, st.isleft, st.scratch, ids)
+        partition!(st.idx, st.roworder, span, st.isleft, st.scratch, ids, st.features)
     finally
         giveback!(st.pool, ids)
     end

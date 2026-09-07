@@ -85,8 +85,8 @@ target_eltype(::Loss, y) = eltype(y)
 target_eltype(::Frozen{V}, y) where {V} = eltype(V)
 
 "Target vector the fitter stores for rows `keep`, in working type `T`."
-prepare_target(::Loss, y, keep, ::Type{T}) where {T} = Vector{T}(y[keep])
-prepare_target(::Frozen{V}, y, keep, ::Type{T}) where {V,T} = Vector{Tuple{V,V}}(y[keep])
+prepare_target(::Loss, y, keep, ::Type{T}) where {T} = Vector{T}(view(y, keep))
+prepare_target(::Frozen{V}, y, keep, ::Type{T}) where {V,T} = Vector{Tuple{V,V}}(view(y, keep))
 
 """
     issmooth(loss)
@@ -377,6 +377,8 @@ The two-argument form allocates; `median_abs!` writes `abs.(r)` into the
 first `length(r)` slots of `buf` and an index buffer into `perm` (an `Int32`
 buffer, partitioned in place by `wquantile_select!` rather than sorted), so
 `irls_refit` can run it on per-worker scratch every pass without allocating.
+Equal positive weights use a direct partial sort of the values in `buf`
+instead; `perm` is unused on that path.
 """
 median_abs(r::AbstractVector, w::AbstractVector) = (a = abs.(r); wquantile_select!(a, w, collect(eachindex(a)), 0.5))
 
@@ -384,6 +386,14 @@ function median_abs!(buf::Vector{T}, perm::Vector{Int32}, r::AbstractVector{T}, 
     n = length(r)
     a = view(buf, 1:n)
     a .= abs.(r)
+    # Equal positive frequency weights give the ordinary median. Partition
+    # values directly and avoid the weighted selector's index indirection.
+    if !isempty(w) && first(w) > 0 && all(==(first(w)), w)
+        mid = n ÷ 2 + 1
+        sort!(a; alg = PartialQuickSort(mid))
+        upper = a[mid]
+        return isodd(n) ? upper : (maximum(view(a, 1:(mid - 1))) + upper) / 2
+    end
     o = view(perm, 1:n)
     o .= 1:n
     return wquantile_select!(a, w, o, 0.5)
