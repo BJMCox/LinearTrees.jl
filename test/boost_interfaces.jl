@@ -35,11 +35,20 @@ end
     b = fit_boost(X, y; nrounds = 3, max_depth = 2)
     s = sprint(show, MIME"text/plain"(), b)
     @test occursin("LinearBoost", s) && occursin("3 trees", s) && occursin("MSE", s)
-    @test occursin("final deviance", s)
+    final_value = string(round(b.history[end]; sigdigits = 3))
+    @test occursin("final deviance = $final_value", s)
+    @test !occursin("best validation deviance", s)
     Xv = rand(rng, 50, 2); yv = Xv[:, 1]
     bv = fit_boost(X, y; nrounds = 3, Xval = Xv, yval = yv)
-    @test occursin("best validation deviance", sprint(show, MIME"text/plain"(), bv))
+    sv = sprint(show, MIME"text/plain"(), bv)
+    validation_value = string(round(bv.history[end]; sigdigits = 3))
+    @test occursin("best validation deviance = $validation_value", sv)
+    @test !occursin("final deviance", sv)
+    empty = typeof(b)(b.trees, b.loss, b.f0, b.eta, b.lo, b.hi, b.nfeatures, b.truncate, true, Float64[])
+    @test !occursin("deviance", sprint(show, MIME"text/plain"(), empty))
+    view = TreeView(b, 2)
+    @test view.tree === b.trees[2]
     io = IOBuffer()
-    print_tree(io, TreeView(b, 2))
+    print_tree(io, view)
     @test occursin("LinearTree", String(take!(io)))
 end
