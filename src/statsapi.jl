@@ -313,7 +313,11 @@ struct LinearBoostClassifierFit{B<:LinearBoost,C} <: StatsAPI.StatisticalModel
 end
 
 subset_rows(X::AbstractMatrix, rows) = X[rows, :]
-subset_rows(X, rows) = Tables.subset(X, rows)
+function subset_rows(X, rows)
+    cols = Tables.columns(X)
+    names = Tables.columnnames(cols)
+    return NamedTuple{Tuple(names)}(Tuple(Tables.getcolumn(cols, nm)[rows] for nm in names))
+end
 
 validation_nrows(X::AbstractMatrix) = size(X, 1)
 validation_nrows(X) = Tables.rowcount(Tables.columns(X))
@@ -327,9 +331,9 @@ function validation_length(Xval, yval, wval)
     return nval
 end
 
-function positive_validation_rows(wval, nval)
+function positive_validation_rows(wval, nval, ::Type{T}) where {T}
     wval === nothing && return nothing
-    w = Vector{Float64}(wval)
+    w = Vector{T}(wval)
     length(w) == nval || throw(DimensionMismatch("wval has length $(length(w)), yval has $nval"))
     all(v -> isfinite(v) && v >= 0, w) || throw(ArgumentError("wval must be finite and non-negative"))
     rows = findall(>(0), w)
@@ -353,7 +357,8 @@ function StatsAPI.fit(::Type{LinearBoostRegressorFit}, X, y; loss::Loss = MSE(),
     w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
     nval = validation_length(Xval, yval, wval)
     yval === nothing || validate_target(loss, yval)
-    rows = positive_validation_rows(wval, nval)
+    T = float(promote_type(eltype(Xm), eltype(y)))
+    rows = positive_validation_rows(wval, nval, T)
     boost = fit_boost(Xm, y, loss; weights = w, categorical = enc.categorical, nthreads,
         Xval = encode_validation(enc, Xval, nval, rows, nthreads), yval, wval, kwargs...)
     return LinearBoostRegressorFit(boost, enc, Xm, Vector{Float64}(y), w)
@@ -368,13 +373,15 @@ function StatsAPI.fit(::Type{LinearBoostClassifierFit}, X, y; weights = nothing,
     w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
     loss = K == 2 ? Logistic() : Softmax(K)
     encode_y(v) = K == 2 ? Float64.(v .== 1) : v
+    ytarget = encode_y(yi)
     nval = validation_length(Xval, yval, wval)
     yvi = yval === nothing ? nothing : [get(code, v) do
             throw(ArgumentError("validation label $v is not a training class"))
         end for v in yval]
     yvi === nothing || validate_target(loss, encode_y(yvi))
-    rows = positive_validation_rows(wval, nval)
-    boost = fit_boost(Xm, encode_y(yi), loss; weights = w, categorical = enc.categorical, nthreads,
+    T = float(promote_type(eltype(Xm), eltype(ytarget)))
+    rows = positive_validation_rows(wval, nval, T)
+    boost = fit_boost(Xm, ytarget, loss; weights = w, categorical = enc.categorical, nthreads,
         Xval = encode_validation(enc, Xval, nval, rows, nthreads), yval = yvi === nothing ? nothing : encode_y(yvi), wval, kwargs...)
     return LinearBoostClassifierFit(boost, enc, Xm, yi, w, classes)
 end

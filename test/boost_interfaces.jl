@@ -1,5 +1,17 @@
 using AbstractTrees, JLD2, StableRNGs
-using StatsAPI, DataFrames, CategoricalArrays, StaticArrays
+using StatsAPI, DataFrames, CategoricalArrays, StaticArrays, Tables
+
+struct SchemaUnknownTable
+    a::AbstractVector{Float64}
+    b::AbstractVector{Float64}
+    c::AbstractVector
+end
+Tables.istable(::Type{SchemaUnknownTable}) = true
+Tables.columnaccess(::Type{SchemaUnknownTable}) = true
+Tables.columns(t::SchemaUnknownTable) = t
+Tables.columnnames(::SchemaUnknownTable) = (:a, :b, :c)
+Tables.getcolumn(t::SchemaUnknownTable, nm::Symbol) = getproperty(t, nm)
+Tables.schema(::SchemaUnknownTable) = nothing
 
 @testset "LinearBoost JLD2 round trip is exact" begin
     rng = StableRNG(130)
@@ -56,8 +68,16 @@ end
     @test_throws ArgumentError predict(m, dfu)
     mr = fit(LinearBoostRegressorFit, df, y; nrounds = 2, unseen = :right)
     @test length(predict(mr, dfu)) == 1
-    @test_throws ArgumentError fit(LinearBoostRegressorFit, df, exp.(df.a); loss = Poisson(), nrounds = 1,
+    unknown = SchemaUnknownTable(dfv.a, dfv.b, dfv.c)
+    mu = fit(LinearBoostRegressorFit, df, y; nrounds = 1,
+        Xval = unknown, yval = yv, wval = vcat(ones(99), 0.0))
+    @test mu.boost.validated
+    @test_throws ArgumentError fit(LinearBoostRegressorFit, df, Int.(df.a .> 0); loss = Poisson(), nrounds = 1,
         Xval = df[1:2, :], yval = [1.0, -1.0], wval = [1.0, 0.0])
+    tiny = parse(BigFloat, "1e-1000")
+    dfbig = DataFrame(a = [0.0, NaN], b = [0.0, 0.0], c = categorical(["u", "u"]))
+    @test_throws ArgumentError fit(LinearBoostRegressorFit, df, BigFloat.(y); nrounds = 1,
+        Xval = dfbig, yval = BigFloat[0, 0], wval = BigFloat[1, tiny])
 end
 
 @testset "StatsAPI boosting classifier: binary and multiclass" begin
