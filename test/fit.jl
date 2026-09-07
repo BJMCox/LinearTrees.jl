@@ -148,3 +148,36 @@ end
     @test predict(t, X) == predict(t, X; nthreads = 1)
     @test score(t, X; clip = false) == score(t, X; clip = false, nthreads = 1)
 end
+
+@testset "features keyword restricts the split search" begin
+    rng = StableRNG(105)
+    n = 400
+    X = rand(rng, n, 3)
+    y = 4 .* (X[:, 1] .> 0.5) .+ X[:, 2] .+ 0.05 .* randn(rng, n)
+    tall = fit_tree(X, y; max_depth = 3)
+    @test any(nd -> !LinearTrees.isleaf(nd) && nd.feature == 1, tall.nodes)
+    t23 = fit_tree(X, y; max_depth = 3, features = [2, 3])
+    @test all(nd -> LinearTrees.isleaf(nd) || nd.feature in (2, 3), t23.nodes)
+    # two distinct branches of one guard
+    @test_throws ArgumentError fit_tree(X, y; features = [0, 2])
+    @test_throws ArgumentError fit_tree(X, y; features = Int[])
+end
+
+@testset "presort keyword reproduces the sorted fit, with dropped rows" begin
+    rng = StableRNG(106)
+    n = 20_000
+    X = rand(rng, n, 4); X[:, 4] .= round.(X[:, 4]; digits = 1)     # ties
+    y = sin.(3 .* X[:, 1]) .+ X[:, 4] .+ 0.1 .* randn(rng, n)
+    w = Float64.(rand(rng, 0:2, n))                                 # drops about a third of the rows
+    idx = LinearTrees.presort!(Matrix{Int32}(undef, n, 4), Matrix{Float64}(X), 1)
+    saved = copy(idx)
+    t1 = fit_tree(X, y; weights = w, max_depth = 6)
+    t2 = fit_tree(X, y; weights = w, max_depth = 6, presort = idx)
+    @test t1.nodes == t2.nodes
+    @test idx == saved                                      # the caller's matrix is not mutated
+    @test_throws DimensionMismatch fit_tree(X, y; presort = idx[1:10, :])
+    # serial equals threaded on both new paths at once
+    tf = fit_tree(X, y; weights = w, max_depth = 6, features = [4, 1], presort = idx)
+    @test fit_tree(X, y; weights = w, max_depth = 6, features = [1, 4], presort = idx, nthreads = 1).nodes == tf.nodes
+    @test all(nd -> LinearTrees.isleaf(nd) || nd.feature in (1, 4), tf.nodes)
+end

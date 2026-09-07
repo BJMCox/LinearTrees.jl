@@ -181,6 +181,7 @@ Base.@kwdef mutable struct FitState{T,V,Y,L<:Loss,R<:SelectionRule}
     catmasks::Vector{UInt64}
     iscat::Vector{Bool}         # length p, true for the columns `fit_tree` was given as categorical
     nlevels::Vector{Int}
+    features::Vector{Int}       # sorted unique feature indices considered for split scans
     loss::L
     rule::R
     lo::V
@@ -209,6 +210,7 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         weights = nothing, categorical = Int[], rule::SelectionRule = BIC(),
         max_depth = 12, min_fit = 10, min_leaf = 5, min_sum_hessian = 1.0,
         max_lin_chain = 10, truncate = true, truncation_factor = 3,
+        features = 1:size(X, 2), presort::Union{Nothing,AbstractMatrix{Int32}} = nothing,
         nthreads = Threads.nthreads(), niter = 5)
     # `niter` reaches an `Int` field, so a non-integer would surface as an
     # `InexactError` from deep inside the fit rather than as a rejected argument
@@ -224,6 +226,11 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     nthreads = clamp(nthreads, 1, Threads.nthreads())
     T = float(promote_type(eltype(X), target_eltype(loss, y)))
     n, p = size(X)
+    feats = sort!(unique!(collect(Int, features)))
+    isempty(feats) && throw(ArgumentError("features must not be empty"))
+    all(j -> 1 <= j <= p, feats) || throw(ArgumentError("features must lie in 1:$p"))
+    presort === nothing || size(presort) == (n, p) ||
+        throw(DimensionMismatch("presort is $(size(presort)), X is $n × $p"))
     length(y) == n || throw(DimensionMismatch("X has $n rows, y has $(length(y))"))
     validate_target(loss, y)
     w = weights === nothing ? ones(T, n) : Vector{T}(weights)
@@ -246,7 +253,7 @@ function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         nlevels[j] = Int(maximum(col))
         iscat[j] = true
     end
-    return _fit_tree(Xm, yv, w, loss, rule, coeftype(loss, T), iscat, nlevels;
+    return _fit_tree(Xm, yv, w, loss, rule, coeftype(loss, T), iscat, nlevels, keep, feats, presort;
         max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
         nthreads, niter)
 end
@@ -268,7 +275,8 @@ re-dispatching on them at run time in every node. `fit_tree` stays the
 validating front end.
 """
 function _fit_tree(Xm::Matrix{T}, yv::Vector{Y}, w::Vector{T}, loss::L, rule::R, ::Type{V},
-        iscat::Vector{Bool}, nlevels::Vector{Int};
+        iscat::Vector{Bool}, nlevels::Vector{Int}, keep::Vector{Int}, features::Vector{Int},
+        presort::Union{Nothing,AbstractMatrix{Int32}};
         max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
         nthreads, niter) where {T,V,Y,L<:Loss,R<:SelectionRule}
     n, p = size(Xm)
@@ -278,7 +286,11 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{Y}, w::Vector{T}, loss::L, rule::R,
     lo, hi = truncate ? map(V, scorebound(loss, yv; truncation_factor)) : infbounds(V)
     f = fill(clampscore(f0, lo, hi), n)
     idx = Matrix{Int32}(undef, n, p)
-    presort!(idx, Xm, nthreads)
+    if presort === nothing
+        presort!(idx, Xm, nthreads)
+    else
+        filter_presort!(idx, presort, keep, nthreads)
+    end
     # one set on the serial path: the pool is then empty, `trytake!` always returns
     # 0, and the fit allocates no more scratch than a single-worker fit needs
     nsets = nthreads == 1 ? 1 : SCRATCH_PER_THREAD * nthreads
@@ -286,7 +298,7 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{Y}, w::Vector{T}, loss::L, rule::R,
         idx, roworder = collect(Int32(1):Int32(n)), isleft = zeros(Bool, n),
         scratch = [Scratch{T,V}() for _ in 1:nsets],
         pool = ScratchPool(nsets:-1:2),   # id 1 is the root task's own and never enters the pool
-        nodes = Node{T,V}[], catmasks = UInt64[], iscat, nlevels, loss, rule, lo, hi,
+        nodes = Node{T,V}[], catmasks = UInt64[], iscat, nlevels, features, loss, rule, lo, hi,
         max_depth = Int(max_depth), min_fit = T(min_fit), min_leaf = T(min_leaf),
         min_sum_hessian = T(min_sum_hessian), max_lin_chain = Int(max_lin_chain),
         truncate = Bool(truncate), nthreads = Int(nthreads), niter = Int(niter),
@@ -468,6 +480,35 @@ function presort!(idx::Matrix{Int32}, X::Matrix, nthreads, ::Type{U}) where {U<:
         buf = RadixBuffers(U, n)
         for j in cols
             radix_sortperm!(view(idx, :, j), view(X, :, j), buf)
+        end
+    end
+    return idx
+end
+
+"""
+Stable filter of a full-data presort to the rows in `keep`, renumbered to
+`1:length(keep)`. `O(n p)`, threaded over columns by `column_blocks` exactly as
+`presort!` is. Used by `fit_boost`, which presorts once and fits many trees on
+row subsets. The caller's `presort` is read only, never permuted.
+"""
+function filter_presort!(idx::Matrix{Int32}, presort::AbstractMatrix{Int32}, keep::Vector{Int}, nthreads)
+    pos = zeros(Int32, size(presort, 1))
+    for (k, i) in enumerate(keep)
+        pos[i] = Int32(k)
+    end
+    m0 = size(idx, 1)
+    column_blocks(size(idx, 2), m0, nthreads) do cols, _
+        for j in cols
+            m = 0
+            for i in view(presort, :, j)
+                k = pos[i]
+                k == 0 && continue
+                m += 1
+                idx[m, j] = k
+            end
+            # corruption guard, not a user path: from a threaded block this
+            # surfaces wrapped in a TaskFailedException
+            m == m0 || throw(ArgumentError("presort column $j is not a permutation of the rows"))
         end
     end
     return idx
@@ -761,11 +802,12 @@ score and, on ties, the lowest feature index, so the result equals the serial
 search regardless of how many ids turned up or of task completion order.
 """
 function best_split(st::FitState{T,V}, rows, span::UnitRange{Int}, dmin, ids::AbstractVector{Int}) where {T,V}
-    p = size(st.X, 2)
+    feats = st.features
+    p = length(feats)
     if length(rows) < PARALLEL_MIN_ROWS || length(ids) == 1 || p == 1
-        return best_split_serial(st, rows, span, dmin, 1:p, first(ids))
+        return best_split_serial(st, rows, span, dmin, feats, first(ids))
     end
-    chunks = collect(Iterators.partition(1:p, cld(p, length(ids))))
+    chunks = collect(Iterators.partition(feats, cld(p, length(ids))))
     # `tasks` is iterated in creation order below, over ascending chunks, so the
     # reduction sees the chunks in feature order however the tasks finish. A
     # comprehension over `zip` would infer a 0-dimensional `similar` here, since
@@ -864,7 +906,7 @@ function grow_subtree(st::FitState{T,V}, rows::RowView, span::UnitRange{Int}, de
     # borrow only when the callee would actually thread: under the row gate both
     # `best_split` and `partition!` run on `tid` alone, and the borrow would be a
     # lock round trip for nothing at every one of the tree's small nodes
-    nborrow = length(rows) < PARALLEL_MIN_ROWS ? 0 : min(size(st.X, 2), st.nthreads) - 1
+    nborrow = length(rows) < PARALLEL_MIN_ROWS ? 0 : min(length(st.features), st.nthreads) - 1
     sc = st.scratch[tid]
     ids = worker_ids!(sc, st.pool, tid, nborrow)
     best, bestj, leftcodes = try

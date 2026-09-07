@@ -167,7 +167,7 @@ function poolstate(loss, rule, nt; data = stepdata())
         scratch = [LinearTrees.Scratch{Float64,Float64}() for _ in 1:nsets],
         pool = LinearTrees.ScratchPool(nsets:-1:2),
         nodes = LinearTrees.Node{Float64,Float64}[], catmasks = UInt64[],
-        iscat = zeros(Bool, p), nlevels = zeros(Int, p), loss, rule, lo = -Inf, hi = Inf,
+        iscat = zeros(Bool, p), nlevels = zeros(Int, p), features = collect(1:p), loss, rule, lo = -Inf, hi = Inf,
         max_depth = 12, min_fit = 10.0, min_leaf = 5.0, min_sum_hessian = 1.0, max_lin_chain = 10,
         truncate = false, nthreads = nt, niter = 5, unith = false)
     rows = view(st.roworder, 1:n)
