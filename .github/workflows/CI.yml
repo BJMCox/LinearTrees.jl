@@ -19,6 +19,7 @@ jobs:
     permissions: # needed to allow julia-actions/cache to proactively delete old caches that it has created
       actions: write
       contents: read
+      id-token: write # Codecov authenticates with GitHub OIDC
     strategy:
       fail-fast: false
       matrix:
@@ -42,11 +43,13 @@ jobs:
         env:
           JULIA_NUM_THREADS: auto
       - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v6
+        if: matrix.version == '1.12'
+      - uses: codecov/codecov-action@v7
+        if: matrix.version == '1.12'
         with:
           files: lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+          use_oidc: true
+          fail_ci_if_error: true
   docs:
     name: Documentation
     runs-on: ubuntu-latest
@@ -64,7 +67,6 @@ jobs:
       - uses: julia-actions/julia-docdeploy@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
       - name: Run doctests
         shell: julia --project=docs --color=yes {0}
         run: |
@@ -72,3 +74,27 @@ jobs:
           using LinearTrees
           DocMeta.setdocmeta!(LinearTrees, :DocTestSetup, :(using LinearTrees); recursive=true)
           doctest(LinearTrees)
+      - name: Check out versioned documentation
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v6
+        with:
+          ref: gh-pages
+          path: docs-site
+      - uses: actions/upload-pages-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          path: docs-site
+  pages:
+    name: Publish documentation
+    needs: docs
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

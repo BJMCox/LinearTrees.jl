@@ -1,6 +1,5 @@
 # LinearTrees
 
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://BJMCox.github.io/LinearTrees.jl/stable/)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://BJMCox.github.io/LinearTrees.jl/dev/)
 [![Build Status](https://github.com/BJMCox/LinearTrees.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/BJMCox/LinearTrees.jl/actions/workflows/CI.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/BJMCox/LinearTrees.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/BJMCox/LinearTrees.jl)
@@ -54,3 +53,7 @@ r = shap(b, X)
 See the [documentation](https://BJMCox.github.io/LinearTrees.jl/dev/) for the
 full guide, the [boosting guide](https://BJMCox.github.io/LinearTrees.jl/dev/boosting/),
 the loss table, and the API reference.
+
+## License
+
+Apache License 2.0. Copyright 2026 Benjamin Cox. See [LICENSE](LICENSE).
