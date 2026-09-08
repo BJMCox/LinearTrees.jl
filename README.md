@@ -31,4 +31,6 @@ boosted_predictions = predict(boost, X[test, :])
 A prediction sums the linear models along its tree path.
 Pass `Logistic()` as the third fitting argument for binary probabilities.
 
+Portions of the code in this package were generated with the assistance of LLMs.
+
 [Documentation](https://bjmcox.github.io/LinearTrees.jl/dev/) · [Apache 2.0 license](LICENSE)
