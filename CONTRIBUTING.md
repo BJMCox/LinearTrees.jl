@@ -14,9 +14,11 @@ julia --project=docs docs/make.jl
 ```
 
 Generated HTML is in `docs/build`. Serve that directory with a local HTTP server
-to inspect it. CI retains the same build as a `documentation` artifact. After the
-tests and documentation pass on a non-pull-request build, GitHub Pages publishes
-the versioned Documenter site, including the development build at
+to inspect it. The Docs workflow retains a `documentation` artifact. After the
+documentation build and doctests pass on a non-pull-request build, GitHub Pages
+publishes
+the versioned Documenter site. Package tests and coverage run independently.
+The development build is at
 <https://bjmcox.github.io/LinearTrees.jl/dev/>.
 
 CI checks Julia 1.10 serially, current Julia with four threads on
