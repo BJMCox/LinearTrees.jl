@@ -2,6 +2,26 @@ using StableRNGs, InteractiveUtils
 import Distributions
 using Statistics
 
+@testset "rare-event logistic steps preserve the group signal" begin
+    X = reshape(vcat(zeros(90), ones(10)), :, 1)
+    y = vcat(1.0, zeros(89), ones(8), zeros(2))
+    w = ones(100)
+    baseline = deviance(Logistic(), y, fill(initscore(Logistic(), y, w), 100), w)
+    for truncate in (true, false)
+        tree = fit_tree(X, y, Logistic(); max_depth = 1, nthreads = 1, truncate)
+        p = predict(tree, X)
+        @test deviance(Logistic(), y, score(tree, X), w) < baseline
+        @test p[1] < mean(y) < p[end]
+    end
+    # Frequency weights represent the same sample, including when feature
+    # routing uses a category mask and arithmetic uses Float32.
+    compressed = reshape(Float32[1, 1, 2, 2], :, 1)
+    weighted = fit_tree(compressed, Float32[0, 1, 0, 1], Logistic();
+        weights = Float32[89, 1, 2, 8], categorical = [1], max_depth = 1, nthreads = 1)
+    replicated = fit_tree(X, y, Logistic(); max_depth = 1, nthreads = 1)
+    @test predict(weighted, compressed)[[1, 4]] ≈ predict(replicated, X)[[1, 100]] rtol = 2e-5
+end
+
 @testset "one lin node fit equals one IRLS step" begin
     rng = StableRNG(9)
     x = randn(rng, 200); X = reshape(x, 200, 1)

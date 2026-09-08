@@ -428,12 +428,20 @@ l1weight(l::Quantile, r) = r >= 0 ? oftype(r, l.τ) : oftype(r, 1 - l.τ)
 IRLS refinement of a non-smooth node's coefficients on its own rows, including
 `CON` leaves. Runs `st.niter` iterations (the `niter` keyword on `fit_tree`);
 each recomputes the pseudo-hessian at the current node prediction and
-re-solves the chosen model kind. Smooth losses return `n` unchanged. Takes and
-returns a `Node` value rather than a tree index, so it works the same on a
+re-solves the chosen model kind. Logistic nodes and their binary softmax and
+LogitMarginLoss equivalents backtrack an ascending Newton step against weighted
+log loss. Other smooth losses return `n` unchanged. Takes and returns a `Node`
+value rather than a tree index, so it works the same on a
 node still local to a growing subtree. `tid` selects the caller's own worker
 scratch (`st.scratch[tid]`), reused as refit buffer storage.
 """
-refit_node(st, n, rows, tid, masks = UInt64[]) = issmooth(st.loss) ? n : irls_refit(st, n, rows, tid, st.niter, masks)
+function refit_node(st, n, rows, tid, masks = UInt64[])
+    backtracks(st.loss) && return logistic_backtrack(st, n, rows, tid, masks)
+    return issmooth(st.loss) ? n : irls_refit(st, n, rows, tid, st.niter, masks)
+end
+
+backtracks(::Loss) = false
+backtracks(::Union{Logistic,Softmax{2}}) = true
 
 # ---- init score ------------------------------------------------------------
 wmean(y, w) = sum(w .* y) / sum(w)
@@ -550,7 +558,7 @@ function _validate(::Softmax{K}, y) where {K}
 end
 
 # ---- LossFunctions.jl adapter -----------------------------------------------
-using LossFunctions: SupervisedLoss, DistanceLoss, MarginLoss, L2DistLoss, L1DistLoss, QuantileLoss, PoissonLoss, deriv, deriv2
+using LossFunctions: SupervisedLoss, DistanceLoss, MarginLoss, L2DistLoss, L1DistLoss, QuantileLoss, PoissonLoss, LogitMarginLoss, deriv, deriv2
 
 "Score-space link between the tree's raw score and the value the inner loss expects."
 struct IdentityLink end
@@ -571,6 +579,8 @@ struct AdaptedLoss{L<:SupervisedLoss,K} <: Loss
     link::K
     scale::Float64
 end
+
+backtracks(::AdaptedLoss{<:LogitMarginLoss}) = true
 
 "Newton-step scale that lines an inner loss up with the matching native `Loss`."
 canonical_scale(::L2DistLoss) = 0.5

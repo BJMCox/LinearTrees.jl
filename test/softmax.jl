@@ -12,6 +12,15 @@ using StableRNGs, StaticArrays, Statistics
     @test [n.model for n in ts.nodes] == [n.model for n in tl.nodes]
 end
 
+@testset "binary softmax preserves logistic damping" begin
+    X = reshape([0.0, 0.0, 1.0, 1.0], :, 1)
+    y = [0.0, 1.0, 0.0, 1.0]
+    w = [89.0, 1.0, 2.0, 8.0]
+    logistic = fit_tree(X, y, Logistic(); weights = w, max_depth = 1)
+    softmax = fit_tree(X, Int.(2 .- y), Softmax(2); weights = w, max_depth = 1)
+    @test predict(softmax, X)[:, 1] ≈ predict(logistic, X)
+end
+
 @testset "softmax probabilities sum to one and recover classes" begin
     rng = StableRNG(17)
     n = 600; X = randn(rng, n, 2)

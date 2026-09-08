@@ -9,6 +9,15 @@ import Distributions
     @test [n.model for n in t1.nodes] == [n.model for n in t2.nodes]
 end
 
+@testset "LogitMarginLoss adapter preserves logistic damping" begin
+    X = reshape([0.0, 0.0, 1.0, 1.0], :, 1)
+    y = [0.0, 1.0, 0.0, 1.0]
+    w = [89.0, 1.0, 2.0, 8.0]
+    native = fit_tree(X, y, Logistic(); weights = w, max_depth = 1)
+    adapted = fit_tree(X, y, Loss(LogitMarginLoss(), LinearTrees.LogitLink()); weights = w, max_depth = 1)
+    @test predict(adapted, X) ≈ predict(native, X)
+end
+
 @testset "LogitMarginLoss adapter equals Logistic on {0,1} targets" begin
     rng = StableRNG(25)
     X = randn(rng, 200, 2); y = Float64.(X[:, 1] .+ 0.3 .* randn(rng, 200) .> 0)

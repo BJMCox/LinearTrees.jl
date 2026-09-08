@@ -6,9 +6,8 @@ CurrentModule = LinearTrees
 
 Every node fit is a weighted least squares on second-order statistics: one
 Newton step of the loss, `z = -g/h` at weight `h`, minimising
-`Σ h (z - f(x))²`. The fitter never sees the loss name, only `g`, `h`, the
-link, and the score interval below. `μ = exp(f)` and `p = σ(f)` throughout,
-with `f` the raw score.
+`Σ h (z - f(x))²`. Loss-specific refinement follows model selection as
+described below. `μ = exp(f)` and `p = σ(f)` throughout, with `f` the raw score.
 
 | loss | `g` | `h` | link | score interval |
 |------|-----|-----|------|----------------|
@@ -33,6 +32,22 @@ rows are dropped before fitting.
 `diag(p) - p pᵀ` restricted to its diagonal: a per-class approximation, not
 the exact joint Newton step. For `K = 2` this is `Logistic`'s own `p(1-p)`
 exactly, since there is only one non-reference logit.
+
+## Logistic step safeguard
+
+Standalone `Logistic` trees, binary `Softmax(2)` trees, and the `LogitMarginLoss`
+adapter check each selected node's Newton increment against
+weighted training log loss. They retain a full step when it does not increase
+loss. Otherwise they halve all of the node's coefficients together until loss
+does not increase, or use a zero increment if no step down to machine epsilon
+succeeds. The check includes score and feature truncation when enabled.
+
+This limits overshoot when probabilities near zero or one make the Hessian
+small. It guarantees node-wise training-loss descent up to rounding, not a
+per-node maximum-likelihood fit or held-out probability calibration. Split
+selection and reported gains still use the quadratic surrogate. `niter` does
+not control this safeguard. Other losses, including boosting's `Frozen` trees,
+keep their existing updates.
 
 ## IRLS for non-smooth losses
 

@@ -1170,22 +1170,51 @@ function node_sums(st::FitState{T,V}, rows) where {T,V}
     return s
 end
 
+@inline function node_increment(st::FitState, n::Node, i, masks)
+    isleaf(n) && return n.lintercept
+    goleft = goes_left(st, n, i, masks)
+    iscategorical(n) && return goleft ? n.lintercept : n.rintercept
+    x = st.X[i, n.feature]
+    x = st.truncate ? min(max(x, n.xmin), n.xmax) : x
+    return goleft ? n.lcoef * x + n.lintercept : n.rcoef * x + n.rintercept
+end
+
+# Small logistic Hessians can turn a useful Newton direction into a disastrous
+# full step. Keep a descending full step; otherwise halve it until the actual
+# weighted loss descends, including the same truncation used during prediction.
+function logistic_backtrack(st::FitState{T,V}, n::Node{T,V}, rows, tid, masks) where {T,V}
+    # Search has finished and partition has not started, so this worker's
+    # response buffer is free, as it is during the non-smooth IRLS refit.
+    inc = st.scratch[tid].zs
+    ensure_len!(inc, length(rows))
+    baseline = zero(T)
+    for (k, i) in enumerate(rows)
+        inc[k] = node_increment(st, n, i, masks)
+        baseline += st.w[i] * pointloss(st.loss, st.y[i], st.f[i])
+    end
+    scale = one(T)
+    while scale >= eps(T)
+        candidate = zero(T)
+        for (k, i) in enumerate(rows)
+            f = st.f[i] + scale * inc[k]
+            f = st.truncate ? clampscore(f, st.lo, st.hi) : f
+            candidate += st.w[i] * pointloss(st.loss, st.y[i], f)
+        end
+        if isfinite(candidate) && candidate <= baseline
+            scale == one(T) && return n
+            return Node{T,V}(n; lcoef = scale * n.lcoef, lintercept = scale * n.lintercept,
+                rcoef = scale * n.rcoef, rintercept = scale * n.rintercept)
+        end
+        scale /= 2
+    end
+    return Node{T,V}(n; lcoef = zero(V), lintercept = zero(V),
+        rcoef = zero(V), rintercept = zero(V))
+end
+
 "Add node `n`'s piece to the score of `rows`, then clamp. `masks` is the pool `n.catstart` indexes into (see `goes_left`)."
 function update_score!(st::FitState, rows, n::Node, masks::Vector{UInt64} = UInt64[])
     for i in rows
-        if isleaf(n)
-            inc = n.lintercept
-        else
-            goleft = goes_left(st, n, i, masks)
-            if iscategorical(n)
-                inc = goleft ? n.lintercept : n.rintercept
-            else
-                x = st.X[i, n.feature]
-                x = st.truncate ? min(max(x, n.xmin), n.xmax) : x
-                inc = goleft ? n.lcoef * x + n.lintercept : n.rcoef * x + n.rintercept
-            end
-        end
-        s = st.f[i] + inc
+        s = st.f[i] + node_increment(st, n, i, masks)
         st.f[i] = st.truncate ? clampscore(s, st.lo, st.hi) : s
     end
     return st
