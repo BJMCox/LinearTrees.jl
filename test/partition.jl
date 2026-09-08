@@ -87,17 +87,30 @@ function partition_holdout(X, kw)
 end
 
 # Low-gain nodes may differ when Julia or `--check-bounds` changes floating-point
-# reduction order. Their public model function must still reproduce the recorded
-# fit on data independent of the fitting sample. The direct partition tests above
-# separately lock the stable row-set and ordering recurrence.
-@testset "partitioned growth reproduces recorded held-out scores" begin
+# reduction order. Scalar fits must still reproduce the recorded function. For
+# Softmax, a negligible gain can change a saturated reference logit by order one
+# with nearly identical probabilities and unchanged decisions, so use the known held-out
+# class rule and require confident, correct public predictions instead. The direct
+# partition tests above separately lock the stable row-set and ordering recurrence.
+@testset "partitioned growth preserves held-out model behavior" begin
     for (name, X, y, loss, kw) in partition_cases()
         ref = from_dict(JSON3.read(read(joinpath(@__DIR__, "fixtures", "partition", "$name.json"), String), Dict{String,Any}))
         Xhold = partition_holdout(X, kw)
         expected = score(ref, Xhold; clip = false)
         for nt in (1, Threads.nthreads())
-            t = fit_tree(X, y, loss; nthreads = nt, kw...)
-            @test all(isapprox.(score(t, Xhold; clip = false), expected; rtol = 1e-6, atol = 1e-6))
+            @testset "$name with $nt threads" begin
+                t = fit_tree(X, y, loss; nthreads = nt, kw...)
+                if loss isa Softmax
+                    truth = [Xhold[i, 2] > 0.5 ? 1 : Xhold[i, 1] <= 4 ? 2 : 3 for i in axes(Xhold, 1)]
+                    probability = predict(t, Xhold)
+                    @test argmax.(eachrow(probability)) == truth
+                    mean_nll = -sum(log(probability[i, truth[i]]) for i in eachindex(truth)) / length(truth)
+                    # Geometric mean probability of the true class exceeds exp(-0.01).
+                    @test mean_nll < 0.01
+                else
+                    @test all(isapprox.(score(t, Xhold; clip = false), expected; rtol = 1e-6, atol = 1e-6))
+                end
+            end
         end
     end
 end
