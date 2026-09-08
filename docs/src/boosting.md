@@ -2,111 +2,143 @@
 CurrentModule = LinearTrees
 ```
 
-# Boosting
+# Boosted trees
 
-[`fit_boost`](@ref) fits a gradient-boosted ensemble of PILOT-style linear
-model trees. At each round it evaluates the base loss at the current ensemble
-score, floors each Hessian coordinate `h0[i, k]` at `HMIN`, and forms
-`z0[i, k] = -g0[i, k] / h0[i, k]`. It then fits a [`Frozen`](@ref) tree to
-minimise `½ Σᵢ Σₖ wᵢ h0ᵢₖ (τₖ(xᵢ) - z0ᵢₖ)²`. Scalar losses have one score
-coordinate. `Softmax(K)` has `K - 1` coordinates, and `τₖ` is the new tree's
-score in coordinate `k`.
-The new raw tree score is multiplied by `eta` and added to the ensemble. This
-is the second-order piecewise-linear boosting objective of [Guryanov
-(2019)](https://doi.org/10.1007/978-3-030-37334-4_4) and [Shi, Li, and Li
-(2019)](https://doi.org/10.24963/ijcai.2019/476).
+[`fit_boost`](@ref) builds an additive ensemble of linear model trees.
+Each round fits one tree to the current loss gradient and Hessian.
+The learning rate `eta` scales that tree before adding it to the ensemble.
 
-## Quick start
+Use boosting when one tree cannot capture enough structure.
+Start with shallow trees and a small learning rate.
+Use separate validation data to choose the retained number of rounds.
 
-Keep validation rows separate from fitting rows. This example uses the first
-40 rows only for validation and the remaining rows only for fitting.
+## Fit an ensemble
+
+The matrix interface accepts observations in rows and features in columns.
+Choose the loss explicitly when the default [`MSE`](@ref) does not match the target.
 
 ```@example boosting
-using LinearTrees, Random
+using LinearTrees
+using Random
 
 rng = Xoshiro(42)
 X = rand(rng, 160, 3)
-y = sin.(3 .* X[:, 1]) .+ X[:, 2] .* X[:, 3] .+ 0.1 .* randn(rng, 160)
-train, valid = 41:160, 1:40
+y = sin.(3 .* X[:, 1]) .+ X[:, 2] .* X[:, 3] .+ 0.05 .* randn(rng, 160)
 
-boost = fit_boost(X[train, :], y[train]; nrounds = 20, eta = 0.05,
-    max_depth = 3, Xval = X[valid, :], yval = y[valid], patience = 5)
-predictions = predict(boost, X)
-attributions = shap(boost, X)
-nothing
+model = fit_boost(X, y;
+    nrounds = 40,
+    eta = 0.1,
+    max_depth = 3,
+    rng = Xoshiro(7),
+)
+
+yhat = predict(model, X)
+(nrounds(model), model.history[end], yhat[1:3])
 ```
 
-`predict` applies the base loss link. [`score`](@ref) returns the score scale;
-use `score(boost, X; clip = false)` to inspect the raw ensemble sum.
+[`predict`](@ref) returns values on the response scale.
+[`score`](@ref) returns values on the loss score scale.
+These scales match for identity-link losses such as `MSE`.
+They differ for losses such as [`Logistic`](@ref), [`Poisson`](@ref), and [`Softmax`](@ref).
 
-## Base-tree selection and sampling
+## Use held-out validation
 
-Each base tree uses [`GainRule`](@ref), which permits constant, piecewise
-constant, and piecewise linear nodes. `lambda_slope` and
-`lambda_intercept` add L2 penalties to the slope and intercept closed forms,
-as derived by [Guryanov (2019)](https://doi.org/10.1007/978-3-030-37334-4_4).
-A split candidate is accepted exactly when
-`dev_con(parent) - (dev_candidate(left) + dev_candidate(right)) > gamma * ncoord`.
-Here `dev_candidate` is the candidate child's regularised deviance. `PCON`
-uses constant children, while `PLIN` uses linear children; each child deviance
-includes the corresponding ridge penalty.
-The strict `gamma` gain floor follows [Chen and
-Guestrin (2016)](https://doi.org/10.1145/2939672.2939785).
+Pass `Xval` and `yval` together.
+Pass `wval` when validation observations have weights.
+The fitter records validation deviance after each round.
+It stops after `patience` rounds without improvement.
+It then retains the trees through the best validation round.
 
-`subsample` samples `max(1, round(Int, subsample * n))` fitting rows without
-replacement for each tree. `colsample` samples `ceil(Int, colsample * p)`
-features. Both draws use `rng`; pass a seeded `Xoshiro` to reproduce a fit.
-Direct `fit_boost` requires an `AbstractRNG` and advances it, so reproduce a
-fit with a freshly seeded RNG. MLJ accepts either a supplied `AbstractRNG`,
-which it advances, or an integer seed, which starts a fresh `Xoshiro` on each
-fit. Sampled-out rows receive zero weight for that tree, while every row
-receives its fitted score update.
+```@example boosting-validation
+using LinearTrees
+using Random
 
-## Validation and truncation
+rng = Xoshiro(19)
+X = rand(rng, 180, 3)
+y = 2 .* X[:, 1] .+ sin.(5 .* X[:, 2]) .+ 0.2 .* randn(rng, 180)
 
-Pass `Xval` and `yval` together to record validation deviance after each
-round. Fitting stops after `patience` rounds without an improvement and keeps
-only trees through the best validation round. Then `history` stores the kept
-validation deviances and `validated` is true. Without validation data,
-`history` stores training deviance for every fitted tree and no early stopping
-runs. `nrounds(boost)` is the number of retained trees, not attempted rounds.
+train = 1:140
+valid = 141:180
+model = fit_boost(X[train, :], y[train];
+    Xval = X[valid, :],
+    yval = y[valid],
+    nrounds = 100,
+    patience = 8,
+    eta = 0.1,
+    max_depth = 3,
+)
 
-The ensemble forms `f0 + eta * sum(tree scores)` before it clamps the score
-once to the training loss bounds. This score clamp applies only when
-`truncate = true`; `predict` then applies the loss link. Feature truncation
-inside each tree also follows `truncate`; see [Truncation](@ref).
-
-## Interpretation and non-smooth losses
-
-[`shap`](@ref) is path-dependent TreeSHAP over the raw ensemble score. Its
-base is `f0 + eta * sum(expected_score(tree))`, and each row's SHAP values
-sum to its unclipped score minus that base. `ShapResult.clipped` marks rows
-whose final ensemble clamp changed the score. [`feature_importance`](@ref)
-sums split gains across trees. [`coeftable`](@ref) returns the local slope and
-intercept of the unclipped ensemble score.
-
-For [`Quantile`](@ref) and [`MAD`](@ref), a boosting round freezes the IRLS
-weight at the current ensemble score. It is one IRLS boosting step, not an
-exact L1 boosting step. A single non-smooth tree instead performs its own
-five-pass node refit; see [IRLS for non-smooth losses](@ref).
-
-## Printing and persistence
-
-Use `TreeView(boost, t)` to print base tree `t` with `AbstractTrees.print_tree`.
-The package writes no boosted-model schema. Persist a `LinearBoost` directly
-with JLD2, then load the same object graph:
-
-```julia
-using JLD2
-JLD2.jldsave("boost.jld2"; boost)
-boost = JLD2.load("boost.jld2", "boost")
+(model.validated, nrounds(model), length(model.history))
 ```
 
-## Interfaces
+`model.history[t]` contains the retained validation deviance after round `t`.
+Without validation data, it contains training deviance for every fitted round.
+Early stopping only runs when validation data is present.
+[`nrounds`](@ref) reports the retained tree count.
 
-For StatsAPI and Tables.jl inputs, use [`LinearBoostRegressorFit`](@ref) or
-[`LinearBoostClassifierFit`](@ref) through `fit`. The classifier chooses
-`Logistic` for two classes and `Softmax` otherwise. For MLJ, use
-[`LinearBoostRegressor`](@ref) or [`LinearBoostClassifier`](@ref). MLJ treats
-`nrounds` as its iteration parameter and reports `history`; use MLJ's
-`IteratedModel` when you need validation-based stopping.
+Keep validation rows independent from fitting rows.
+Repeated tuning against one validation set can still overfit that set.
+
+## Control the ensemble
+
+`nrounds` sets the maximum tree count.
+`eta` sets every tree's contribution.
+Smaller `eta` usually needs more rounds.
+`max_depth`, `min_fit`, `min_leaf`, and `min_sum_hessian` limit tree growth.
+
+Each base tree uses [`GainRule`](@ref).
+`lambda_slope` penalizes fitted slopes.
+`lambda_intercept` penalizes fitted intercept updates.
+`gamma` requires more gain before accepting a split.
+All three values must be finite and nonnegative.
+
+`subsample` selects a fraction of training rows for each tree.
+`colsample` selects a fraction of features for each tree.
+Both values lie in `(0, 1]`.
+Sampling occurs without replacement.
+Sampled-out rows still receive the fitted tree's update.
+
+Pass a freshly seeded `AbstractRNG` to reproduce a sampled fit.
+The fitter advances the supplied generator.
+Thread count does not change a fit made from the same random stream.
+
+```@example boosting-options
+using LinearTrees
+using Random
+
+rng = Xoshiro(31)
+X = rand(rng, 120, 5)
+y = X[:, 1] .- 2 .* X[:, 3] .+ 0.1 .* randn(rng, 120)
+
+model = fit_boost(X, y;
+    nrounds = 25,
+    eta = 0.05,
+    max_depth = 2,
+    lambda_slope = 2.0,
+    lambda_intercept = 1.0,
+    gamma = 0.1,
+    subsample = 0.8,
+    colsample = 0.6,
+    rng = Xoshiro(11),
+)
+
+nrounds(model)
+```
+
+Choose a split search as described in [Performance](performance.md).
+Approximate searches have extra loss and feature restrictions.
+
+## Understand scores and truncation
+
+The raw ensemble score is `f0 + eta * sum(tree scores)`.
+Call `score(model, X; clip = false)` to obtain that sum.
+With `truncate = true`, [`score`](@ref) clamps the sum to bounds derived from the training target.
+[`predict`](@ref) applies the loss link after this clamp.
+
+Truncation also bounds numeric features inside each base tree.
+Set `truncate = false` to disable both forms of truncation.
+Inspect [Interpreting models](interpretation.md) before comparing explanations with clipped predictions.
+
+For [`Quantile`](@ref) and [`MAD`](@ref), each round freezes one set of IRLS weights.
+Thus, each boosted round performs one IRLS step.
+See [Losses](losses.md) for loss-specific score and response behavior.

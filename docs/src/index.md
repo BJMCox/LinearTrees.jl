@@ -2,52 +2,78 @@
 CurrentModule = LinearTrees
 ```
 
-# LinearTrees
+# LinearTrees.jl
 
-LinearTrees fits PILOT-style linear model trees: each node is either a
-constant, a simple line, a broken line, or a pair of lines, chosen by a BIC
-selection rule at every split. The fitter works for any twice-differentiable
-loss (or an IRLS-approximated one), covers categorical features and sample
-weights, and includes split-gain feature importance and path-dependent
-TreeSHAP. [`fit_boost`](@ref) adds second-order gradient boosting with these
-linear trees as base learners.
+LinearTrees fits decision trees with linear models along their paths. A tree
+can represent both smooth trends and abrupt changes. Gradient boosting combines
+these trees into an ensemble.
 
-See the [Guide](@ref) for model kinds, selection, and truncation, and
-[Losses](@ref) for the loss table. See [Boosting](@ref) for ensembles,
-validation stopping, sampling, interpretation, and persistence.
+Use the package for regression, classification, count prediction, and quantile
+regression on tabular data. It supports frequency weights, categorical features,
+exact and approximate split search, local coefficients, and SHAP values.
 
-## Quick start
+## Installation
+
+LinearTrees requires Julia 1.10 or later. Install the development version from
+GitHub in your project environment:
 
 ```julia
-using LinearTrees
-using AbstractTrees     # for print_tree
+using Pkg
+Pkg.add(url = "https://github.com/BJMCox/LinearTrees.jl")
+```
 
-X = rand(1000, 4)
-y = sin.(3 .* X[:, 1]) .+ 2 .* X[:, 2] .* (X[:, 3] .> 0.5) .+ 0.05 .* randn(1000)
+## A first model
+
+Rows are observations and columns are features. Fit with [`fit_tree`](@ref)
+and evaluate new rows with [`predict`](@ref):
+
+```@example home
+using LinearTrees, Random
+
+rng = Xoshiro(42)
+X = rand(rng, 300, 3)
+y = 2 .* X[:, 1] .- X[:, 2] .+ 3 .* (X[:, 3] .> 0.6)
 
 tree = fit_tree(X, y; max_depth = 4)
-ŷ = predict(tree, X)
-
-print_tree(TreeView(tree))
-
-φ = shap(tree, X)          # φ.values[i, j] is feature j's SHAP value for row i
+Xnew = rand(rng, 5, 3)
+round.(predict(tree, Xnew); digits = 3)
 ```
 
-## Performance
+The default loss is squared error. Choose another [loss](losses.md) for
+probabilities, counts, positive responses, or conditional quantiles.
+Use [`fit_boost`](@ref) for an ensemble.
 
-`fit_tree` grows sibling subtrees concurrently, each on one scratch set: four
-vectors plus an `Int32` buffer. It allocates two sets per worker, so a task
-blocked on a sibling never denies a runnable one its buffers, and exactly one
-set at `nthreads = 1`. A set's vectors start empty and grow only to the
-largest node that set is used on, which is what keeps the second set per
-worker affordable: on a 200_000-row, 20-column `MSE` fit at ten threads the
-live scratch measures about 80 MiB, varying with the borrow pattern, against
-137 MiB if all twenty sets were sized to `n` up front and 69 MiB for one
-eagerly sized set per worker. The `n × p`
-`Int32` presort sits next to it. For `Softmax(K)` two of the four vectors hold
-`K-1` coordinates per row, so their share grows by that factor.
+## Learn the package
 
-## Index
+| Goal | Page |
+|:--|:--|
+| Fit and assess your first model | [Getting started](guide.md) |
+| Understand a tree and control its size | [Tree fitting](trees.md) |
+| Train an ensemble with validation | [Boosting](boosting.md) |
+| Match the loss to your target | [Loss functions](losses.md) |
+| Explain fitted predictions | [Interpretation](interpretation.md) |
+| Use tables, MLJ, or saved models | [Interfaces and persistence](interfaces.md) |
+| Choose split search and threading | [Performance](performance.md) |
+| Look up a function or type | [API reference](api.md) |
 
-```@index
-```
+## Model scope
+
+Tree growth follows the [PILOT approach](https://doi.org/10.1007/s10994-024-06590-3), extended here to several losses and
+boosted ensembles. Linear terms are fitted one feature at a time. A prediction
+can involve several features because it sums terms along a path.
+
+The package returns point predictions, class probabilities, or conditional
+quantiles according to the loss. It does not provide Bayesian posterior
+distributions, predictive intervals, missing-value imputation, or pruning.
+Class probabilities do not carry a calibration guarantee.
+
+The original algorithm is described by Raymaekers, Rousseeuw, Verdonck, and Yao
+(2024), *Fast linear model trees by PILOT*, Machine Learning 113, 6561–6610.
+
+## License and support
+
+LinearTrees uses the [Apache License 2.0](https://github.com/BJMCox/LinearTrees.jl/blob/main/LICENSE).
+Copyright 2026 Benjamin Cox.
+
+Report bugs and request features through the
+[issue tracker](https://github.com/BJMCox/LinearTrees.jl/issues).

@@ -4,14 +4,31 @@ CurrentModule = LinearTrees
 
 # API reference
 
-## Fitting and prediction
+The matrix API returns a tree or ensemble. StatsAPI wrappers add table encoding
+and stored training data. MLJ models integrate with machines and resampling.
+Start with [Getting started](guide.md) for a complete fitting workflow.
+
+## Fit and predict
+
+Use `fit_tree` for one tree and `fit_boost` for an ensemble. `predict` returns
+responses, while `score` returns values on the loss scale.
 
 ```@docs
 fit_tree
+fit_boost
 predict
 predict!
 score
+```
+
+## Fitted models and node kinds
+
+These types describe the stored model. Fit models through the functions above.
+
+```@docs
 LinearTree
+LinearBoost
+nrounds
 Node
 ModelKind
 CON
@@ -21,33 +38,24 @@ BLIN
 PLIN
 ```
 
-## Selection rules
+## Model selection and split search
+
+Selection rules compare node models. Search policies choose numeric thresholds.
+See [Tree fitting](trees.md) and [Performance](performance.md) for their distinct roles.
 
 ```@docs
 BIC
 MinDeviance
 GainRule
-```
-
-## Split search
-
-```@docs
 SplitSearch
 ExactSearch
 BinnedSearch
 HybridSearch
 ```
 
-## Boosting API
-
-```@docs
-fit_boost
-LinearBoost
-nrounds
-Frozen
-```
-
 ## Loss types and functions
+
+See [Loss functions](losses.md) for target domains and prediction scales.
 
 ```@docs
 Loss
@@ -61,6 +69,7 @@ NegBin
 Gamma
 Tweedie
 Softmax
+Frozen
 gradhess!
 linkinv
 initscore
@@ -81,6 +90,9 @@ canonical_scale
 ```
 
 ## Interpretation
+
+These functions describe fitted scores. See [Interpretation](interpretation.md)
+for reconstruction identities and the effect of clipping.
 
 ```@docs
 feature_importance
@@ -120,4 +132,9 @@ LinearBoostClassifier
 TreeView
 to_dict
 from_dict
+```
+
+## Index
+
+```@index
 ```

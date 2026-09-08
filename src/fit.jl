@@ -227,14 +227,42 @@ function FitState{T,V,Y,L,R}(; scratch, split_search::SplitSearch = ExactSearch(
 end
 
 """
-    fit_tree(X, y, loss=MSE(); kwargs...)
+    fit_tree(X, y, loss=MSE(); kwargs...) -> LinearTree
 
-Fit a PILOT-style linear model tree. See the design spec section 4 for the
-keyword contract. `niter` is the number of IRLS refit passes non-smooth
-losses (`MAD`, `Quantile`) take at each node; smooth losses ignore it.
-`split_search=ExactSearch()` evaluates all eligible numeric thresholds.
-Use [`BinnedSearch`](@ref) for node-local bins, or [`HybridSearch`](@ref) for
-global bins with local refinement. Both offer approximate scalar-score fitting.
+Fit a linear model tree to the rows of numeric matrix `X` and target vector `y`.
+Columns are features. Targets must satisfy the domain of `loss`; feature values
+must be finite. Use [`predict`](@ref) for response-scale predictions and
+[`score`](@ref) for scores on the loss scale.
+
+# Keywords
+
+- `weights=nothing`: nonnegative frequency weights, with a positive total.
+  The default gives every row weight one. Zero-weight rows are excluded.
+- `categorical=Int[]`: columns containing positive integer category codes.
+- `rule=BIC()`: node selection rule. See [`BIC`](@ref) and [`GainRule`](@ref).
+- `split_search=ExactSearch()`: numeric threshold search. [`BinnedSearch`](@ref)
+  and [`HybridSearch`](@ref) offer approximate search for scalar-score losses.
+- `max_depth=12`: maximum branching depth. Unsplit `LIN` nodes add no depth.
+- `min_fit=10`: minimum total row weight for another model-selection step.
+- `min_leaf=5`: minimum total row weight on each side of a split.
+- `min_sum_hessian=1.0`: stop below this total Hessian, summed over score coordinates.
+- `max_lin_chain=10`: maximum number of consecutive unsplit linear nodes.
+- `truncate=true`: bound score accumulation and each node's feature extrapolation.
+- `truncation_factor=3`: parameter passed to [`scorebound`](@ref). Must be at least one.
+- `features=1:size(X, 2)`: feature columns available for fitting. Prediction
+  still expects the original matrix layout.
+- `nthreads=Threads.nthreads()`: maximum number of available Julia threads to use.
+- `niter=5`: node-refit iterations for non-smooth losses such as `MAD` and
+  `Quantile`. Smooth losses ignore this keyword.
+- `presort=nothing`: optional `Int32` matrix of stable sorted row indices,
+  one column per original feature. Used by exact and local-bin search.
+
+Nodes add score increments along a path. Model selection uses a quadratic
+surrogate for nonquadratic losses. Logistic updates also check true training
+loss before accepting a full step. No pruning pass follows growth.
+
+For table inputs and stored encoders, use [`LinearTreeRegressorFit`](@ref) or
+[`LinearTreeClassifierFit`](@ref) through [`fit`](@ref).
 """
 function fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         weights = nothing, categorical = Int[], rule::SelectionRule = BIC(),
