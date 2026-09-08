@@ -1,6 +1,6 @@
 name = "LinearTrees"
 uuid = "8dcaa25b-be43-4b0a-960a-aaf476051ed8"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Ben Cox <bcox@mpp.mpg.de>"]
 
 [deps]

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — initial 0.1.0
+## Unreleased — initial 0.0.1
 
 - Add PILOT-style linear model trees and boosted ensembles for regression and classification.
 - Add exact, binned, and hybrid split searches with threaded fitting and prediction.
