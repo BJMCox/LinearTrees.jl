@@ -7,7 +7,7 @@ makedocs(;
     root=@__DIR__,
     repo=Documenter.Remotes.GitHub("BJMCox", "LinearTrees.jl"),
     modules=[LinearTrees],
-    authors="Benjamin Cox <bcox@mpp.mpg.de>",
+    authors="Jessica Cox <bcox@mpp.mpg.de>",
     sitename="LinearTrees.jl",
     checkdocs=:exports,
     doctest=true,

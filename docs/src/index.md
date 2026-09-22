@@ -77,7 +77,7 @@ The original algorithm is described by Raymaekers, Rousseeuw, Verdonck, and Yao
 ## License and support
 
 LinearTrees uses the [Apache License 2.0](https://github.com/BJMCox/LinearTrees.jl/blob/main/LICENSE).
-Copyright 2026 Benjamin Cox.
+Copyright 2026 Jessica Cox (<bcox@mpp.mpg.de>, <jmcox@posteo.de>).
 
 Report bugs and request features through the
 [issue tracker](https://github.com/BJMCox/LinearTrees.jl/issues).
