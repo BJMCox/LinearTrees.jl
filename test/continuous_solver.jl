@@ -1,4 +1,5 @@
 const CTreeCore = LinearTrees.Continuous
+using StableRNGs
 
 function exact_rational_rank(A)
     B = Rational{BigInt}.(A)
@@ -155,6 +156,7 @@ end
         @test length(reused.moves) > 1
         @test reused.moves == rebuilt.moves
         @test reused.evaluations == rebuilt.evaluations
+        @test reused.skipped_dimension == rebuilt.skipped_dimension > 0
         @test reused.history ≈ rebuilt.history atol=3e-9 rtol=3e-9
         @test reused.rawcoef ≈ rebuilt.rawcoef atol=3e-9 rtol=3e-9
         reused_cov = reused.N * (reused.post.precision \ reused.N')
@@ -176,6 +178,53 @@ end
     svd_basis = CTreeCore._nullspace_svd(C)
     @test size(qr_basis, 2) == size(svd_basis, 2) == 625
     @test qr_basis * qr_basis' ≈ svd_basis * svd_basis' atol=2e-9 rtol=2e-9
+end
+
+@testset "Sparse constraints preserve the tree posterior" begin
+    p = 8
+    interactions = [(j, k) for j in 1:p for k in j+1:p]
+    nodes = CTreeCore.grow(CTreeCore.root(p), 1, 1, 0.1)
+    nodes = CTreeCore.grow(nodes, 2, 2, -0.2)
+    nodes = CTreeCore.grow(nodes, 3, 2, -0.2)
+    X = 2rand(StableRNG(812), 128, p) .- 1
+    Y = hcat((@. 1 + abs(X[:, 1] - 0.1) + X[:, 2] * X[:, 3]),
+        (@. X[:, 4] - 2abs(X[:, 2] + 0.2)))
+    model = CTreeCore.fit_fixed(nodes, X, Y; pairs=interactions)
+    reference = CTreeCore.fit_fixed(nodes, X, Y; pairs=interactions, solver=:svd)
+    C = CTreeCore._constraints(nodes, model.leaves, p, model.terms)
+    sparse_basis = CTreeCore._try_nullspace_spqr(C)
+    @test sparse_basis !== nothing
+    @test sparse_basis * sparse_basis' ≈ reference.N * reference.N' atol=2e-9 rtol=2e-9
+    @test model.N * model.N' ≈ reference.N * reference.N' atol=2e-9 rtol=2e-9
+    @test model.N' * model.N ≈ I atol=2e-10 rtol=2e-10
+    @test norm(C * model.N) <= 2e-10 * norm(C)
+    @test model.rawcoef ≈ reference.rawcoef atol=2e-9 rtol=2e-9
+    @test model.post.rate ≈ reference.post.rate atol=2e-9 rtol=2e-9
+    @test model.post.score ≈ reference.post.score atol=2e-9 rtol=2e-9
+    @test model.N * (model.post.precision \ model.N') ≈
+        reference.N * (reference.post.precision \ reference.N') atol=2e-9 rtol=2e-9
+    @test CTreeCore.predict(model, X) ≈ CTreeCore.predict(reference, X) atol=2e-9 rtol=2e-9
+    for (left, right, point) in independent_face_samples(nodes, model.leaves)
+        @test leaf_polynomial(model, left, point) ≈
+            leaf_polynomial(model, right, point) atol=2e-9
+    end
+end
+
+@testset "Sparse QR numerical rank guards" begin
+    # Many individually tiny discarded columns can form a significant direction.
+    k = 625
+    C = zeros(k + 1, 3)
+    C[1, 1] = 1
+    C[2:end, 2] .= (k + 1) * eps(Float64) / 20
+    @test CTreeCore._try_nullspace_spqr(C) === nothing
+
+    # Kahan's matrix has healthy pivots but a singular value below the rank cutoff.
+    n, sine = 60, 0.8
+    cosine = sqrt(1 - sine^2)
+    A = Diagonal(sine.^(0:n-1)) *
+        (Matrix{Float64}(I, n, n) - cosine * triu(ones(n, n), 1))
+    C = Matrix(transpose(A))
+    @test CTreeCore._try_nullspace_spqr(C) === nothing
 end
 
 @testset "Graph pruning retains sibling refinements" begin

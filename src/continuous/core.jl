@@ -1,6 +1,7 @@
 module Continuous
 
 using LinearAlgebra
+using SparseArrays
 
 struct TreeNode
     feature::Int
@@ -181,7 +182,7 @@ function _nullspace_svd(C::Matrix{Float64})
 end
 
 "Pivoted-QR nullspace with conservative SVD fallbacks for uncertain rank."
-function _nullspace_qr(C::Matrix{Float64})
+function _nullspace_dense_qr(C::Matrix{Float64})
     width = size(C, 2)
     size(C, 1) == 0 && return Matrix{Float64}(I, width, width)
     factor = try
@@ -190,7 +191,8 @@ function _nullspace_qr(C::Matrix{Float64})
         err isa LAPACKException || rethrow()
         return _nullspace_svd(C)
     end
-    diagonal = abs.(diag(factor.R))
+    packed = getfield(factor, :factors)
+    diagonal = abs.(view(packed, diagind(packed)))
     scale = maximum(diagonal; init = 0.0)
     tolerance = maximum(size(C)) * eps(Float64) * scale
     any(value -> tolerance / 16 < value <= 16 * tolerance, diagonal) &&
@@ -204,7 +206,7 @@ function _nullspace_qr(C::Matrix{Float64})
     for column in axes(tail, 2)
         tail[rank + column, column] = 1.0
     end
-    Q = LinearAlgebra.QRPackedQ(getfield(factor, :factors), getfield(factor, :τ))
+    Q = LinearAlgebra.QRPackedQ(packed, getfield(factor, :τ))
     N = Matrix(Q * tail)
     isempty(N) && return N
 
@@ -217,6 +219,69 @@ function _nullspace_qr(C::Matrix{Float64})
     orthogonality_limit = 64 * width * eps(Float64)
     orthogonality_ok = maximum(abs, gram - I; init=0.0) <= orthogonality_limit
     return residual_ok && orthogonality_ok ? N : _nullspace_svd(C)
+end
+
+"Return an SPQR nullspace, or nothing when numerical rank is uncertain."
+function _try_nullspace_spqr(C::Matrix{Float64})
+    width = size(C, 2)
+    size(C, 1) == 0 && return Matrix{Float64}(I, width, width)
+    # BLAS avoids generic iterator checks for these strided Float64 rows.
+    scale = maximum(BLAS.nrm2, eachrow(C); init=0.0)
+    iszero(scale) && return Matrix{Float64}(I, width, width)
+    tolerance = maximum(size(C)) * eps(Float64) * scale
+    A = sparse(transpose(C))
+    factor = try
+        qr(A; tol=tolerance / 16)
+    catch err
+        message = err isa ErrorException ? err.msg : nothing
+        message isa String && message == "Sparse QR factorization failed" || rethrow()
+        return nothing
+    end
+    # SPQR chooses and orders its accepted pivots during factorization.
+    r = rank(factor)
+    diagonal = abs.(diag(factor.R))
+    accepted = view(diagonal, 1:r)
+    if !all(isfinite, accepted) ||
+            (r > 0 && minimum(accepted) <= max(16tolerance, sqrt(eps(Float64)) * scale))
+        return nothing
+    end
+    if r > 0
+        # Healthy diagonals alone can conceal numerical rank deficiency.
+        leading = UpperTriangular(Matrix(factor.R[1:r, 1:r]))
+        reciprocal_condition = try
+            inv(cond(leading, 1))
+        catch err
+            err isa LAPACKException || rethrow()
+            return nothing
+        end
+        reciprocal_condition > sqrt(eps(Float64)) || return nothing
+    end
+    tail = zeros(Float64, width, width - r)
+    for column in axes(tail, 2)
+        tail[r + column, column] = 1.0
+    end
+    # Q is a computed property on older Julia versions.
+    Q = factor.Q::SparseArrays.SPQR.QRSparseQ{Float64,Int}
+    # Use the stored inverse row permutation instead of inverting prow twice.
+    N = (Q * tail)[getfield(factor, :rpivinv), :]
+    isempty(N) && return N
+    # Individually discarded columns can form a significant direction together.
+    BLAS.nrm2(transpose(A) * N) <= tolerance / 4 || return nothing
+    columns = collect(unique((1, cld(size(N, 2), 2), size(N, 2))))
+    probes = view(N, :, columns)
+    maximum(abs, transpose(probes) * probes - I; init=0.0) <= 64 * width * eps(Float64) ||
+        return nothing
+    return N
+end
+
+function _nullspace_qr(C::Matrix{Float64})
+    # Whole-fit benchmarks include the effect of basis sparsity on later solves.
+    # Small and dense systems do not amortize SPQR conversion and rank guards.
+    if size(C, 2) >= 64 && count(!iszero, C) <= length(C) ÷ 5
+        N = _try_nullspace_spqr(C)
+        return N === nothing ? _nullspace_svd(C) : N
+    end
+    return _nullspace_dense_qr(C)
 end
 
 function _projected_design(nodes::Vector{TreeNode}, slots::Vector{Int},
@@ -326,7 +391,8 @@ function _unchanged_basis(ctx::IncrementalContext, nodes)
     return basis
 end
 
-function _incremental_design(ctx::IncrementalContext, nodes::Vector{TreeNode}, X::Matrix{Float64})
+function _incremental_design(ctx::IncrementalContext, nodes::Vector{TreeNode},
+        X::Matrix{Float64}; current_dimension::Int=0)
     basis = _unchanged_basis(ctx, nodes)
     leaves = leafindices(nodes)
     term_count = length(ctx.terms)
@@ -383,24 +449,29 @@ function _incremental_design(ctx::IncrementalContext, nodes::Vector{TreeNode}, X
     if size(N, 2) < term_count
         N = _nullspace_svd(_constraints(nodes, leaves, ctx.p, ctx.terms))
     end
+    # Search already rejects refinements that add no degrees of freedom.
+    size(N, 2) > current_dimension || return nothing
     B = _projected_design(nodes, slots, X, ctx.terms, N)
     return (; N, B, leaves)
 end
 
-function _fit_refined(ctx, nodes, X, Y, coefficient_precision, noise_shape, noise_rate)
-    fitted = _incremental_design(ctx, nodes, X)
+function _fit_refined(ctx, nodes, X, Y, coefficient_precision, noise_shape, noise_rate,
+        current_dimension::Int)
+    fitted = _incremental_design(ctx, nodes, X; current_dimension)
+    fitted === nothing && return nothing
     post = _posterior(fitted.B, Y, coefficient_precision, noise_shape, noise_rate)
     return _make_fit(nodes, ctx.terms, fitted.leaves, fitted.N, post)
 end
 
 function _fit_candidate(ctx::IncrementalContext, nodes, X, Y, pairs,
-        coefficient_precision, noise_shape, noise_rate)
+        coefficient_precision, noise_shape, noise_rate, current_dimension::Int)
     return _fit_refined(ctx, nodes, X, Y,
-        coefficient_precision, noise_shape, noise_rate)
+        coefficient_precision, noise_shape, noise_rate, current_dimension)
 end
 
 function _fit_candidate(::Nothing, nodes, X, Y, pairs,
-        coefficient_precision, noise_shape, noise_rate)
+        coefficient_precision, noise_shape, noise_rate, current_dimension::Int)
+    # Keep full construction and the late dimension check as the reference path.
     return fit_fixed(nodes, X, Y; pairs, coefficient_precision, noise_shape, noise_rate)
 end
 
@@ -493,6 +564,7 @@ function fit(X::Matrix{Float64}, Y::Matrix{Float64};
 
     while used < max_splits
         context = reuse_constraints ? IncrementalContext(nodes, size(X, 2), terms) : nothing
+        current_dimension = size(current.N, 2)
         best = current
         best_score = score
         best_move = (:single, 1)
@@ -501,11 +573,15 @@ function fit(X::Matrix{Float64}, Y::Matrix{Float64};
                 _proposals(nodes, X, thresholds; max_depth, min_leaf)
             candidate = grow(nodes, leaf, feature, threshold)
             trial = _fit_candidate(context, candidate, X, Y, pairs,
-                coefficient_precision, noise_shape, noise_rate)
+                coefficient_precision, noise_shape, noise_rate, current_dimension)
             evaluations += 1
+            if trial === nothing
+                skipped_dimension += 1
+                continue
+            end
             trial_score = trial.post.score - split_penalty * (used + 1)
             best, best_score, best_move, skipped =
-                _consider(best, best_score, best_move, size(current.N, 2), trial,
+                _consider(best, best_score, best_move, current_dimension, trial,
                     trial_score, (:single, 1))
             skipped_dimension += skipped
         end
@@ -516,11 +592,15 @@ function fit(X::Matrix{Float64}, Y::Matrix{Float64};
                     prune_crosses = candidate_search === :graph_pruned,
                     remaining = max_splits - used)
                 trial = _fit_candidate(context, candidate, X, Y, pairs,
-                    coefficient_precision, noise_shape, noise_rate)
+                    coefficient_precision, noise_shape, noise_rate, current_dimension)
                 evaluations += 1
+                if trial === nothing
+                    skipped_dimension += 1
+                    continue
+                end
                 trial_score = trial.post.score - split_penalty * (used + added)
                 best, best_score, best_move, skipped =
-                    _consider(best, best_score, best_move, size(current.N, 2), trial,
+                    _consider(best, best_score, best_move, current_dimension, trial,
                         trial_score, (kind, added))
                 skipped_dimension += skipped
             end
