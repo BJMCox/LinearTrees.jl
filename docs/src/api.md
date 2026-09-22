@@ -10,14 +10,17 @@ Start with [Getting started](guide.md) for a complete fitting workflow.
 
 ## Fit and predict
 
-Use `fit_tree` for one tree and `fit_boost` for an ensemble. `predict` returns
-responses, while `score` returns values on the loss scale.
+Use `fit_tree` for one PILOT tree, `fit_boost` for an ensemble, and
+`fit_continuous_tree` for continuous conjugate regression. `predict` returns
+responses, while `score` returns values on the loss scale for PILOT models.
 
 ```@docs
 fit_tree
 fit_boost
+fit_continuous_tree
 predict
 predict!
+predictive
 score
 ```
 
@@ -28,6 +31,7 @@ These types describe the stored model. Fit models through the functions above.
 ```@docs
 LinearTree
 LinearBoost
+ContinuousTree
 nrounds
 Node
 ModelKind

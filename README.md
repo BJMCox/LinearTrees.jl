@@ -7,6 +7,7 @@
 
 Decision trees with linear models along their paths, and gradient-boosted ensembles of those trees.
 Supports regression, classification, categorical features, weighted fitting, and exact or approximate split search.
+Also includes continuous multivariate regression trees with conditional Student-t predictive uncertainty.
 
 ```julia
 using LinearTrees, Random
@@ -26,6 +27,15 @@ size(yhat)                       # (100,)
 # Boost shallow trees using the same matrix interface.
 boost = fit_boost(X[train, :], y[train]; nrounds = 50, max_depth = 3)
 boosted_predictions = predict(boost, X[test, :])
+```
+
+Continuous trees use joined leaf polynomials and a separate conjugate-regression interface:
+
+```julia
+continuous = fit_continuous_tree(X[train, :], y[train];
+    pairs=[(1, 2)], max_depth=4)
+posterior = predictive(continuous, X[test, :])
+posterior.location
 ```
 
 Portions of the code in this package were generated with the assistance of LLMs.

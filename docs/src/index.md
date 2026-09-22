@@ -6,7 +6,8 @@ CurrentModule = LinearTrees
 
 LinearTrees fits decision trees with linear models along their paths. A tree
 can represent both smooth trends and abrupt changes. Gradient boosting combines
-these trees into an ensemble.
+these trees into an ensemble. A separate continuous-tree model joins
+multivariate leaf polynomials and provides conditional predictive uncertainty.
 
 Use the package for regression, classification, count prediction, and quantile
 regression on tabular data. It supports frequency weights, categorical features,
@@ -50,6 +51,7 @@ Use [`fit_boost`](@ref) for an ensemble.
 | Fit and assess your first model | [Getting started](guide.md) |
 | Understand a tree and control its size | [Tree fitting](trees.md) |
 | Train an ensemble with validation | [Boosting](boosting.md) |
+| Fit a globally continuous regression tree | [Continuous trees](continuous.md) |
 | Match the loss to your target | [Loss functions](losses.md) |
 | Explain fitted predictions | [Interpretation](interpretation.md) |
 | Use tables, MLJ, or saved models | [Interfaces and persistence](interfaces.md) |
@@ -62,10 +64,12 @@ Tree growth follows the [PILOT approach](https://doi.org/10.1007/s10994-024-0659
 boosted ensembles. Linear terms are fitted one feature at a time. A prediction
 can involve several features because it sums terms along a path.
 
-The package returns point predictions, class probabilities, or conditional
-quantiles according to the loss. It does not provide Bayesian posterior
-distributions, predictive intervals, missing-value imputation, or pruning.
-Class probabilities do not carry a calibration guarantee.
+PILOT trees and boosted ensembles return point predictions, class
+probabilities, or conditional quantiles according to the loss. They do not
+provide posterior distributions. [`ContinuousTree`](@ref) instead provides a
+conjugate Student-t predictive distribution conditional on its selected model
+and preprocessing. The package does not provide missing-value imputation or
+post-growth pruning. Class probabilities do not carry a calibration guarantee.
 
 The original algorithm is described by Raymaekers, Rousseeuw, Verdonck, and Yao
 (2024), *Fast linear model trees by PILOT*, Machine Learning 113, 6561–6610.
