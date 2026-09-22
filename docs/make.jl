@@ -24,6 +24,7 @@ makedocs(;
         "Manual" => [
             "Tree fitting" => "trees.md",
             "Boosting" => "boosting.md",
+            "Continuous trees" => "continuous.md",
             "Loss functions" => "losses.md",
             "Interpretation" => "interpretation.md",
             "Interfaces and persistence" => "interfaces.md",

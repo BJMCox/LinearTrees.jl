@@ -17,6 +17,8 @@ using LinearAlgebra
     end
     include("loss.jl")
     include("predict.jl")
+    include("continuous.jl")
+    include("continuous_solver.jl")
     include("accumulate.jl")
     include("select.jl")
     include("boost_rule.jl")

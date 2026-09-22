@@ -12,6 +12,8 @@ include("search.jl")
 include("fit.jl")
 include("hybrid.jl")
 include("predict.jl")
+include("continuous/core.jl")
+include("continuous.jl")
 include("importance.jl")
 include("shap.jl")
 include("boost.jl")
@@ -24,6 +26,7 @@ export ModelKind, CON, LIN, PCON, BLIN, PLIN, Node, LinearTree
 export BIC, MinDeviance, GainRule
 export SplitSearch, ExactSearch, BinnedSearch, HybridSearch
 export score, predict, predict!, fit_tree
+export ContinuousTree, fit_continuous_tree, predictive
 export feature_importance, coeftable
 export shap, shap!, ShapResult
 export expected_score
