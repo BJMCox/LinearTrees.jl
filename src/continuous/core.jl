@@ -13,9 +13,16 @@ struct TreeNode
     hi::Vector{Float64}
 end
 
+struct RidgePrecision
+    R::UpperTriangular{Float64,Matrix{Float64}}
+end
+
+Base.:(\)(precision::RidgePrecision, rhs) =
+    precision.R \ (transpose(precision.R) \ rhs)
+
 struct Posterior
     coef::Matrix{Float64}
-    precision::Cholesky{Float64,Matrix{Float64}}
+    precision::RidgePrecision
     shape::Float64
     rate::Vector{Float64}
     score::Float64
@@ -49,6 +56,7 @@ mutable struct IncrementalContext
     p::Int
     cache::Dict{Vector{Int},UnchangedBasis}
     traces::Dict{Int,Vector{Vector{Tuple{Int,Bool}}}}
+    row_basis::Union{Nothing,Matrix{Float64}}
     builds::Int
     hits::Int
 end
@@ -284,23 +292,41 @@ function _nullspace_qr(C::Matrix{Float64})
     return _nullspace_dense_qr(C)
 end
 
+function _row_basis(X::Matrix{Float64}, terms::Vector{Vector{Int}})
+    values = Matrix{Float64}(undef, length(terms), size(X, 1))
+    for i in axes(X, 1), (column, term) in pairs(terms)
+        value = 1.0
+        for j in term
+            value *= X[i, j]
+        end
+        values[column, i] = value
+    end
+    return values
+end
+
 function _projected_design(nodes::Vector{TreeNode}, slots::Vector{Int},
-        X::Matrix{Float64}, terms::Vector{Vector{Int}}, N::Matrix{Float64})
+        X::Matrix{Float64}, terms::Vector{Vector{Int}}, N::Matrix{Float64},
+        row_basis::Union{Nothing,Matrix{Float64}} = nothing)
     term_count = length(terms)
     # Wider bases benefit from BLAS with contiguous output columns. Keep the
     # scalar loop for small bases, where one GEMV call per row costs more.
     transposed = term_count >= 11
     n, dimension = size(X, 1), size(N, 2)
     B = Matrix{Float64}(undef, transposed ? (dimension, n) : (n, dimension))
-    basis = zeros(Float64, term_count)
+    scratch = zeros(Float64, term_count)
     for i in axes(X, 1)
         x = view(X, i, :)
-        for (column, term) in pairs(terms)
-            value = 1.0
-            for j in term
-                value *= x[j]
+        basis = if row_basis === nothing
+            for (column, term) in pairs(terms)
+                value = 1.0
+                for j in term
+                    value *= x[j]
+                end
+                scratch[column] = value
             end
-            basis[column] = value
+            scratch
+        else
+            view(row_basis, :, i)
         end
         offset = (slots[route(nodes, x)] - 1) * term_count
         if transposed
@@ -319,8 +345,17 @@ function _projected_design(nodes::Vector{TreeNode}, slots::Vector{Int},
     return transposed ? transpose(B) : B
 end
 
-function _posterior(B, Y, coefficient_precision, noise_shape, noise_rate)
-    precision = cholesky(Symmetric(B' * B + coefficient_precision * I))
+function _posterior(B::Union{Matrix{Float64},Transpose{Float64,Matrix{Float64}}},
+        Y::Matrix{Float64}, coefficient_precision::Float64,
+        noise_shape::Float64, noise_rate::Float64)
+    gram = B' * B
+    factor = cholesky(Symmetric(gram + coefficient_precision * I); check=false)
+    scale = maximum(gram[i, i] for i in axes(gram, 1); init=0.0)
+    if !issuccess(factor) || minimum(abs2(factor.U[i, i]) for i in axes(gram, 1)) <=
+            sqrt(eps(Float64)) * scale
+        return _posterior_precise(B, Y, coefficient_precision, noise_shape, noise_rate, scale)
+    end
+    precision = RidgePrecision(factor.U)
     coef = precision \ (B' * Y)
     residual = Y - B * coef
     shape = noise_shape + size(Y, 1) / 2
@@ -331,9 +366,32 @@ function _posterior(B, Y, coefficient_precision, noise_shape, noise_rate)
              coefficient_precision * sum(abs2, view(coef, :, output))) / 2
     end
     common_score = size(B, 2) / 2 * log(coefficient_precision) -
-        sum(log, diag(precision.U))
+        sum(value -> log(abs(value)), diag(precision.R))
     score = size(Y, 2) * common_score - shape * sum(log, rate)
     return Posterior(coef, precision, shape, rate, score)
+end
+
+"Retain weak data directions and the actual ridge using the library's high-precision factorization."
+function _posterior_precise(B::Union{Matrix{Float64},Transpose{Float64,Matrix{Float64}}},
+        Y::Matrix{Float64}, λ::Float64, noise_shape::Float64, noise_rate::Float64, scale::Float64)
+    # Never change process-wide BigFloat precision: other tasks may use it.
+    # The guard leaves a Float64-sized accuracy margin after cancellation in
+    # the Gram matrix, plus a margin for the finite row reduction.
+    required = max(64, ceil(Int, max(0.0, log2(max(scale, λ)) - log2(λ))) +
+        64 + ceil(Int, log2(max(size(B)...))))
+    precision(BigFloat) >= required || throw(ArgumentError(
+        "continuous posterior needs at least $required bits of BigFloat precision for this conditioning"))
+    bigB, bigY, ridge = BigFloat.(B), BigFloat.(Y), BigFloat(λ)
+    factor = cholesky(Symmetric(bigB' * bigB + ridge * I))
+    coef = factor \ (bigB' * bigY)
+    residual = bigY - bigB * coef
+    shape = noise_shape + size(Y, 1) / 2
+    rate = [BigFloat(noise_rate) + (sum(abs2, view(residual, :, output)) +
+        ridge * sum(abs2, view(coef, :, output))) / 2 for output in axes(Y, 2)]
+    common = size(B, 2) / 2 * log(ridge) - sum(log, diag(factor.U))
+    score = size(Y, 2) * common - BigFloat(shape) * sum(log, rate)
+    R = UpperTriangular(Matrix{Float64}(factor.U))
+    return Posterior(Matrix{Float64}(coef), RidgePrecision(R), shape, Float64.(rate), Float64(score))
 end
 
 function _make_fit(nodes, terms, leaves, N, post;
@@ -346,7 +404,8 @@ function _make_fit(nodes, terms, leaves, N, post;
 end
 
 function _full_design(nodes::Vector{TreeNode}, X::Matrix{Float64},
-        terms::Vector{Vector{Int}}, solver::Symbol)
+        terms::Vector{Vector{Int}}, solver::Symbol,
+        row_basis::Union{Nothing,Matrix{Float64}} = nothing)
     p = size(X, 2)
     leaves = leafindices(nodes)
     slots = _slots(nodes, leaves)
@@ -355,7 +414,7 @@ function _full_design(nodes::Vector{TreeNode}, X::Matrix{Float64},
         solver === :svd ? _nullspace_svd(C) :
         throw(ArgumentError("solver must be :qr or :svd"))
     length(terms) <= size(N, 2) || (N = _nullspace_svd(C))
-    B = _projected_design(nodes, slots, X, terms, N)
+    B = _projected_design(nodes, slots, X, terms, N, row_basis)
     return (; N, B, leaves)
 end
 
@@ -370,10 +429,10 @@ function fit_fixed(nodes::Vector{TreeNode}, X::Matrix{Float64}, Y::Matrix{Float6
     return _make_fit(nodes, terms, fitted.leaves, fitted.N, post)
 end
 
-function IncrementalContext(nodes, p, terms)
+function IncrementalContext(nodes, p, terms, row_basis=nothing)
     IncrementalContext(nodes, leafindices(nodes), terms, p,
         Dict{Vector{Int},UnchangedBasis}(),
-        Dict{Int,Vector{Vector{Tuple{Int,Bool}}}}(), 0, 0)
+        Dict{Int,Vector{Vector{Tuple{Int,Bool}}}}(), row_basis, 0, 0)
 end
 
 function _unchanged_basis(ctx::IncrementalContext, nodes)
@@ -451,7 +510,7 @@ function _incremental_design(ctx::IncrementalContext, nodes::Vector{TreeNode},
     end
     # Search already rejects refinements that add no degrees of freedom.
     size(N, 2) > current_dimension || return nothing
-    B = _projected_design(nodes, slots, X, ctx.terms, N)
+    B = _projected_design(nodes, slots, X, ctx.terms, N, ctx.row_basis)
     return (; N, B, leaves)
 end
 
@@ -549,7 +608,8 @@ function fit(X::Matrix{Float64}, Y::Matrix{Float64};
         throw(ArgumentError("candidate_search must be :full or :graph_pruned"))
     terms = _terms(size(X, 2), pairs)
     nodes = root(size(X, 2))
-    initial = _full_design(nodes, X, terms, :qr)
+    row_basis = max_splits > 0 && reuse_constraints ? _row_basis(X, terms) : nothing
+    initial = _full_design(nodes, X, terms, :qr, row_basis)
     post = _posterior(initial.B, Y, coefficient_precision, noise_shape, noise_rate)
     current = _make_fit(nodes, terms, initial.leaves, initial.N, post)
     score = post.score
@@ -563,7 +623,7 @@ function fit(X::Matrix{Float64}, Y::Matrix{Float64};
     graph = Set(pairs)
 
     while used < max_splits
-        context = reuse_constraints ? IncrementalContext(nodes, size(X, 2), terms) : nothing
+        context = reuse_constraints ? IncrementalContext(nodes, size(X, 2), terms, row_basis) : nothing
         current_dimension = size(current.N, 2)
         best = current
         best_score = score

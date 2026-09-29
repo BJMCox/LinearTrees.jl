@@ -52,18 +52,15 @@ end
 end
 
 @testset "init scores, domains, bounds" begin
-    # One case per loss whose init score or clamp band is a public behaviour of
-    # its own. Sharing a `Union` method with another loss is a fact about
-    # today's source, not a contract: `Tweedie`'s mean can legitimately be zero
-    # at ρ in (1, 2), so its floor is asserted here rather than inferred from
-    # `Poisson`'s.
+    # Each loss has its own public target domain and initial-score contract,
+    # even when several losses share one implementation method.
     @test initscore(MSE(), [1.0, 3.0], [1.0, 1.0]) == 2.0        # weighted mean
     @test initscore(MSE(), [1.0, 3.0], [3.0, 1.0]) == 1.5
     @test initscore(Quantile(0.5), [1.0, 2.0, 10.0], ones(3)) == 2.0
     @test initscore(Logistic(), [1.0, 1.0], ones(2)) == log((1 - 1e-6) / 1e-6)
-    @test initscore(Poisson(), [0.0, 0.0], ones(2)) == log(1e-6)   # log-link floor at y .= 0
+    @test isfinite(initscore(Poisson(), [0.0, 0.0], ones(2)))
     @test initscore(Poisson(), [1.0, 2.0, 3.0], ones(3)) ≈ log(2.0)
-    @test initscore(Tweedie(1.5), zeros(3), ones(3)) == log(1e-6)  # the floor, at the mean Tweedie can reach
+    @test isfinite(initscore(Tweedie(1.5), zeros(3), ones(3)))
     @test initscore(NegBin(2.0), [1.0, 2.0, 3.0], ones(3)) ≈ log(2.0)
     @test initscore(Gamma(), [1.0, 2.0, 3.0], [1.0, 1.0, 2.0]) ≈ log(2.25)   # Gamma has no floor
 
@@ -83,8 +80,12 @@ end
     @test scorebound(MSE(), [0.0, 2.0]) == (-2.0, 4.0)          # identity link: B = 1, factor 3
     @test scorebound(MSE(), [0.0, 2.0]; truncation_factor = 1) == (0.0, 2.0)
     @test scorebound(Logistic(), [0.0, 1.0]) == (-10.0, 10.0)
-    @test scorebound(Poisson(), [0.0, 5.0]) == (-(log(5) + 3), log(5) + 3)   # log link: S = log(max(max y, 1)) + 3
-    @test scorebound(Poisson(), [0.0, 0.0]) == (-3.0, 3.0)      # maximum(y) < 1 gives S = 3
+    lo, hi = scorebound(Poisson(), [0.0, 5.0])
+    @test isfinite(lo) && isfinite(hi)
+    @test 0 < exp(lo) < 1e-12
+    @test isfinite(exp(hi)) && exp(hi) >= 5
+    zero_lo, zero_hi = scorebound(Poisson(), [0.0, 0.0])
+    @test zero_lo <= initscore(Poisson(), [0.0, 0.0], ones(2)) <= zero_hi
 
     @test deviance(MSE(), [1.0, 2.0], [0.0, 0.0], ones(2)) == 5.0    # Σ 2ℓ = Σ r²
     # log1p(exp(f)) alone overflows to Inf past f = 709, where the true

@@ -93,6 +93,14 @@ end
 
 category_is_left(tree::LinearTree, n::Node, code::Integer) = category_is_left(tree.catmasks, n, code)
 
+"Route only finite, exactly representable integer category codes through a mask."
+@inline function category_is_left(tree::LinearTree, n::Node, code::Real)
+    # The mask bound makes conversion safe without an exception path. Values
+    # outside the mask cannot belong to the left set in any case.
+    1 <= code <= 64 * Int(n.catwords) && isinteger(code) || return false
+    return category_is_left(tree, n, Int(code))
+end
+
 """
     LinearBoost{T,V,L}
 
@@ -122,3 +130,16 @@ nrounds(b::LinearBoost) = length(b.trees)
 
 "A tree or a boosted ensemble: everything `score`, `predict`, and `shap` accept."
 const Model = Union{LinearTree,LinearBoost}
+
+"Check the complete fitted feature schema before traversing any row."
+function check_feature_width(m::Model, X::AbstractMatrix)
+    size(X, 2) == m.nfeatures ||
+        throw(DimensionMismatch("X has $(size(X, 2)) columns, model expects $(m.nfeatures)"))
+    return nothing
+end
+
+function check_feature_width(m::Model, x::AbstractVector)
+    length(x) == m.nfeatures ||
+        throw(DimensionMismatch("x has $(length(x)) features, model expects $(m.nfeatures)"))
+    return nothing
+end

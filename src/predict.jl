@@ -23,7 +23,7 @@ clamp and drops the score clamp, which is what SHAP explains.
         xraw = T(X[i, n.feature])
         if iscategorical(n)
             # non-finite or non-integer codes are unseen levels and route right
-            goleft = isfinite(xraw) && category_is_left(tree, n, round(Int, xraw))
+            goleft = category_is_left(tree, n, xraw)
             x = zero(T)      # categorical pieces are constants
         else
             x = tree.truncate ? min(max(xraw, n.xmin), n.xmax) : xraw
@@ -53,6 +53,7 @@ so the result matches the serial loop exactly.
 """
 function score(m::Union{LinearTree{T,V},LinearBoost{T,V}}, X::AbstractMatrix;
         clip::Bool = true, nthreads = Threads.nthreads()) where {T,V}
+    check_feature_width(m, X)
     n = size(X, 1)
     out = Vector{V}(undef, n)
     row_blocks(n, nthreads) do rs
@@ -70,6 +71,7 @@ end
 """
 function score(m::Union{LinearTree{T,V,<:Softmax},LinearBoost{T,V,<:Softmax}}, X::AbstractMatrix;
         clip::Bool = true, nthreads = Threads.nthreads()) where {T,V}
+    check_feature_width(m, X)
     n = size(X, 1)
     Km1 = nclasses(m.loss) - 1
     out = Matrix{T}(undef, n, Km1)
@@ -97,6 +99,7 @@ predict(m::Union{LinearTree{T,V},LinearBoost{T,V}}, X::AbstractMatrix; nthreads 
 
 function predict!(out::AbstractVector, m::Union{LinearTree{T,V},LinearBoost{T,V}}, X::AbstractMatrix;
         nthreads = Threads.nthreads()) where {T,V}
+    check_feature_width(m, X)
     length(out) == size(X, 1) || throw(DimensionMismatch("out has length $(length(out)), X has $(size(X, 1)) rows"))
     row_blocks(length(out), nthreads) do rs
         for i in rs
@@ -122,6 +125,7 @@ end
 "In-place `Softmax` prediction into an `n × K` matrix."
 function predict!(out::AbstractMatrix, m::Union{LinearTree{T,V,<:Softmax},LinearBoost{T,V,<:Softmax}}, X::AbstractMatrix;
         nthreads = Threads.nthreads()) where {T,V}
+    check_feature_width(m, X)
     n = size(X, 1); K = nclasses(m.loss)
     size(out) == (n, K) || throw(DimensionMismatch("out must be $n × $K, got $(size(out))"))
     row_blocks(n, nthreads) do rs

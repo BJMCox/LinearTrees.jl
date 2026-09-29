@@ -53,7 +53,7 @@ function _continuous_predictors(X)
     return Z, center, scale
 end
 
-function _continuous_responses(Y)
+function _continuous_responses(Y::Matrix{Float64})
     n, outputs = size(Y)
     center = vec(sum(Y ./ n; dims=1))
     Z = Y .- transpose(center)
@@ -172,36 +172,61 @@ end
 _continuous_shape(::ContinuousTree{true}, values) = vec(values)
 _continuous_shape(::ContinuousTree{false}, values) = values
 
+function _continuous_batch_size(model::ContinuousTree, X, batch_size::Int)
+    batch_size > 0 || throw(ArgumentError("batch_size must be positive"))
+    size(X, 2) == length(model.xcenter) ||
+        throw(DimensionMismatch("X has the wrong number of features"))
+    Base.require_one_based_indexing(X)
+    eltype(X) <: Real || throw(ArgumentError("X must contain real numbers"))
+    return batch_size
+end
+
 """
-    predict(model::ContinuousTree, X)
+    predict(model::ContinuousTree, X; batch_size=1024)
 
 Return posterior mean predictions. The output is a vector for a vector target
 and a matrix for a matrix target, with observations in rows. Outside the
 training range, evaluate the routed leaf polynomial without clipping.
+`batch_size` bounds temporary normalized predictor storage.
 """
-function predict(model::ContinuousTree, X::AbstractMatrix)
-    values = Continuous.predict(model.fit, _continuous_input(model, X))
-    values .*= transpose(model.yscale)
-    values .+= transpose(model.ycenter)
+function predict(model::ContinuousTree, X::AbstractMatrix; batch_size::Int=1024)
+    _continuous_batch_size(model, X, batch_size)
+    if size(X, 1) <= batch_size
+        values = Continuous.predict(model.fit, _continuous_input(model, X))
+        values .*= transpose(model.yscale)
+        values .+= transpose(model.ycenter)
+        return _continuous_shape(model, values)
+    end
+    n = size(X, 1)
+    values = Matrix{Float64}(undef, n, length(model.ycenter))
+    for first_row in 1:batch_size:n
+        rows = first_row:(first_row + min(batch_size, n - first_row + 1) - 1)
+        chunk = Continuous.predict(model.fit, _continuous_input(model, view(X, rows, :)))
+        chunk .*= transpose(model.yscale)
+        chunk .+= transpose(model.ycenter)
+        copyto!(view(values, rows, :), chunk)
+    end
     return _continuous_shape(model, values)
 end
 
 """
-    predict!(out, model::ContinuousTree, X)
+    predict!(out, model::ContinuousTree, X; batch_size=1024)
 
 Write posterior mean predictions to `out`, which must match the target rank
 and the number of prediction rows. This method uses a temporary prediction
-array and supports aliasing between `out` and `X`.
+array and supports aliasing between `out` and `X`. `batch_size` bounds
+temporary normalized predictor storage.
 """
-function predict!(out::AbstractArray, model::ContinuousTree, X::AbstractMatrix)
+function predict!(out::AbstractArray, model::ContinuousTree, X::AbstractMatrix;
+        batch_size::Int=1024)
     expected = model isa ContinuousTree{true} ? (size(X, 1),) : (size(X, 1), length(model.ycenter))
     size(out) == expected || throw(DimensionMismatch("out must have size $expected"))
-    copyto!(out, predict(model, X))
+    copyto!(out, predict(model, X; batch_size))
     return out
 end
 
 """
-    predictive(model::ContinuousTree, X; observation=true)
+    predictive(model::ContinuousTree, X; observation=true, batch_size=1024)
 
 Return `(location, scale2, dof)` for the conditional Student-t predictive
 marginals. `observation=true` includes observation noise. Use `false` for
@@ -212,15 +237,31 @@ variance. When `dof > 2`, variance is `scale2 * dof / (dof - 2)`.
 target and one value per output for a matrix target. Marginals condition on the
 selected tree, interaction graph and training normalization. They exclude
 model-selection uncertainty and do not describe independent draws across rows.
+`batch_size` bounds the temporary projected design and precision solve.
 """
 function predictive(model::ContinuousTree{Scalar}, X::AbstractMatrix;
-        observation::Bool=true) where {Scalar}
-    B = Continuous.design(model.fit, _continuous_input(model, X))
+        observation::Bool=true, batch_size::Int=1024) where {Scalar}
+    _continuous_batch_size(model, X, batch_size)
     post = model.fit.post
-    location = (B * post.coef) .* transpose(model.yscale) .+ transpose(model.ycenter)
-    projected = post.precision.L \ transpose(B)
-    leverage = vec(sum(abs2, projected; dims=1)) .+ observation
-    scale2 = leverage * transpose((post.rate ./ post.shape) .* model.yscale.^2)
+    n = size(X, 1)
+    location = Matrix{Float64}(undef, n, length(model.ycenter))
+    scale2 = similar(location)
+    response_scale2 = (post.rate ./ post.shape) .* model.yscale.^2
+    for first_row in 1:batch_size:n
+        rows = first_row:(first_row + min(batch_size, n - first_row + 1) - 1)
+        B = Continuous.design(model.fit, _continuous_input(model, view(X, rows, :)))
+        location_chunk = B * post.coef
+        location_chunk .*= transpose(model.yscale)
+        location_chunk .+= transpose(model.ycenter)
+        copyto!(view(location, rows, :), location_chunk)
+        projected = transpose(post.precision.R) \ transpose(B)
+        for (column, row) in enumerate(rows)
+            leverage = sum(abs2, view(projected, :, column)) + observation
+            for output in axes(scale2, 2)
+                scale2[row, output] = leverage * response_scale2[output]
+            end
+        end
+    end
     dof = Scalar ? 2post.shape : fill(2post.shape, length(model.ycenter))
     return (; location=_continuous_shape(model, location),
         scale2=_continuous_shape(model, scale2), dof)

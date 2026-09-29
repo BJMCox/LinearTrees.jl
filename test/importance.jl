@@ -9,6 +9,23 @@ using StableRNGs
     @test feature_importance(fit_tree(X, y; min_fit = 10_000)) == zeros(3)   # con root
 end
 
+@testset "invalid categorical codes take the unseen-right path" begin
+    T = Float64
+    N(; kw...) = Node{T,T}(; kw...)
+    nodes = [N(feature = 1, left = 2, right = 3, catstart = 1, catwords = 1,
+               cover = 2.0, model = PCON),
+             N(lintercept = 2.0, cover = 1.0), N(lintercept = 3.0, cover = 1.0)]
+    tree = LinearTree{T,T,MSE}(nodes, UInt64[1], MSE(), -Inf, Inf, 2.5, 1, false)
+    reference = [9.0;;]
+    for code in (1.4, 1e30, NaN, Inf)
+        X = [code;;]
+        @test score(tree, X) == score(tree, reference) == [3.0]
+        @test coeftable(tree, [code]) == coeftable(tree, [9.0])
+        @test shap(tree, X).values == shap(tree, reference).values
+    end
+    @test score(tree, [1.0;;]) == [2.0]
+end
+
 @testset "coeftable matches the unclipped score" begin
     rng = StableRNG(20)
     X = rand(rng, 300, 2); y = sin.(3 .* X[:, 1]) .+ 2 .* X[:, 2]

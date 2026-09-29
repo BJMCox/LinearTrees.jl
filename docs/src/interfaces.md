@@ -29,6 +29,10 @@ fit = LinearTrees.fit(LinearTreeRegressorFit, X, y; max_depth = 1)
 Pass `weights=...` for observation weights.
 [`weights`](@ref) returns the stored weights.
 [`nobs`](@ref) counts all supplied rows, including zero-weight rows.
+Zero-weight predictors do not contribute to the fitted objective. The wrapper retains their
+weights and encodes valid predictors for later diagnostics. An invalid
+predictor in an excluded row is stored as `NaN`; `residuals` returns `NaN` for
+that row. Training `deviance` uses only positive-weight rows.
 [`dof`](@ref) counts stored coefficients.
 It is not an effective degrees-of-freedom estimate.
 
@@ -36,6 +40,8 @@ It is not an effective degrees-of-freedom estimate.
 
 [`LinearTreeClassifierFit`](@ref) accepts arbitrary sortable labels.
 It fits [`Logistic`](@ref) for two observed classes and [`Softmax`](@ref) otherwise.
+All supplied labels define the class pool, including labels on zero-weight rows.
+All targets must remain valid even when their weight is zero.
 Predictions form an `n × K` probability matrix.
 The columns follow `fit.classes`.
 
@@ -59,7 +65,8 @@ See [Boosting](boosting.md).
 ## Table schema and categorical columns
 
 The wrappers accept matrices and Tables.jl tables, including named tuples and DataFrames.
-Table column names must match the fitted encoder during prediction.
+Table column names must match the fitted encoder during prediction, with no
+missing or extra columns. Matrices must have the fitted number of columns.
 Columns are retrieved by name, so their order may change.
 Numeric values convert to `Float64`.
 Missing, non-finite, and non-numeric numeric-column values are unsupported.
@@ -69,7 +76,9 @@ Training levels are sorted by their string form and stored with the model.
 Prediction uses this stored map.
 Changing a categorical pool's internal order does not change its encoding.
 
-The default `unseen=:error` rejects a categorical level absent during training.
+The default `unseen=:error` rejects a categorical level absent from the
+declared training pool. A declared level remains known even if it occurred
+only in zero-weight rows or never appeared in a training row.
 Set `unseen=:right` at fit time to route unseen levels right at categorical splits.
 
 ```julia

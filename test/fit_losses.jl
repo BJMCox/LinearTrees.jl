@@ -78,6 +78,18 @@ end
     @test maximum(abs, predict(t, reshape(x, 200, 1))[clean] .- y[clean]) < 0.5
 end
 
+@testset "Huber constant update descends on outliers" begin
+    X = zeros(100, 1)
+    y = vcat(zeros(90), fill(100.0, 10))
+    δ = 1.0
+    objective(f) = sum(abs(yᵢ - f) <= δ ? (yᵢ - f)^2 / 2 : δ * (abs(yᵢ - f) - δ / 2) for yᵢ in y)
+    initial = mean(y)
+    tree = fit_tree(X, y, Huber(δ); max_depth = 0)
+    fitted = only(unique(predict(tree, X)))
+    @test objective(fitted) < objective(initial)
+    @test 0 <= fitted < initial
+end
+
 @testset "count losses return positive means" begin
     rng = StableRNG(12)
     X = rand(rng, 200, 1); μ = exp.(1 .+ X[:, 1])
@@ -98,6 +110,28 @@ end
         @test length(t.nodes) == 1
         @test predict(t, X)[1] ≈ mean(y)
     end
+end
+
+@testset "small log-link means survive default truncation" begin
+    X = zeros(1_000, 1)
+    ycount = vcat(1.0, zeros(999))
+    for loss in (Poisson(), NegBin(2.0), Tweedie(1.5))
+        tree = fit_tree(X, ycount, loss; max_depth = 0)
+        @test predict(tree, X)[1] ≈ mean(ycount) rtol = 1e-8
+        zero_tree = fit_tree(X, zeros(1_000), loss; max_depth = 0)
+        zero_rate = predict(zero_tree, X)[1]
+        @test isfinite(zero_rate) && 0 < zero_rate < 1e-10
+    end
+
+    ygamma = fill(0.001, 1_000)
+    @test predict(fit_tree(X, ygamma, Gamma(); max_depth = 0), X)[1] ≈ mean(ygamma) rtol = 1e-8
+
+    Xweighted = zeros(2, 1)
+    yweighted = [0.0, 1.0]
+    w = [1e9, 1.0]
+    weighted_mean = sum(w .* yweighted) / sum(w)
+    weighted_tree = fit_tree(Xweighted, yweighted, Poisson(); weights = w, max_depth = 0)
+    @test predict(weighted_tree, Xweighted)[1] ≈ weighted_mean rtol = 1e-6
 end
 
 # Every Loss subtype is a public contract, so each gets one fit through

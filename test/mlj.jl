@@ -1,5 +1,12 @@
 using MLJBase, MLJTestInterface, CategoricalArrays, StableRNGs, Statistics
 
+@testset "MLJ metadata uses the repository license" begin
+    for model in (LinearTreeRegressor, LinearTreeClassifier,
+                  LinearBoostRegressor, LinearBoostClassifier)
+        @test MLJBase.package_license(model) == "Apache-2.0"
+    end
+end
+
 @testset "hybrid search through StatsAPI and MLJ" begin
     x = collect(range(0.0, 1.0; length = 200))
     table = (x = x, z = sin.(x))

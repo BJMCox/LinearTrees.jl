@@ -56,7 +56,9 @@ function TableEncoder(table, unseen)
     return TableEncoder(names, categorical, levels, unseen)
 end
 
-function encode(::TableEncoder, X::AbstractMatrix; nthreads = Threads.nthreads())
+function encode(enc::TableEncoder, X::AbstractMatrix; nthreads = Threads.nthreads())
+    size(X, 2) == length(enc.names) ||
+        throw(DimensionMismatch("X has $(size(X, 2)) columns, encoder expects $(length(enc.names))"))
     Missing <: eltype(X) && any(ismissing, X) && throw(ArgumentError("missing values are not supported"))
     return Matrix{Float64}(X)
 end
@@ -70,6 +72,9 @@ column loop threads when there are at least `PARALLEL_MIN_ROWS` rows and
 """
 function encode(enc::TableEncoder, table; nthreads = Threads.nthreads())
     cols = Tables.columns(table)
+    names = Tables.columnnames(cols)
+    length(names) == length(enc.names) && all(nm -> nm in names, enc.names) ||
+        throw(DimensionMismatch("table columns must match the fitted encoder names $(enc.names)"))
     n = length(Tables.getcolumn(cols, enc.names[1]))
     out = Matrix{Float64}(undef, n, length(enc.names))
     if nthreads > 1 && n >= PARALLEL_MIN_ROWS
@@ -132,10 +137,17 @@ end
 # `isempty(enc.categorical)` stands in for "pass-through or table without
 # categorical columns": both encode a matrix identically, since the matrix
 # method never reads names or levels. Revisit if a third encoder kind appears.
-reshape_row(enc::TableEncoder, x::AbstractVector) = isempty(enc.categorical) ? reshape(collect(x), 1, length(x)) :
-    NamedTuple{Tuple(enc.names)}(Tuple(Any[v] for v in x))
+function reshape_row(enc::TableEncoder, x::AbstractVector)
+    length(x) == length(enc.names) ||
+        throw(DimensionMismatch("x has $(length(x)) features, encoder expects $(length(enc.names))"))
+    return isempty(enc.categorical) ? reshape(collect(x), 1, length(x)) :
+        NamedTuple{Tuple(enc.names)}(Tuple(Any[v] for v in x))
+end
 
 function reshape_row(enc::TableEncoder, x)
+    names = Tables.columnnames(x)
+    length(names) == length(enc.names) && all(nm -> nm in names, enc.names) ||
+        throw(DimensionMismatch("row columns must match the fitted encoder names $(enc.names)"))
     values = Any[Tables.getcolumn(x, nm) for nm in enc.names]
     return isempty(enc.categorical) ? reshape(values, 1, length(values)) :
         NamedTuple{Tuple(enc.names)}(Tuple(Any[v] for v in values))
@@ -186,13 +198,13 @@ end
 Fit a [`LinearTreeRegressorFit`](@ref) or [`LinearTreeClassifierFit`](@ref)
 from a matrix or Tables.jl table `X` and a target `y`. `kwargs` forward to
 [`fit_tree`](@ref). `unseen` is `:error` (default) or `:right`, applied to a
-categorical level absent from training at predict time.
+categorical level absent from the declared training pool at predict time.
 """
 function StatsAPI.fit(::Type{LinearTreeRegressorFit}, X, y; loss::Loss = MSE(), weights = nothing, unseen = :error,
         nthreads = Threads.nthreads(), kwargs...)
     enc = TableEncoder(X, unseen)
-    Xm = encode(enc, X; nthreads)
     w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
+    Xm = encode_training(enc, X, w; nthreads)
     tree = fit_tree(Xm, y, loss; weights = w, categorical = enc.categorical, nthreads, kwargs...)
     return LinearTreeRegressorFit(tree, enc, Xm, Vector{Float64}(y), w)
 end
@@ -214,10 +226,10 @@ end
 function StatsAPI.fit(::Type{LinearTreeClassifierFit}, X, y; weights = nothing, unseen = :error,
         nthreads = Threads.nthreads(), kwargs...)
     enc = TableEncoder(X, unseen)
-    Xm = encode(enc, X; nthreads)
     classes, yi, _ = class_codes(y)
     K = length(classes)
     w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
+    Xm = encode_training(enc, X, w; nthreads)
     loss = K == 2 ? Logistic() : Softmax(K)
     ytarget = K == 2 ? Float64.(yi .== 1) : yi
     tree = fit_tree(Xm, ytarget, loss; weights = w, categorical = enc.categorical, nthreads, kwargs...)
@@ -253,9 +265,13 @@ parameter count, not an effective degrees of freedom, and unrelated to
 """
 StatsAPI.dof(m::AnyFit) = sum(ncoef(n) for n in m.tree.nodes)
 
-"Training residuals `y - predict(tree, X)`, on the response scale."
-StatsAPI.residuals(m::LinearTreeRegressorFit) = m.y .- predict(m.tree, m.X)
-StatsAPI.deviance(m::LinearTreeRegressorFit) = deviance(m.tree.loss, m.y, score(m.tree, m.X), m.w)
+"Training residuals on the response scale; rows with unencodable zero-weight predictors are NaN."
+StatsAPI.residuals(m::LinearTreeRegressorFit) = training_residuals(m.y, m.tree, m.X, m.w)
+function StatsAPI.deviance(m::LinearTreeRegressorFit)
+    all(>(0), m.w) && return deviance(m.tree.loss, m.y, score(m.tree, m.X), m.w)
+    rows = findall(>(0), m.w)
+    return deviance(m.tree.loss, m.y[rows], score(m.tree, m.X[rows, :]), m.w[rows])
+end
 
 """
     deviance(m::LinearTreeClassifierFit)
@@ -267,12 +283,18 @@ for a `Softmax` fit. `score(m.tree, m.X)` returns a plain `Matrix` for
 """
 function StatsAPI.deviance(m::LinearTreeClassifierFit)
     loss = m.tree.loss
-    if loss isa Logistic
-        return deviance(loss, Float64.(m.y .== 1), score(m.tree, m.X), m.w)
+    if all(>(0), m.w)
+        y = m.y; w = m.w; X = m.X
+    else
+        rows = findall(>(0), m.w)
+        y = m.y[rows]; w = m.w[rows]; X = m.X[rows, :]
     end
-    s = score(m.tree, m.X)
+    if loss isa Logistic
+        return deviance(loss, Float64.(y .== 1), score(m.tree, X), w)
+    end
+    s = score(m.tree, X)
     f = [SVector{nclasses(loss) - 1}(view(s, i, :)) for i in axes(s, 1)]
-    return deviance(loss, m.y, f, m.w)
+    return deviance(loss, y, f, w)
 end
 
 StatsAPI.coeftable(m::AnyFit, x) = coeftable(m.tree, vec(encode(m.encoder, reshape_row(m.encoder, x))))
@@ -319,6 +341,66 @@ function subset_rows(X, rows)
     return NamedTuple{Tuple(names)}(Tuple(Tables.getcolumn(cols, nm)[rows] for nm in names))
 end
 
+"Keep a finite value on an excluded row when it can still be encoded."
+function finite_or_nan(v)
+    v isa Real || return NaN
+    x = try
+        Float64(v)
+    catch err
+        err isa Union{MethodError,InexactError,ArgumentError,DomainError,OverflowError} || rethrow()
+        return NaN
+    end
+    return isfinite(x) ? x : NaN
+end
+
+function encode_excluded!(Xm, ::TableEncoder, X::AbstractMatrix, rows)
+    for j in axes(Xm, 2), i in rows
+        Xm[i, j] = finite_or_nan(X[i, j])
+    end
+    return Xm
+end
+
+function encode_excluded!(Xm, enc::TableEncoder, X, rows)
+    cols = Tables.columns(X)
+    for (j, nm) in enumerate(enc.names)
+        col = Tables.getcolumn(cols, nm)
+        if j in enc.categorical
+            code = Dict(v => i for (i, v) in enumerate(enc.levels[j]))
+            for i in rows
+                c = get(code, col[i], 0)
+                Xm[i, j] = c == 0 ? (enc.unseen == :right ? length(code) + 1 : NaN) : c
+            end
+        else
+            for i in rows
+                Xm[i, j] = finite_or_nan(col[i])
+            end
+        end
+    end
+    return Xm
+end
+
+"Encode only positive-weight rows strictly; retain encodable excluded rows for diagnostics."
+function encode_training(enc::TableEncoder, X, w; nthreads)
+    n = validation_nrows(X)
+    length(w) == n || throw(DimensionMismatch("weights has length $(length(w)), X has $n rows"))
+    all(v -> isfinite(v) && v >= 0, w) || throw(ArgumentError("weights must be finite and non-negative"))
+    rows = findall(>(0), w)
+    isempty(rows) && throw(ArgumentError("total weight must be positive"))
+    length(rows) == n && return encode(enc, X; nthreads)
+    Xm = fill(NaN, n, length(enc.names))
+    Xm[rows, :] = encode(enc, subset_rows(X, rows); nthreads)
+    excluded = findall(iszero, w)
+    return encode_excluded!(Xm, enc, X, excluded)
+end
+
+function training_residuals(y, model, X, w)
+    all(>(0), w) && return y .- predict(model, X)
+    rows = findall(i -> w[i] > 0 || all(isfinite, view(X, i, :)), axes(X, 1))
+    out = fill(NaN, length(y))
+    out[rows] = y[rows] .- predict(model, X[rows, :])
+    return out
+end
+
 validation_nrows(X::AbstractMatrix) = size(X, 1)
 function validation_nrows(X)
     cols = Tables.columns(X)
@@ -359,8 +441,8 @@ end
 function StatsAPI.fit(::Type{LinearBoostRegressorFit}, X, y; loss::Loss = MSE(), weights = nothing, unseen = :error,
         Xval = nothing, yval = nothing, wval = nothing, nthreads = Threads.nthreads(), kwargs...)
     enc = TableEncoder(X, unseen)
-    Xm = encode(enc, X; nthreads)
     w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
+    Xm = encode_training(enc, X, w; nthreads)
     nval = validation_length(Xval, yval, wval)
     yval === nothing || validate_target(loss, yval)
     T = float(promote_type(eltype(Xm), eltype(y)))
@@ -373,10 +455,10 @@ end
 function StatsAPI.fit(::Type{LinearBoostClassifierFit}, X, y; weights = nothing, unseen = :error,
         Xval = nothing, yval = nothing, wval = nothing, nthreads = Threads.nthreads(), kwargs...)
     enc = TableEncoder(X, unseen)
-    Xm = encode(enc, X; nthreads)
     classes, yi, code = class_codes(y)
     K = length(classes)
     w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
+    Xm = encode_training(enc, X, w; nthreads)
     loss = K == 2 ? Logistic() : Softmax(K)
     encode_y(v) = K == 2 ? Float64.(v .== 1) : v
     ytarget = encode_y(yi)
@@ -407,17 +489,27 @@ const AnyBoostFit = Union{LinearBoostRegressorFit,LinearBoostClassifierFit}
 StatsAPI.nobs(m::AnyBoostFit) = length(m.y)
 StatsAPI.weights(m::AnyBoostFit) = m.w
 StatsAPI.dof(m::AnyBoostFit) = sum(ncoef(n) for t in m.boost.trees for n in t.nodes; init = 0)
-StatsAPI.residuals(m::LinearBoostRegressorFit) = m.y .- predict(m.boost, m.X)
-StatsAPI.deviance(m::LinearBoostRegressorFit) = deviance(m.boost.loss, m.y, score(m.boost, m.X), m.w)
+StatsAPI.residuals(m::LinearBoostRegressorFit) = training_residuals(m.y, m.boost, m.X, m.w)
+function StatsAPI.deviance(m::LinearBoostRegressorFit)
+    all(>(0), m.w) && return deviance(m.boost.loss, m.y, score(m.boost, m.X), m.w)
+    rows = findall(>(0), m.w)
+    return deviance(m.boost.loss, m.y[rows], score(m.boost, m.X[rows, :]), m.w[rows])
+end
 
 function StatsAPI.deviance(m::LinearBoostClassifierFit)
     loss = m.boost.loss
-    if loss isa Logistic
-        return deviance(loss, Float64.(m.y .== 1), score(m.boost, m.X), m.w)
+    if all(>(0), m.w)
+        y = m.y; w = m.w; X = m.X
+    else
+        rows = findall(>(0), m.w)
+        y = m.y[rows]; w = m.w[rows]; X = m.X[rows, :]
     end
-    s = score(m.boost, m.X)
+    if loss isa Logistic
+        return deviance(loss, Float64.(y .== 1), score(m.boost, X), w)
+    end
+    s = score(m.boost, X)
     f = [SVector{nclasses(loss) - 1}(view(s, i, :)) for i in axes(s, 1)]
-    return deviance(loss, m.y, f, m.w)
+    return deviance(loss, y, f, w)
 end
 
 StatsAPI.coeftable(m::AnyBoostFit, x) = coeftable(m.boost, vec(encode(m.encoder, reshape_row(m.encoder, x))))

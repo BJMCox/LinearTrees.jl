@@ -8,6 +8,7 @@
 Decision trees with linear models along their paths, and gradient-boosted ensembles of those trees.
 Supports regression, classification, categorical features, weighted fitting, and exact or approximate split search.
 Also includes continuous multivariate regression trees with conditional Student-t predictive uncertainty.
+Ridge leaf refits, linear-child split selection, validation pruning, and finite Bayesian model averaging provide additional fitting choices.
 
 ```julia
 using LinearTrees, Random

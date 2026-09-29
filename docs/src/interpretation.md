@@ -5,18 +5,19 @@ CurrentModule = LinearTrees
 # Interpreting models
 
 LinearTrees provides three complementary views of a fitted tree or ensemble.
-[`feature_importance`](@ref) summarizes split gains across the model.
+[`feature_importance`](@ref) summarizes node-model gains across the model.
 [`coeftable`](@ref) describes the linear score near one observation.
 [`shap`](@ref) attributes one prediction across features.
 
 All three methods describe the fitted model.
 They do not estimate causal effects.
 
-## Rank features by split gain
+## Rank features by node-model gain
 
-[`feature_importance`](@ref) sums each feature's positive split gains.
+[`feature_importance`](@ref) sums each feature's positive gain from nonconstant
+nodes, including unsplit `LIN` nodes.
 It then normalizes the values to sum to one.
-It returns all zeros when the model has no positive split gain.
+It returns all zeros when the model has no positive node-model gain.
 
 ```@example interpretation
 using LinearTrees
@@ -31,7 +32,11 @@ feature_importance(tree)
 ```
 
 For an ensemble, gains are summed across all retained trees before normalization.
-Gain importance can favor features offering many useful split points.
+These are model-selection gains. A later loss safeguard can scale a node or
+tree without recomputing its stored gain, so gain importance is not the
+realized reduction in the final training loss.
+Gain importance can favor features offering many useful split points or
+strong local linear fits.
 Correlated features can divide or exchange importance.
 The result gives no direction for a feature's effect.
 

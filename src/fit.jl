@@ -159,13 +159,22 @@ struct TreeWorkspace{T,V,B,I}
     idx::Matrix{Int32}
     scratch::Vector{Scratch{T,V,B}}
     sampled_ids::I
+    f::Vector{V}
+    g::Vector{V}
+    h::Vector{V}
+    z::Vector{V}
+    roworder::Vector{Int32}
+    isleft::Vector{Bool}
+    positions::Vector{Int32}
 end
 
 function TreeWorkspace{T,V}(n, p, nthreads, search::SplitSearch) where {T,V}
     nsets = nthreads == 1 ? 1 : SCRATCH_PER_THREAD * nthreads
     scratch = [Scratch{T,V}(search) for _ in 1:nsets]
     return TreeWorkspace(index_workspace(search, n, p), scratch,
-        sampled_index_workspace(search, n, p))
+        sampled_index_workspace(search, n, p), Vector{V}(undef, n),
+        Vector{V}(undef, n), Vector{V}(undef, n), Vector{V}(undef, n),
+        Vector{Int32}(undef, n), Vector{Bool}(undef, n), Int32[])
 end
 TreeWorkspace{T,V}(n, p, nthreads) where {T,V} = TreeWorkspace{T,V}(n, p, nthreads, ExactSearch())
 
@@ -258,8 +267,8 @@ must be finite. Use [`predict`](@ref) for response-scale predictions and
   one column per original feature. Used by exact and local-bin search.
 
 Nodes add score increments along a path. Model selection uses a quadratic
-surrogate for nonquadratic losses. Logistic updates also check true training
-loss before accepting a full step. No pruning pass follows growth.
+surrogate for nonquadratic losses. Huber, binary logistic, and log-link updates
+check true training loss before accepting a full step. No pruning pass follows growth.
 
 For table inputs and stored encoders, use [`LinearTreeRegressorFit`](@ref) or
 [`LinearTreeClassifierFit`](@ref) through [`fit`](@ref).
@@ -282,17 +291,7 @@ function _fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss, workspace;
         max_lin_chain = 10, truncate = true, truncation_factor = 3,
         features = 1:size(X, 2), presort::Union{Nothing,AbstractMatrix{Int32}} = nothing,
         nthreads = Threads.nthreads(), niter = 5)
-    # `niter` reaches an `Int` field, so a non-integer would surface as an
-    # `InexactError` from deep inside the fit rather than as a rejected argument
-    isinteger(niter) && niter >= 1 || throw(ArgumentError("niter must be an integer >= 1, got $niter"))
-    isinteger(max_depth) && max_depth >= 0 || throw(ArgumentError("max_depth must be an integer >= 0, got $max_depth"))
-    isinteger(max_lin_chain) && max_lin_chain >= 1 || throw(ArgumentError("max_lin_chain must be an integer >= 1, got $max_lin_chain"))
-    min_fit >= 1 || throw(ArgumentError("min_fit must be >= 1, got $min_fit"))
-    min_leaf >= 1 || throw(ArgumentError("min_leaf must be >= 1, got $min_leaf"))
-    min_sum_hessian >= 0 || throw(ArgumentError("min_sum_hessian must be >= 0, got $min_sum_hessian"))
-    # below 1 the padding term goes negative, so the clamp band closes inside the
-    # observed range of `y` and every extreme score is pulled toward the middle
-    truncation_factor >= 1 || throw(ArgumentError("truncation_factor must be >= 1, got $truncation_factor"))
+    check_tree_options(max_depth, max_lin_chain, min_fit, min_leaf, min_sum_hessian, truncation_factor, niter)
     nthreads = clamp(nthreads, 1, Threads.nthreads())
     T = float(promote_type(eltype(X), target_eltype(loss, y)))
     V = coeftype(loss, T)
@@ -307,6 +306,7 @@ function _fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss, workspace;
     length(y) == n || throw(DimensionMismatch("X has $n rows, y has $(length(y))"))
     validate_target(loss, y)
     w = weights === nothing ? ones(T, n) : Vector{T}(weights)
+    length(w) == n || throw(DimensionMismatch("weights has length $(length(w)), X has $n rows"))
     all(v -> isfinite(v) && v >= 0, w) || throw(ArgumentError("weights must be finite and non-negative"))
     keep = findall(>(0), w)
     isempty(keep) && throw(ArgumentError("total weight must be positive"))
@@ -316,20 +316,38 @@ function _fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss, workspace;
     Xm = length(keep) == n && X isa Matrix{T} ? X : Matrix{T}(view(X, keep, :))
     yv = prepare_target(loss, y, keep, T); w = w[keep]
     all(isfinite, Xm) || throw(ArgumentError("X contains NaN or Inf"))
+    iscat, nlevels = categorical_schema(Xm, categorical)
+    prepared_search = prepare_search(split_search, Xm, feats, iscat, keep, workspace, nthreads)
+    return _fit_tree(Xm, yv, w, loss, rule, V, iscat, nlevels, keep, feats, presort, workspace;
+        max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
+        nthreads, niter, split_search = prepared_search)
+end
+
+function check_tree_options(max_depth, max_lin_chain, min_fit, min_leaf, min_sum_hessian, truncation_factor, niter)
+    isinteger(niter) && niter >= 1 || throw(ArgumentError("niter must be an integer >= 1, got $niter"))
+    isinteger(max_depth) && max_depth >= 0 || throw(ArgumentError("max_depth must be an integer >= 0, got $max_depth"))
+    isinteger(max_lin_chain) && max_lin_chain >= 1 || throw(ArgumentError("max_lin_chain must be an integer >= 1, got $max_lin_chain"))
+    min_fit >= 1 || throw(ArgumentError("min_fit must be >= 1, got $min_fit"))
+    min_leaf >= 1 || throw(ArgumentError("min_leaf must be >= 1, got $min_leaf"))
+    min_sum_hessian >= 0 || throw(ArgumentError("min_sum_hessian must be >= 0, got $min_sum_hessian"))
+    truncation_factor >= 1 || throw(ArgumentError("truncation_factor must be >= 1, got $truncation_factor"))
+    return nothing
+end
+
+"Validate categorical training codes once and record the declared matrix schema."
+function categorical_schema(X::Matrix, categorical)
+    p = size(X, 2)
     nlevels = zeros(Int, p)
     iscat = zeros(Bool, p)
     for j in categorical
         1 <= j <= p || throw(ArgumentError("categorical column $j is outside 1:$p"))
-        col = view(Xm, :, j)
+        col = view(X, :, j)
         all(x -> isfinite(x) && x >= 1 && x == round(x), col) ||
             throw(ArgumentError("categorical column $j must hold integer codes >= 1"))
         nlevels[j] = Int(maximum(col))
         iscat[j] = true
     end
-    prepared_search = prepare_search(split_search, Xm, feats, iscat, keep, workspace, nthreads)
-    return _fit_tree(Xm, yv, w, loss, rule, V, iscat, nlevels, keep, feats, presort, workspace;
-        max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
-        nthreads, niter, split_search = prepared_search)
+    return iscat, nlevels
 end
 
 """
@@ -360,16 +378,20 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{Y}, w::Vector{T}, loss::L, rule::R,
     # every `scorebound` method returns bounds in its own working type (often
     # `Float64`, regardless of `V`), so convert here rather than trust each method
     lo, hi = truncate ? map(V, scorebound(loss, yv; truncation_factor)) : infbounds(V)
-    f = fill(clampscore(f0, lo, hi), n)
     workspace === nothing && (workspace = TreeWorkspace{T,V}(n, p, nthreads, split_search))
+    f = fill!(workspace.f, clampscore(f0, lo, hi))
+    fill!(workspace.isleft, false)
+    for i in 1:n
+        workspace.roworder[i] = Int32(i)
+    end
     idx = workspace.idx
-    initialize_index!(idx, Xm, presort, keep, features, nthreads, split_search)
+    initialize_index!(idx, Xm, presort, keep, features, nthreads, split_search, workspace.positions)
     # Models own their nodes and masks. Only fully overwritten work buffers are
     # shared across rounds; a fresh pool starts each fit with no borrowed ids.
     nsets = length(workspace.scratch)
     st = FitState{T,V,Y,L,R,S,eltype(workspace.scratch).parameters[3]}(; X = Xm, y = yv, w, f,
-        g = zeros(V, n), h = zeros(V, n), z = zeros(V, n),
-        idx, roworder = collect(Int32(1):Int32(n)), isleft = zeros(Bool, n),
+        g = workspace.g, h = workspace.h, z = workspace.z,
+        idx, roworder = workspace.roworder, isleft = workspace.isleft,
         scratch = workspace.scratch,
         pool = ScratchPool(nsets:-1:2),   # id 1 is the root task's own and never enters the pool
         nodes = Node{T,V}[], catmasks = UInt64[], iscat, nlevels, features, loss, rule, split_search, lo, hi,
@@ -532,16 +554,17 @@ Stable per-feature sort orders. Features are independent, so this threads over
 columns. Both sorts give the same permutation; the row count and the element
 type pick which one runs.
 """
-function presort!(idx::Matrix{Int32}, X::Matrix{T}, nthreads) where {T<:Real}
+function presort!(idx::Matrix{Int32}, X::Matrix{T}, nthreads, features::AbstractVector{<:Integer} = axes(X, 2)) where {T<:Real}
     # two call sites, not one on a `Union`: each stays a static dispatch
-    size(X, 1) < RADIX_MIN_ROWS && return presort!(idx, X, nthreads, nothing)
-    return presort!(idx, X, nthreads, radix_uint(T))
+    size(X, 1) < RADIX_MIN_ROWS && return presort!(idx, X, nthreads, features, nothing)
+    return presort!(idx, X, nthreads, features, radix_uint(T))
 end
 
 "Comparison sort, for a short column or an element type with no radix key."
-function presort!(idx::Matrix{Int32}, X::Matrix, nthreads, ::Nothing)
-    column_blocks(size(X, 2), size(X, 1), nthreads) do cols, _
-        for j in cols
+function presort!(idx::Matrix{Int32}, X::Matrix{T}, nthreads::Integer, features::AbstractVector{<:Integer}, ::Nothing) where {T<:Real}
+    column_blocks(length(features), size(X, 1), nthreads) do cols::UnitRange{Int}, _
+        for k in cols
+            j::Int = features[k]
             idx[:, j] .= Int32.(sortperm(view(X, :, j); alg = MergeSort))
         end
     end
@@ -549,11 +572,12 @@ function presort!(idx::Matrix{Int32}, X::Matrix, nthreads, ::Nothing)
 end
 
 "Radix sort, with one buffer set per column block rather than a permutation and a merge buffer per column."
-function presort!(idx::Matrix{Int32}, X::Matrix, nthreads, ::Type{U}) where {U<:Unsigned}
+function presort!(idx::Matrix{Int32}, X::Matrix, nthreads, features::AbstractVector{<:Integer}, ::Type{U}) where {U<:Unsigned}
     n = size(X, 1)
-    column_blocks(size(X, 2), n, nthreads) do cols, _
+    column_blocks(length(features), n, nthreads) do cols, _
         buf = RadixBuffers(U, n)
-        for j in cols
+        for k in cols
+            j = Int(features[k])
             radix_sortperm!(view(idx, :, j), view(X, :, j), buf)
         end
     end
@@ -568,8 +592,20 @@ row subsets. The caller's `presort` is read only, never permuted. Unselected
 columns are untouched and are never read during this tree's growth.
 """
 function filter_presort!(idx::Matrix{Int32}, presort::AbstractMatrix{Int32}, keep::Vector{Int}, nthreads,
-        features = axes(idx, 2))
-    pos = zeros(Int32, size(presort, 1))
+        features = axes(idx, 2), pos = Int32[])
+    if length(keep) == size(presort, 1)
+        # `keep` comes from ascending positive-weight row selection. With no
+        # exclusions it is the identity, so no inverse map is needed.
+        column_blocks(length(features), size(idx, 1), nthreads) do columns, _
+            for k in columns
+                j = features[k]
+                copyto!(view(idx, :, j), view(presort, :, j))
+            end
+        end
+        return idx
+    end
+    ensure_len!(pos, size(presort, 1))
+    fill!(pos, 0)
     for (k, i) in enumerate(keep)
         pos[i] = Int32(k)
     end
@@ -1131,6 +1167,7 @@ reusing them here avoids a fresh allocation on every call.
 """
 function irls_refit(st::FitState{T,V}, n::Node{T,V}, rows, tid, niter, masks::Vector{UInt64} = UInt64[]) where {T,V}
     j = n.feature
+    offset = fitting_offset(n.xmin, n.xmax)
     m = length(rows)
     sc = st.scratch[tid]
     ensure_len!(sc.zs, m); ensure_len!(sc.xs, m); ensure_len!(sc.perm, m)
@@ -1162,9 +1199,9 @@ function irls_refit(st::FitState{T,V}, n::Node{T,V}, rows, tid, niter, masks::Ve
                 x = st.X[i, j]
                 goleft = goes_left(st, n, i, masks)
                 if n.model != LIN && !goleft
-                    right = addrow(right, x, st.z[i], hi)
+                    right = addrow(right, x - offset, st.z[i], hi)
                 else
-                    left = addrow(left, x, st.z[i], hi)
+                    left = addrow(left, x - offset, st.z[i], hi)
                 end
             end
         end
@@ -1172,19 +1209,20 @@ function irls_refit(st::FitState{T,V}, n::Node{T,V}, rows, tid, niter, masks::Ve
             b = fit_con(left, st.rule)[1]
             n = Node{T,V}(n; lintercept = b, rintercept = b)
         elseif n.model == LIN
-            r = fit_lin(left, st.rule); r === nothing && break
+            r = fit_lin(left, st.rule, offset); r === nothing && break
             a, b, _ = r
             n = Node{T,V}(n; lcoef = a, lintercept = b, rcoef = a, rintercept = b)
         elseif n.model == PCON
             bl = fit_con(left, st.rule)[1]; br = fit_con(right, st.rule)[1]
             n = Node{T,V}(n; lintercept = bl, rintercept = br)
         elseif n.model == PLIN
-            rl = fit_lin(left, st.rule); rr = fit_lin(right, st.rule)
+            rl = fit_lin(left, st.rule, offset); rr = fit_lin(right, st.rule, offset)
             (rl === nothing || rr === nothing) && break
             n = Node{T,V}(n; lcoef = rl[1], lintercept = rl[2], rcoef = rr[1], rintercept = rr[2])
         else # BLIN
-            r = fit_blin(left, right, n.threshold); r === nothing && break
-            n = Node{T,V}(n; lcoef = r[1], lintercept = r[2], rcoef = r[3], rintercept = r[4])
+            r = fit_blin(left, right, n.threshold - offset); r === nothing && break
+            n = Node{T,V}(n; lcoef = r[1], lintercept = r[2] - r[1] * offset,
+                rcoef = r[3], rintercept = r[4] - r[3] * offset)
         end
     end
     return n
@@ -1207,10 +1245,10 @@ end
     return goleft ? n.lcoef * x + n.lintercept : n.rcoef * x + n.rintercept
 end
 
-# Small logistic Hessians can turn a useful Newton direction into a disastrous
+# Small Hessians can turn a useful Newton direction into a disastrous
 # full step. Keep a descending full step; otherwise halve it until the actual
 # weighted loss descends, including the same truncation used during prediction.
-function logistic_backtrack(st::FitState{T,V}, n::Node{T,V}, rows, tid, masks) where {T,V}
+function loss_backtrack(st::FitState{T,V}, n::Node{T,V}, rows, tid, masks) where {T,V}
     # Search has finished and partition has not started, so this worker's
     # response buffer is free, as it is during the non-smooth IRLS refit.
     inc = st.scratch[tid].zs
@@ -1220,6 +1258,7 @@ function logistic_backtrack(st::FitState{T,V}, n::Node{T,V}, rows, tid, masks) w
         inc[k] = node_increment(st, n, i, masks)
         baseline += st.w[i] * pointloss(st.loss, st.y[i], st.f[i])
     end
+    st.loss isa Huber && return huber_step(st, n, rows, inc)
     scale = one(T)
     while scale >= eps(T)
         candidate = zero(T)
@@ -1237,6 +1276,31 @@ function logistic_backtrack(st::FitState{T,V}, n::Node{T,V}, rows, tid, masks) w
     end
     return Node{T,V}(n; lcoef = zero(V), lintercept = zero(V),
         rcoef = zero(V), rintercept = zero(V))
+end
+
+"Minimize the convex Huber loss along a node's direction on the interval [0, 1]."
+function huber_step(st::FitState{T,V,<:Any,<:Huber}, n::Node{T,V}, rows, inc) where {T,V}
+    δ = st.loss.δ
+    derivative(scale) = sum(st.w[i] * inc[k] *
+        clamp(st.f[i] + scale * inc[k] - st.y[i], -δ, δ) for (k, i) in enumerate(rows))
+    scale = if derivative(zero(T)) >= 0
+        zero(T)
+    elseif derivative(one(T)) <= 0
+        one(T)
+    else
+        lo, hi = zero(T), one(T)
+        for _ in 1:60
+            mid = lo / 2 + hi / 2
+            if derivative(mid) < 0
+                lo = mid
+            else
+                hi = mid
+            end
+        end
+        lo / 2 + hi / 2
+    end
+    return Node{T,V}(n; lcoef = scale * n.lcoef, lintercept = scale * n.lintercept,
+        rcoef = scale * n.rcoef, rintercept = scale * n.rintercept)
 end
 
 "Add node `n`'s piece to the score of `rows`, then clamp. `masks` is the pool `n.catstart` indexes into (see `goes_left`)."

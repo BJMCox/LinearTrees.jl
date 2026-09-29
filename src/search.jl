@@ -52,11 +52,12 @@ prepare_search(search::SplitSearch, X, features, iscat, keep, workspace, nthread
 index_workspace(::SplitSearch, n, p) = Matrix{Int32}(undef, n, p)
 sampled_index_workspace(::SplitSearch, n, p) = nothing
 
-function initialize_index!(idx, X, presort, keep, features, nthreads, ::SplitSearch)
+function initialize_index!(idx::Matrix{Int32}, X::Matrix{T}, presort, keep,
+        features::Vector{Int}, nthreads, ::SplitSearch, positions = Int32[]) where {T<:Real}
     if presort === nothing
-        presort!(idx, X, nthreads)
+        presort!(idx, X, nthreads, features)
     else
-        filter_presort!(idx, presort, keep, nthreads, features)
+        filter_presort!(idx, presort, keep, nthreads, features, positions)
     end
     return idx
 end
@@ -64,7 +65,7 @@ end
 @inline scan_feature(xs, zs, hs, ws, rule, min_leaf, dmin, ::ExactSearch, ::Nothing) =
     scan_feature(xs, zs, hs, ws, rule, min_leaf, dmin)
 
-function bin_sums!(buf::BinSums{T,V}, xs, zs, hs, ws, nbins) where {T,V}
+function bin_sums!(buf::BinSums{T,V}, xs, zs, hs, ws, nbins, offset = zero(T)) where {T,V}
     moments, edges, masses, uniques = buf.moments, buf.edges, buf.masses, buf.uniques
     empty!(moments); empty!(edges); empty!(masses); empty!(uniques)
     sizehint!(moments, nbins); sizehint!(edges, nbins)
@@ -79,7 +80,7 @@ function bin_sums!(buf::BinSums{T,V}, xs, zs, hs, ws, nbins) where {T,V}
         end
         s = zero(MomentSums{V}); mass = zero(T); nu = 0
         for i in lo:hi
-            s = addrow(s, xs[i], zs[i], hs[i])
+            s = addrow(s, xs[i] - offset, zs[i], hs[i])
             mass += ws[i]
             (i == lo || xs[i] != xs[i - 1]) && (nu += 1)
         end
@@ -106,7 +107,8 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs, ws,
         rule, min_leaf, dmin, search::BinnedSearch, buf::BinSums{T,V}) where {T,V<:Real}
     m = length(xs)
     m <= search.nbins && return scan_feature(xs, zs, hs, ws, rule, min_leaf, dmin)
-    bin_sums!(buf, xs, zs, hs, ws, search.nbins)
+    offset = fitting_offset(first(xs), last(xs))
+    bin_sums!(buf, xs, zs, hs, ws, search.nbins, offset)
     moments, edges, masses, uniques = buf.moments, buf.edges, buf.masses, buf.uniques
     total = reduce(+, moments)
     n = sum(masses); nu = sum(uniques); nc = ncoord(V)
@@ -117,7 +119,7 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs, ws,
         sc < unsplit.score && (unsplit = Candidate{T,V}(CON, T(NaN), zero(V), b, zero(V), b, rss, sc))
     end
     if allowed(rule, LIN) && nu >= MIN_UNIQUE_LIN
-        r = fit_lin(total, rule)
+        r = fit_lin(total, rule, offset)
         if r !== nothing
             a, b, rss = r
             sc = selection_score(rule, LIN, sum(rss), n, dmin, nc)
@@ -135,7 +137,7 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs, ws,
         wleft += masses[i]; wright -= masses[i]; uleft += uniques[i]
         (wleft >= min_leaf && wright >= min_leaf) || continue
         candidates = split_candidates(candidates, left, right, edges[i], uleft, nu - uleft,
-            rule, dmin, dopcon, doblin, doplin)
+            rule, dmin, dopcon, doblin, doplin, offset)
     end
     best = score_splits(unsplit, candidates, rule, n, dmin)
     (!search.refine || !isfinite(best.threshold)) && return best
@@ -152,14 +154,14 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs, ws,
     end
     right = total - left; wright = n - wleft
     for i in lo:hi
-        left = addrow(left, xs[i], zs[i], hs[i])
-        right = subrow(right, xs[i], zs[i], hs[i])
+        left = addrow(left, xs[i] - offset, zs[i], hs[i])
+        right = subrow(right, xs[i] - offset, zs[i], hs[i])
         wleft += ws[i]; wright -= ws[i]
         (i == 1 || xs[i] != xs[i - 1]) && (uleft += 1)
         xs[i] < xs[i + 1] || continue
         (wleft >= min_leaf && wright >= min_leaf) || continue
         candidates = split_candidates(candidates, left, right, xs[i], uleft, nu - uleft,
-            rule, dmin, dopcon, doblin, doplin, Val(true))
+            rule, dmin, dopcon, doblin, doplin, offset, Val(true))
     end
     return score_splits(unsplit, candidates, rule, n, dmin)
 end

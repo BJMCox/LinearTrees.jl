@@ -1,18 +1,22 @@
-# Type-stability pass: JET `report_opt` on every exported entry point, plus
-# `@code_warntype` dumps of the hot inner functions.
+# Targeted JET `report_opt` pass for tree, boosting, and continuous calls,
+# plus adapter diagnostics and `@code_warntype` dumps of hot inner functions.
 #
 #     julia --project=bench bench/typecheck.jl
 #
-# Writes `bench/profiles/jet.txt` (one section per entry point, with the site
-# count and the frames the sites sit in) and `bench/profiles/warntype.txt`.
+# Writes `jet.txt` (one section per call, with source locations for reported
+# sites) and `warntype.txt` in `LT_PROFILE_OUT` or `bench/profiles/`.
+# Exits unsuccessfully if a direct model call gains an inference report.
 
 using JET, InteractiveUtils, StaticArrays, Printf
 using LinearTrees, StableRNGs
 using CategoricalArrays, DataFrames
 import MLJModelInterface as MMI
 import StatsAPI
+include(joinpath(@__DIR__, "continuous_typecheck.jl"))
 
-const OUT = joinpath(@__DIR__, "profiles")
+const TARGET_MODULES = (LinearTrees, LinearTrees.Continuous)
+
+const OUT = get(ENV, "LT_PROFILE_OUT", joinpath(@__DIR__, "profiles"))
 mkpath(OUT)
 
 # Small inputs: `report_opt` walks the call graph, so data size is irrelevant.
@@ -31,6 +35,8 @@ ystr = rand(rng, ["u", "v", "w"], n)
 
 tree = fit_tree(X, ylin; categorical = [p], max_depth = 4)
 streetree = fit_tree(X, ycls, Softmax(3); categorical = [p], max_depth = 4)
+boost = fit_boost(X, ylin; nrounds = 3, max_depth = 2, nthreads = 1)
+refitted = refit_leaves(tree, X, ylin; features = [1, 2], max_features = 2)
 regfit = StatsAPI.fit(LinearTreeRegressorFit, df, ylin; max_depth = 4)
 clsfit = StatsAPI.fit(LinearTreeClassifierFit, df, ystr; max_depth = 4)
 mreg = LinearTreeRegressor(; max_depth = 4)
@@ -42,13 +48,12 @@ d = to_dict(tree)
 
 """
 Run `report_opt` on one call, append it to `io`, and return the site count.
-`frames` counts how many sites sit in each source file, which is what tells a
-real dynamic dispatch in this package apart from `report_opt` noise inside a
-dependency.
+Keep the complete report so a caller can distinguish package frames from
+dependency or compiler reports when Julia or JET changes.
 """
 function section(io, name, f, args)
     r = try
-        JET.report_opt(f, args; target_modules = (LinearTrees,))
+        JET.report_opt(f, args; target_modules = TARGET_MODULES)
     catch e
         println(io, "\n### $name\nFAILED: ", sprint(showerror, e))
         return -1
@@ -74,7 +79,7 @@ end
 
 counts = Pair{String,Int}[]
 open(joinpath(OUT, "jet.txt"), "w") do io
-    println(io, "JET.report_opt, target_modules = (LinearTrees,), Julia ", VERSION)
+    println(io, "JET.report_opt, target_modules = ", TARGET_MODULES, ", Julia ", VERSION)
     for (nm, l, yy) in (("MSE", MSE(), ylin), ("Huber", Huber(1.0), ylin), ("Quantile", Quantile(0.5), ylin),
             ("MAD", MAD(), ylin), ("Logistic", Logistic(), ybin), ("Poisson", Poisson(), ycount),
             ("NegBin", NegBin(1.0), ycount), ("Gamma", Gamma(), ypos), ("Tweedie", Tweedie(1.5), ycount),
@@ -84,14 +89,39 @@ open(joinpath(OUT, "jet.txt"), "w") do io
     push!(counts, "fit_tree/Softmax+cat(kw)" =>
         section(io, "fit_tree Softmax categorical", (Xa, ya) -> fit_tree(Xa, ya, Softmax(3); categorical = [6], max_depth = 4),
             (Matrix{Float64}, Vector{Float64})))
+    for (name, f) in (
+            ("MSE/exact", (Xa, ya) -> fit_boost(Xa, ya; nrounds = 3, nthreads = 1)),
+            ("MSE/hybrid", (Xa, ya) -> fit_boost(Xa, ya; nrounds = 3, nthreads = 1,
+                split_search = HybridSearch(nbins = 32))),
+            ("Logistic", (Xa, ya) -> fit_boost(Xa, ya, Logistic(); nrounds = 3, nthreads = 1)),
+            ("Softmax", (Xa, ya) -> fit_boost(Xa, ya, Softmax(3); nrounds = 3, nthreads = 1)),
+        )
+        push!(counts, "fit_boost/$name" => section(io, "fit_boost $name", f,
+            (Matrix{Float64}, Vector{Float64})))
+    end
     push!(counts, "predict" => section(io, "predict", LinearTrees.predict, (typeof(tree), Matrix{Float64})))
     push!(counts, "predict!" => section(io, "predict!", LinearTrees.predict!, (Vector{Float64}, typeof(tree), Matrix{Float64})))
     push!(counts, "predict/Softmax" => section(io, "predict Softmax", LinearTrees.predict, (typeof(streetree), Matrix{Float64})))
+    push!(counts, "predict/boost" => section(io, "predict boost", LinearTrees.predict,
+        (typeof(boost), Matrix{Float64})))
     push!(counts, "score" => section(io, "score", score, (typeof(tree), Matrix{Float64})))
+    push!(counts, "score/boost" => section(io, "score boost", score, (typeof(boost), Matrix{Float64})))
+    push!(counts, "refit_leaves" => section(io, "refit_leaves", refit_leaves,
+        (typeof(tree), Matrix{Float64}, Vector{Float64})))
+    push!(counts, "predict/RefitTree" => section(io, "predict RefitTree", predict,
+        (typeof(refitted), Matrix{Float64})))
+    push!(counts, "prune_refit" => section(io, "prune_refit", prune_refit,
+        (typeof(refitted), Matrix{Float64}, Vector{Float64}, Matrix{Float64}, Vector{Float64})))
+    push!(counts, "fit_model_tree" => section(io, "fit_model_tree", fit_model_tree,
+        (Matrix{Float64}, Vector{Float64})))
     push!(counts, "shap" => section(io, "shap", shap, (typeof(tree), Matrix{Float64})))
     push!(counts, "shap!" => section(io, "shap!", shap!,
         (Matrix{Float64}, Vector{Bool}, typeof(tree), Matrix{Float64})))
     push!(counts, "shap/Softmax" => section(io, "shap Softmax", shap, (typeof(streetree), Matrix{Float64})))
+    push!(counts, "shap/boost" => section(io, "shap boost", shap, (typeof(boost), Matrix{Float64})))
+    for (name, f, types) in continuous_cases()
+        push!(counts, "continuous/$name" => section(io, "continuous $name", f, types))
+    end
     push!(counts, "feature_importance" => section(io, "feature_importance", feature_importance, (typeof(tree),)))
     push!(counts, "coeftable" => section(io, "coeftable", coeftable, (typeof(tree), Vector{Float64})))
     push!(counts, "expected_score" => section(io, "expected_score", expected_score, (typeof(tree),)))
@@ -115,14 +145,26 @@ open(joinpath(OUT, "jet.txt"), "w") do io
         MMI.predict, (typeof(mcls), typeof(clsmach), typeof(df))))
 end
 
+# These data-driven adapter/serialization calls already report dynamic sites
+# from Any-valued dictionaries or Tables.jl interfaces. Keep their reports
+# visible, but require zero reports from every direct model call above.
+const DIAGNOSTIC_CASES = Set((
+    "from_dict", "fit/RegressorFit", "fit/ClassifierFit",
+    "predict/RegressorFit", "predict/ClassifierFit",
+    "MMI.fit/Regressor", "MMI.fit/Classifier",
+    "MMI.predict/Regressor", "MMI.predict/Classifier",
+))
+
 # ---- @code_warntype dumps -------------------------------------------------
 
 const T = Float64
 const VS = SVector{2,Float64}
-const FSs = LinearTrees.FitState{T,T,T,MSE,BIC}
-const FSv = LinearTrees.FitState{T,VS,T,Softmax{3},BIC}
-const SCs = LinearTrees.Scratch{T,T}
-const SCv = LinearTrees.Scratch{T,VS}
+# ExactSearch carries no search buffer. Use complete concrete state types here:
+# a partially specified FitState is a UnionAll and does not describe a hot call.
+const FSs = LinearTrees.FitState{T,T,T,MSE,BIC,ExactSearch,Nothing}
+const FSv = LinearTrees.FitState{T,VS,T,Softmax{3},BIC,ExactSearch,Nothing}
+const SCs = LinearTrees.Scratch{T,T,Nothing}
+const SCv = LinearTrees.Scratch{T,VS,Nothing}
 const COL = SubArray{Float64,1,Matrix{Float64},Tuple{UnitRange{Int},Int},true}
 const ICOL = SubArray{Int32,1,Matrix{Int32},Tuple{Base.Slice{Base.OneTo{Int}},Int},true}
 const TREEs = typeof(tree)
@@ -164,6 +206,8 @@ end
 
 println("JET site counts:")
 for (k, v) in counts
-    @printf("  %-28s %6d\n", k, v)
+    @printf("  %-28s %6d%s\n", k, v, k in DIAGNOSTIC_CASES ? "  (adapter diagnostic)" : "")
 end
 println("\nwrote ", OUT, "/jet.txt and ", OUT, "/warntype.txt")
+unexpected = filter(kv -> last(kv) < 0 || (!(first(kv) in DIAGNOSTIC_CASES) && last(kv) != 0), counts)
+isempty(unexpected) || error("Unresolved JET reports or analysis failures: $(unexpected). See $(joinpath(OUT, "jet.txt"))")

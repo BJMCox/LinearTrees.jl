@@ -30,6 +30,95 @@ function frozen_target!(target::Vector{Tuple{V,V}}, g0::Vector{V}, h0::Vector{V}
     return target
 end
 
+"Weighted base-loss objective after a raw-score step along `increment`."
+function boost_step_loss(loss::Loss, y, F, w, increment, scale)
+    total = zero(eltype(w))
+    if iszero(scale)
+        for i in eachindex(y)
+            total += w[i] * pointloss(loss, y[i], F[i])
+        end
+    else
+        for i in eachindex(y)
+            total += w[i] * pointloss(loss, y[i], F[i] + scale * increment[i])
+        end
+    end
+    return total
+end
+
+"Halve a proposed base-loss step until its raw objective is finite and nonincreasing."
+function boost_backtrack_scale(loss::Loss, y, F, w, increment, start::T) where {T}
+    baseline = boost_step_loss(loss, y, F, w, increment, zero(T))
+    scale = start
+    while scale >= eps(T)
+        candidate = boost_step_loss(loss, y, F, w, increment, scale)
+        isfinite(candidate) && candidate <= baseline && return scale
+        scale /= 2
+    end
+    return zero(T)
+end
+
+boost_step_scale(loss::Loss, y, F, w, increment, start::T) where {T} =
+    boost_backtrack_scale(loss, y, F, w, increment, start)
+
+"Minimize Huber's convex directional loss before checking the actual objective."
+function boost_step_scale(loss::Huber, y, F, w, increment, start::T) where {T}
+    δ = T(loss.δ)
+    derivative(scale) = sum(w[i] * increment[i] *
+        clamp(F[i] + scale * increment[i] - y[i], -δ, δ) for i in eachindex(y))
+    scale = if derivative(zero(T)) >= 0
+        zero(T)
+    elseif derivative(one(T)) <= 0
+        one(T)
+    else
+        lo, hi = zero(T), one(T)
+        for _ in 1:60
+            mid = lo / 2 + hi / 2
+            if derivative(mid) < 0
+                lo = mid
+            else
+                hi = mid
+            end
+        end
+        lo / 2 + hi / 2
+    end
+    iszero(scale) && return scale
+    return boost_backtrack_scale(loss, y, F, w, increment, scale)
+end
+
+"Scale a just-fitted tree in place before it becomes part of the ensemble."
+function scale_boost_tree(tree::LinearTree{T,V,L}, scale::T) where {T,V,L}
+    isone(scale) && return tree
+    for k in eachindex(tree.nodes)
+        n = tree.nodes[k]
+        if iszero(scale)
+            tree.nodes[k] = Node{T,V}(n; lcoef = zero(V),
+                lintercept = zero(V), rcoef = zero(V), rintercept = zero(V))
+        else
+            tree.nodes[k] = Node{T,V}(n; lcoef = scale * n.lcoef,
+                lintercept = scale * n.lintercept, rcoef = scale * n.rcoef,
+                rintercept = scale * n.rintercept)
+        end
+    end
+    return LinearTree{T,V,L}(tree.nodes, tree.catmasks, tree.loss, tree.lo,
+        tree.hi, iszero(scale) ? zero(V) : scale * tree.base, tree.nfeatures, tree.truncate)
+end
+
+"Reuse `g0` for the proposed whole-ensemble increment after tree fitting."
+function safeguard_boost_tree!(g0, loss, y, F, w, tree, X, eta, nthreads)
+    row_blocks(length(g0), nthreads) do rows
+        for i in rows
+            g0[i] = eta * score_row(tree, X, i, false)
+        end
+    end
+    scale = boost_step_scale(loss, y, F, w, g0, one(eta))
+    if !iszero(scale)
+        for i in eachindex(F)
+            F[i] += scale * g0[i]
+        end
+    end
+    return scale_boost_tree(tree, scale)
+end
+
 """
     fit_boost(X, y, loss = MSE(); nrounds = 100, eta = 0.1, max_depth = 5,
               min_fit = 10, min_leaf = 5, min_sum_hessian = 1.0,
@@ -53,7 +142,10 @@ sampled rows' IDs each round. It supports numeric features and scalar losses.
 Sampled-out rows have weight
 zero for that tree only. `history` holds the per-round deviance and the
 ensemble's `validated` flag says whether it is the validation deviance, and so
-whether early stopping was in play.
+whether early stopping was in play. It uses raw accumulated scores, before
+the ensemble's prediction clamp. For base losses with `backtracks(loss)`, a
+round's retained tree is scaled until the training objective on those raw
+scores is finite and nonincreasing; validation receives the same scaled tree.
 
 For `Quantile` and `MAD` the frozen Hessian is the IRLS weight at the
 ensemble score, so a round is one IRLS step, not an exact L1 fit.
@@ -67,6 +159,7 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
         Xval = nothing, yval = nothing, wval = nothing, patience = 10,
         nthreads = Threads.nthreads())
     nthreads = clamp(nthreads, 1, Threads.nthreads())
+    check_tree_options(max_depth, 10, min_fit, min_leaf, min_sum_hessian, 3, 5)
     isinteger(nrounds) && nrounds >= 1 || throw(ArgumentError("nrounds must be an integer >= 1, got $nrounds"))
     isfinite(eta) && eta > 0 || throw(ArgumentError("eta must be finite and positive"))
     0 < subsample <= 1 || throw(ArgumentError("subsample must lie in (0, 1]"))
@@ -99,11 +192,7 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     g0 = zeros(V, n); h0 = zeros(V, n)
     target = Vector{Tuple{V,V}}(undef, n)
     allfeat = collect(1:p)
-    iscat = falses(p)
-    for j in categorical
-        1 <= j <= p || throw(ArgumentError("categorical column $j is outside 1:$p"))
-        iscat[j] = true
-    end
+    iscat, nlevels = categorical_schema(Xm, categorical)
     split_search = prepare_search(split_search, Xm, allfeat, iscat, axes(Xm, 1), nothing, nthreads)
     idx = index_workspace(split_search, n, p)
     initialize_index!(idx, Xm, nothing, keep, allfeat, nthreads, split_search)
@@ -134,8 +223,17 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     nrow = max(1, round(Int, subsample * n))
     nfeat = max(1, ceil(Int, colsample * p))
     workspace = TreeWorkspace{T,V}(nrow, p, nthreads, split_search)
+    # Round data are read-only during growth and are not retained by a tree.
+    # A full-data round borrows the existing arrays; a sampled round gathers
+    # into fixed-size buffers in the same ascending row order as findall.
+    sampled = nrow != n
+    round_X = sampled ? Matrix{T}(undef, nrow, p) : Xm
+    round_y = sampled ? Vector{Tuple{V,V}}(undef, nrow) : target
+    round_w = sampled ? Vector{T}(undef, nrow) : w
+    round_keep = collect(1:nrow)
     for t in 1:nrounds
         frozen_target!(target, g0, h0, loss, yv, F, w)
+        validate_target(frozen, target)
         if subsample < 1
             fill!(wr, zero(T))
             for i in view(randperm(rng, n), 1:nrow)
@@ -145,10 +243,30 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
             copyto!(wr, w)
         end
         features = colsample < 1 ? sort!(randperm(rng, p)[1:nfeat]) : allfeat
-        tree = _fit_tree(Xm, target, frozen, workspace; weights = wr, categorical, rule, max_depth, min_fit, min_leaf,
-            min_sum_hessian, truncate, features, presort, nthreads, split_search)::LinearTree{T,V,Frozen{V}}
+        if sampled
+            k = 0
+            for i in eachindex(wr)
+                iszero(wr[i]) && continue
+                k += 1
+                round_keep[k] = i
+                round_y[k] = target[i]
+                round_w[k] = wr[i]
+            end
+            for j in 1:p, k in 1:nrow
+                round_X[k, j] = Xm[round_keep[k], j]
+            end
+        end
+        round_search = prepare_search(split_search, round_X, features, iscat, round_keep, workspace, nthreads)
+        tree = _fit_tree(round_X, round_y, round_w, frozen, rule, V, iscat, nlevels,
+            round_keep, features, presort, workspace; max_depth, min_fit, min_leaf,
+            min_sum_hessian, max_lin_chain = 10, truncate, truncation_factor = 3,
+            nthreads, niter = 5, split_search = round_search)::LinearTree{T,V,Frozen{V}}
+        if backtracks(loss)
+            tree = safeguard_boost_tree!(g0, loss, yv, F, w, tree, Xm, etaT, nthreads)
+        else
+            add_tree_score!(F, tree, Xm, etaT, nthreads)
+        end
         push!(trees, tree)
-        add_tree_score!(F, tree, Xm, etaT, nthreads)
         if hasval
             add_tree_score!(Fv, tree, Xv, etaT, nthreads)
             push!(history, deviance(loss, yvv, Fv, wv))
@@ -194,6 +312,7 @@ Intercept and per-feature slopes of the unclipped ensemble score at `x`:
 `f0` plus `eta` times the sum of each tree's `coeftable`.
 """
 function coeftable(b::LinearBoost{T,V}, x::AbstractVector) where {T,V}
+    check_feature_width(b, x)
     slopes = zeros(V, b.nfeatures)
     intercept = b.f0
     for t in b.trees
@@ -224,6 +343,7 @@ reused across the ensemble's trees.
 """
 function shap!(values, clipped::Vector{Bool}, b::LinearBoost{T,V}, X::AbstractMatrix;
         nthreads = Threads.nthreads()) where {T,V}
+    check_feature_width(b, X)
     n = size(X, 1)
     expected = V <: SVector ? (n, b.nfeatures, length(V)) : (n, b.nfeatures)
     size(values) == expected || throw(DimensionMismatch("values must have size $expected, got $(size(values))"))

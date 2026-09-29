@@ -23,8 +23,12 @@ makedocs(;
         "Getting started" => "guide.md",
         "Manual" => [
             "Tree fitting" => "trees.md",
+            "Ridge leaf refits" => "refit.md",
+            "Validation pruning" => "prune.md",
+            "Model-based splits" => "modeltree.md",
             "Boosting" => "boosting.md",
             "Continuous trees" => "continuous.md",
+            "Continuous model averaging" => "continuous_ensemble.md",
             "Loss functions" => "losses.md",
             "Interpretation" => "interpretation.md",
             "Interfaces and persistence" => "interfaces.md",

@@ -51,3 +51,18 @@ end
     root = LinearTree{T,T,MSE}([N(lintercept = 7.0)], UInt64[], MSE(), -1.0, 1.0, 0.0, 1, true)
     @test score(root, zeros(1, 1)) == [1.0]        # con root is clamped too
 end
+
+@testset "fitted feature width applies even to constant trees" begin
+    T = Float64
+    tree = LinearTree{T,T,MSE}([Node{T,T}(lintercept = 2.0)], UInt64[],
+        MSE(), -Inf, Inf, 2.0, 2, false)
+    for X in (zeros(3, 1), zeros(3, 3))
+        @test_throws DimensionMismatch score(tree, X)
+        @test_throws DimensionMismatch predict(tree, X)
+        out = fill(9.0, 3)
+        @test_throws DimensionMismatch predict!(out, tree, X)
+        @test out == fill(9.0, 3)
+    end
+    @test_throws DimensionMismatch coeftable(tree, [1.0])
+    @test_throws DimensionMismatch shap(tree, zeros(3, 1))
+end
