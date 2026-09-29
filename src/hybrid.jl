@@ -23,9 +23,10 @@ struct HybridSearch <: SplitSearch
     end
 end
 
-struct PreparedHybridSearch <: SplitSearch
+struct PreparedHybridSearch{T} <: SplitSearch
     nbins::Int
     ids::Matrix{UInt16}
+    offsets::Vector{T}
 end
 
 struct HybridBinWorkspace{T,V}
@@ -57,23 +58,25 @@ search_workspace(search::PreparedHybridSearch, ::Type{T}, ::Type{V}) where {T,V}
 index_workspace(::PreparedHybridSearch, n, p) = Matrix{Int32}(undef, 0, 0)
 sampled_index_workspace(search::PreparedHybridSearch, n, p) =
     n == size(search.ids, 1) ? nothing : Matrix{UInt16}(undef, n, p)
-initialize_index!(idx, X, presort, keep, features, nthreads, ::PreparedHybridSearch) = idx
+initialize_index!(idx::Matrix{Int32}, X::Matrix{T}, presort, keep,
+    features::Vector{Int}, nthreads, ::PreparedHybridSearch, positions = Int32[]) where {T<:Real} = idx
 
 function prepare_search(search::HybridSearch, X::Matrix{T}, features::Vector{Int},
-        iscat, keep, workspace, nthreads) where {T}
+        iscat, keep, workspace, nthreads) where {T<:Real}
     any(iscat[features]) &&
         throw(ArgumentError("HybridSearch supports numeric features only; use ExactSearch() with categorical features"))
     n, p = size(X)
     ids = Matrix{UInt16}(undef, n, p)
+    offsets = fill!(Vector{T}(undef, p), zero(T))
     # Sort scratch grows with rows per worker. Four blocks retain most of the
     # measured parallel gain without allocating a full sort set for every thread.
     column_blocks(length(features), n, min(nthreads, 4)) do columns, _
-        prepare_hybrid_columns!(ids, search.nbins, X, features, columns)
+        prepare_hybrid_columns!(ids, offsets, search.nbins, X, features, columns)
     end
-    return PreparedHybridSearch(search.nbins, ids)
+    return PreparedHybridSearch(search.nbins, ids, offsets)
 end
 
-function prepare_hybrid_columns!(ids, nbins, X::Matrix{T}, features::Vector{Int},
+function prepare_hybrid_columns!(ids, offsets, nbins, X::Matrix{T}, features::Vector{Int},
         columns::UnitRange{Int}) where {T}
     n = size(X, 1)
     # Each column block owns its sort scratch and writes disjoint ID columns.
@@ -88,6 +91,7 @@ function prepare_hybrid_columns!(ids, nbins, X::Matrix{T}, features::Vector{Int}
         else
             radix_sortperm!(order, x, buffer)
         end
+        offsets[j] = fitting_offset(x[first(order)], x[last(order)])
         width = cld(n, nbins)
         lo = 1
         bin = 1
@@ -119,7 +123,7 @@ function prepare_search(search::PreparedHybridSearch, X, features, iscat, keep, 
     for j in features, i in eachindex(keep)
         ids[i, j] = search.ids[keep[i], j]
     end
-    return PreparedHybridSearch(search.nbins, ids)
+    return PreparedHybridSearch(search.nbins, ids, search.offsets)
 end
 
 @inline function record_unique!(buffer::HybridBinWorkspace{T}, bin, x) where {T}
@@ -157,7 +161,7 @@ function gather_hybrid!(st, rows, j, buffer, lo, hi)
 end
 
 function refine_hybrid(st::FitState{T,V}, rows, j, dmin, buffer, unsplit,
-        candidates, total, n) where {T,V}
+        candidates, total, n, offset) where {T,V}
     nbins = st.split_search.nbins
     occupied = count(>(0), buffer.counts)
     if length(rows) <= nbins || (occupied == 1 && sum(buffer.counts) > 1)
@@ -193,8 +197,8 @@ function refine_hybrid(st::FitState{T,V}, rows, j, dmin, buffer, unsplit,
     doblin = allowed(rule, BLIN) && nu >= MIN_UNIQUE_LIN
     doplin = allowed(rule, PLIN)
     for k in eachindex(xs)
-        left = addrow(left, xs[k], zs[k], hs[k])
-        right = subrow(right, xs[k], zs[k], hs[k])
+        left = addrow(left, xs[k] - offset, zs[k], hs[k])
+        right = subrow(right, xs[k] - offset, zs[k], hs[k])
         wleft += ws[k]
         wright -= ws[k]
         (k == 1 || xs[k] != xs[k - 1]) && (uleft += 1)
@@ -202,7 +206,7 @@ function refine_hybrid(st::FitState{T,V}, rows, j, dmin, buffer, unsplit,
         (k == length(xs) || xs[k] < xs[k + 1]) || continue
         (wleft >= st.min_leaf && wright >= st.min_leaf) || continue
         candidates = split_candidates(candidates, left, right, xs[k], uleft, nu - uleft,
-            rule, dmin, dopcon, doblin, doplin, Val(true))
+            rule, dmin, dopcon, doblin, doplin, offset, Val(true))
     end
     return score_splits(unsplit, candidates, rule, n, dmin)
 end
@@ -210,16 +214,17 @@ end
 function hybrid_scan_feature(st::FitState{T,V}, rows, j, dmin,
         buffer::HybridBinWorkspace{T,V}) where {T,V<:Real}
     nbins = st.split_search.nbins
+    offset = st.split_search.offsets[j]
     fill!(buffer.moments, zero(MomentSums{V}))
     fill!(buffer.masses, zero(T))
     fill!(buffer.counts, 0)
     fill!(buffer.maxima, typemin(T))
     # Membership rows and selected columns are validated by the fit. Preparation
     # assigns every selected entry a bin in 1:nbins, matching these buffers.
-    @inbounds for i in rows
+    for i in rows
         bin = Int(st.split_search.ids[i, j])
         x = st.X[i, j]
-        buffer.moments[bin] = addrow(buffer.moments[bin], x, st.z[i], st.h[i])
+        buffer.moments[bin] = addrow(buffer.moments[bin], x - offset, st.z[i], st.h[i])
         buffer.masses[bin] += st.w[i]
         buffer.maxima[bin] = max(buffer.maxima[bin], x)
         record_unique!(buffer, bin, x)
@@ -242,7 +247,7 @@ function hybrid_scan_feature(st::FitState{T,V}, rows, j, dmin,
             CON, T(NaN), zero(V), intercept, zero(V), intercept, rss, score))
     end
     if allowed(rule, LIN) && nu >= MIN_UNIQUE_LIN
-        fit = fit_lin(total, rule)
+        fit = fit_lin(total, rule, offset)
         if fit !== nothing
             coef, intercept, rss = fit
             score = selection_score(rule, LIN, sum(rss), n, dmin, nc)
@@ -271,9 +276,9 @@ function hybrid_scan_feature(st::FitState{T,V}, rows, j, dmin,
         threshold = buffer.maxima[bin]
         (wleft >= st.min_leaf && wright >= st.min_leaf && isfinite(threshold)) || continue
         candidates = split_candidates(candidates, left, right, threshold, uleft,
-            buffer.suffix_counts[bin + 1], rule, dmin, dopcon, doblin, doplin)
+            buffer.suffix_counts[bin + 1], rule, dmin, dopcon, doblin, doplin, offset)
     end
-    return refine_hybrid(st, rows, j, dmin, buffer, unsplit, candidates, total, n)
+    return refine_hybrid(st, rows, j, dmin, buffer, unsplit, candidates, total, n, offset)
 end
 
 function best_split_serial(st::FitState{T,V,Y,L,R,S}, rows, span::UnitRange{Int},

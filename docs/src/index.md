@@ -50,8 +50,12 @@ Use [`fit_boost`](@ref) for an ensemble.
 |:--|:--|
 | Fit and assess your first model | [Getting started](guide.md) |
 | Understand a tree and control its size | [Tree fitting](trees.md) |
+| Refit fixed regions with multivariate linear models | [Ridge leaf refits](refit.md) |
+| Choose splits using linear child models | [Model-based splits](modeltree.md) |
+| Prune a ridge-leaf tree using validation data | [Validation pruning](prune.md) |
 | Train an ensemble with validation | [Boosting](boosting.md) |
 | Fit a globally continuous regression tree | [Continuous trees](continuous.md) |
+| Average uncertainty across continuous geometries | [Continuous model averaging](continuous_ensemble.md) |
 | Match the loss to your target | [Loss functions](losses.md) |
 | Explain fitted predictions | [Interpretation](interpretation.md) |
 | Use tables, MLJ, or saved models | [Interfaces and persistence](interfaces.md) |
@@ -68,8 +72,11 @@ PILOT trees and boosted ensembles return point predictions, class
 probabilities, or conditional quantiles according to the loss. They do not
 provide posterior distributions. [`ContinuousTree`](@ref) instead provides a
 conjugate Student-t predictive distribution conditional on its selected model
-and preprocessing. The package does not provide missing-value imputation or
-post-growth pruning. Class probabilities do not carry a calibration guarantee.
+and preprocessing. [`ContinuousEnsemble`](@ref) averages over a supplied finite
+set of geometries. Ridge leaf refits and model-based splits fit multivariate
+affine terminal models under squared error. [`prune_refit`](@ref) optionally
+replaces their subtrees using validation loss. The package does not provide
+missing-value imputation. Class probabilities do not carry a calibration guarantee.
 
 The original algorithm is described by Raymaekers, Rousseeuw, Verdonck, and Yao
 (2024), *Fast linear model trees by PILOT*, Machine Learning 113, 6561–6610.

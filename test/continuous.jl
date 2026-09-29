@@ -24,6 +24,39 @@ using StableRNGs
         observed = predictive(model, X)
         @test observed.scale2 ≈ latent .+ scale^2 * rate / shape
         @test predict!(similar(y), model, X) ≈ μ
+        @test predict(model, X; batch_size=7) ≈ μ
+        @test predictive(model, X; observation=false, batch_size=7).scale2 ≈ latent
+    end
+
+    @testset "Collinear root retains a positive coefficient prior" begin
+        for (n, λ) in ((4, 1e-20), (41, 1e-20), (41, 0.2))
+            x = collect(range(-1.0, 1.0; length=n))
+            X = hcat(x, x)
+            y = sin.(x)
+            model = fit_continuous_tree(X, y; max_splits=0,
+                coefficient_precision=λ)
+            query = [1.0 -1.0]
+            marginal = predictive(model, query; observation=false)
+            expected = setprecision(256) do
+                B = BigFloat.(hcat(ones(n), x, x))
+                z = BigFloat.((y .- model.ycenter[1]) ./ model.yscale[1])
+                ridge = BigFloat(λ)
+                precision = B'B + ridge * I
+                coef = precision \ (B'z)
+                rate = 1 + (sum(abs2, z - B * coef) + ridge * sum(abs2, coef)) / 2
+                shape = 2 + n / 2
+                row = BigFloat[1, 1, -1]
+                location = model.ycenter[1] + model.yscale[1] * dot(row, coef)
+                scale2 = dot(row, precision \ row) * rate / shape * model.yscale[1]^2
+                score = size(B, 2) / 2 * log(ridge) - logdet(precision) / 2 -
+                    shape * log(rate)
+                (; location=Float64(location), scale2=Float64(scale2),
+                    score=Float64(score))
+            end
+            @test only(marginal.location) ≈ expected.location rtol=1e-7 atol=1e-9
+            @test only(marginal.scale2) ≈ expected.scale2 rtol=1e-7
+            @test model.fit.post.score ≈ expected.score rtol=1e-7 atol=1e-8
+        end
     end
 
     @testset "Shared geometry keeps output posteriors separate" begin
@@ -42,6 +75,8 @@ using StableRNGs
         marginal = predictive(model, X)
         @test marginal.location ≈ values
         @test size(marginal.scale2) == size(Y)
+        @test predict(model, X; batch_size=7) ≈ values
+        @test predictive(model, X; batch_size=7).scale2 ≈ marginal.scale2
         @test marginal.dof == fill(size(Y, 1) + 4, 2)
         @test all(marginal.scale2 .> predictive(model, X; observation=false).scale2)
         @test count(node -> node.feature != 0, model.fit.nodes) <= 3
@@ -122,7 +157,7 @@ using StableRNGs
         @test predict(numeric, X) isa Vector{Float64}
         copied = copy(Q)
         expected = predict(model, copied)
-        predict!(view(copied, :, 1), model, copied)
+        predict!(view(copied, :, 1), model, copied; batch_size=2)
         @test copied[:, 1] == expected
         allcuts = fit_continuous_tree(reshape([-2.0, -1, 1, 2], :, 1), [-2.0, -1, -1, -2];
             n_thresholds=nothing, max_splits=1, min_leaf=1)

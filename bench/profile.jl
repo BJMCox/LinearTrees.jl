@@ -1,4 +1,4 @@
-# Profiling pass over the six P1 cases: runtime, allocations, type stability.
+# Profiling pass over tree, boosting, continuous, and prediction cases.
 #
 #     julia --project=bench -t auto bench/profile.jl        # threaded pass
 #     julia --project=bench -t 1    bench/profile.jl        # serial pass
@@ -7,7 +7,8 @@
 # on one machine profile the same trees.
 #
 # Each case gets a warm-up call, a `BenchmarkTools` median, a CPU profile
-# (flat text plus a PProf flame graph), and an allocation profile. Output goes
+# (flat text plus a PProf flame graph), and an allocation profile. PProf output
+# goes to a per-case log so progress bars do not flood the terminal. Files go
 # to `bench/profiles/`, suffixed `-t1` or `-tN` by `Threads.nthreads()`, so a
 # serial and a threaded run do not overwrite each other.
 #
@@ -16,17 +17,19 @@
 #   julia --project=bench -t 1 --track-allocation=user bench/trackalloc.jl <case>
 #   julia --project=bench bench/typecheck.jl        # JET + @code_warntype
 #
-# Set `LT_PROFILE_CASES=1,5` to run a subset.
+# Set `LT_PROFILE_CASES=7,8` to run only boosting and continuous fits.
+# Set `LT_PROFILE_OUT` to write artifacts outside the checkout.
 
-using Profile, PProf, BenchmarkTools, Printf
+using Profile, PProf, BenchmarkTools, Printf, LinearAlgebra
 using LinearTrees, StaticArrays
 
 include(joinpath(@__DIR__, "cases.jl"))
 
-const OUT = joinpath(@__DIR__, "profiles")
+const OUT = get(ENV, "LT_PROFILE_OUT", joinpath(@__DIR__, "profiles"))
 const NT = Threads.nthreads()
 const TAG = "t$NT"
 mkpath(OUT)
+BLAS.set_num_threads(1)
 
 "Flat listing of the current profile buffer, as a string."
 function flat_print(mincount, sortedby)
@@ -42,25 +45,35 @@ function snapshot_count(flat)
 end
 
 """
-Profile `f`, write two flat text listings and a PProf flame graph, and return
-`(nsamples, flat text)`. `mincount` is 2% of the samples, as the brief asks.
+Profile repeated calls of `f` for approximately one second, write two flat
+text listings and a PProf flame graph, and return `(nsamples, flat text)`.
+`mincount` is 2% of the samples, as the original profiling brief asks.
 The second listing sorts by `:overhead`, which is self time; the `Count`
 column of the first is cumulative, so it ranks callers, not hot loops.
 """
-function cpu_profile(name, f)
+function cpu_profile(name, f, median_ns)
     Profile.clear()
     Profile.init(; n = 10^8, delay = 0.001)
-    Profile.@profile f()
+    repetitions = clamp(ceil(Int, 1e9 / median_ns), 1, 10_000)
+    Profile.@profile for _ in 1:repetitions
+        f()
+    end
     ns = snapshot_count(flat_print(typemax(Int), :count))
     mc = max(1, round(Int, 0.02 * ns))
     flat = flat_print(mc, :count)
     open(joinpath(OUT, "$name-$TAG.flat.txt"), "w") do fh
-        println(fh, "# $name  threads=$NT  samples=$ns  mincount=$mc (2%), sorted by cumulative count")
+        println(fh, "# $name  threads=$NT  repetitions=$repetitions  samples=$ns  mincount=$mc (2%), sorted by cumulative count")
         print(fh, flat)
         println(fh, "\n\n# same profile, sorted by self time (Overhead)")
         print(fh, flat_print(mc, :overhead))
     end
-    PProf.pprof(; web = false, out = joinpath(OUT, "$name-$TAG.pb.gz"))
+    open(joinpath(OUT, "$name-$TAG.pprof.log"), "w") do io
+        redirect_stdout(io) do
+            redirect_stderr(io) do
+                PProf.pprof(; web = false, out = joinpath(OUT, "$name-$TAG.pb.gz"))
+            end
+        end
+    end
     return ns, flat
 end
 
@@ -75,10 +88,11 @@ function alloc_profile(name, f)
     res = Profile.Allocs.fetch()
     tot = sum(a.size for a in res.allocs; init = 0)
     byline = Dict{String,Tuple{Int,Int}}()
+    source_root = dirname(pathof(LinearTrees))
     for a in res.allocs
         st = a.stacktrace
         # first frame inside LinearTrees, else the innermost frame
-        k = findfirst(fr -> occursin("LinearTrees", string(fr.file)), st)
+        k = findfirst(fr -> startswith(string(fr.file), source_root), st)
         fr = k === nothing ? (isempty(st) ? nothing : st[1]) : st[k]
         key = fr === nothing ? "?" : "$(basename(string(fr.file))):$(fr.line) $(fr.func)"
         c, b = get(byline, key, (0, 0))
@@ -90,7 +104,13 @@ function alloc_profile(name, f)
             @printf(fh, "%12d B  %8d allocs  %s\n", b, c, k)
         end
     end
-    PProf.Allocs.pprof(res; web = false, out = joinpath(OUT, "$name-$TAG.alloc.pb.gz"))
+    open(joinpath(OUT, "$name-$TAG.alloc.pprof.log"), "w") do io
+        redirect_stdout(io) do
+            redirect_stderr(io) do
+                PProf.Allocs.pprof(res; web = false, out = joinpath(OUT, "$name-$TAG.alloc.pb.gz"))
+            end
+        end
+    end
     return tot, length(res.allocs)
 end
 
@@ -105,7 +125,7 @@ const SUMMARY = String[]
 function run_case(name, f; label = name)
     f()   # warm-up
     m = bench(f)
-    ns, _ = cpu_profile(name, f)
+    ns, _ = cpu_profile(name, f, m.t)
     ab, an = alloc_profile(name, f)
     line = @sprintf("%-10s threads=%2d  median=%9.3f ms  allocs=%9d  bytes=%12d  cpu_samples=%6d  sampled_alloc_bytes=%d",
         label, NT, m.t / 1e6, m.allocs, m.bytes, ns, ab)
@@ -114,9 +134,10 @@ function run_case(name, f; label = name)
     return nothing
 end
 
-wanted = haskey(ENV, "LT_PROFILE_CASES") ? parse.(Int, split(ENV["LT_PROFILE_CASES"], ",")) : collect(1:6)
+wanted = haskey(ENV, "LT_PROFILE_CASES") ? parse.(Int, split(ENV["LT_PROFILE_CASES"], ",")) : collect(1:8)
 
-println("Julia ", VERSION, "  threads=", NT, "  CPU=", Sys.cpu_info()[1].model)
+println("Julia ", VERSION, "  threads=", NT, "  BLAS=", BLAS.get_num_threads(),
+    "  CPU=", Sys.cpu_info()[1].model)
 
 if 1 in wanted
     X1, y1 = case1_data()
@@ -146,9 +167,20 @@ if 5 in wanted || 6 in wanted
         run_case("case6-shap", () -> shap(tree, Xs))
     end
 end
+if 7 in wanted
+    X7, y7 = case7_data()
+    run_case("case7-boost", () -> fit_boost(X7, y7;
+        nrounds = 30, max_depth = 3, nthreads = 1, rng = StableRNG(7)))
+end
+if 8 in wanted
+    X8, y8 = case8_data()
+    run_case("case8-continuous", () -> fit_continuous_tree(X8, y8;
+        pairs = [(1, 2)], max_splits = 4))
+end
 
 open(joinpath(OUT, "summary-$TAG.txt"), "w") do fh
-    println(fh, "Julia ", VERSION, "  threads=", NT, "  CPU=", Sys.cpu_info()[1].model)
+    println(fh, "Julia ", VERSION, "  threads=", NT, "  BLAS=", BLAS.get_num_threads(),
+        "  CPU=", Sys.cpu_info()[1].model)
     foreach(l -> println(fh, l), SUMMARY)
 end
 println("\nwrote ", OUT)

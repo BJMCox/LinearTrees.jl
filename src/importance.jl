@@ -1,6 +1,6 @@
-# Split-gain feature importance.
+# Node-model gain feature importance.
 
-"Add each split node's positive gain to `imp[feature]`."
+"Add each nonconstant node's positive gain to `imp[feature]`, including LIN nodes."
 function gain_sums!(imp::Vector{Float64}, tree::LinearTree)
     for n in tree.nodes
         isleaf(n) && continue
@@ -14,8 +14,8 @@ normalise_importance(imp) = (tot = sum(imp); tot > 0 ? imp ./ tot : imp)
 """
     feature_importance(tree)
 
-Surrogate-deviance drop per feature, normalised to sum to one. Zeros when
-no node has positive gain.
+Surrogate-deviance drop per feature from nonconstant node models, including
+unsplit `LIN` nodes, normalised to sum to one. Zeros when no node has positive gain.
 """
 function feature_importance(tree::LinearTree)
     imp = gain_sums!(zeros(Float64, tree.nfeatures), tree)
@@ -30,6 +30,7 @@ clamped at `x` contributes zero slope and its piece value goes to the
 intercept. Categorical pieces are constants.
 """
 function coeftable(tree::LinearTree{T,V}, x::AbstractVector) where {T,V}
+    check_feature_width(tree, x)
     slopes = zeros(V, tree.nfeatures)
     intercept = zero(V)
     k = 1
@@ -41,7 +42,7 @@ function coeftable(tree::LinearTree{T,V}, x::AbstractVector) where {T,V}
         end
         xraw = T(x[n.feature])
         if iscategorical(n)
-            goleft = isfinite(xraw) && category_is_left(tree, n, round(Int, xraw))   # non-finite codes route right, as in score_row
+            goleft = category_is_left(tree, n, xraw)
             intercept += goleft ? n.lintercept : n.rintercept
         else
             xc = tree.truncate ? min(max(xraw, n.xmin), n.xmax) : xraw

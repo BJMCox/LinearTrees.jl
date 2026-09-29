@@ -136,7 +136,7 @@ end
 
 MMI.metadata_pkg.((LinearTreeRegressor, LinearTreeClassifier, LinearBoostRegressor, LinearBoostClassifier);
     name = "LinearTrees", uuid = "8dcaa25b-be43-4b0a-960a-aaf476051ed8",
-    url = "https://github.com/BJMCox/LinearTrees.jl", julia = true, license = "MIT", is_wrapper = false)
+    url = "https://github.com/BJMCox/LinearTrees.jl", julia = true, license = "Apache-2.0", is_wrapper = false)
 
 MMI.metadata_model(LinearTreeRegressor;
     input_scitype = MMI.Table(MMI.Continuous, MMI.Count, MMI.OrderedFactor, MMI.Multiclass),
@@ -195,7 +195,7 @@ The fields of `fitted_params(mach)` are:
 
 The fields of `report(mach)` are:
 
-- `feature_importances`: split-gain feature importances, as in `feature_importance`.
+- `feature_importances`: node-model gain feature importances, as in `feature_importance`.
 - `kind_counts`: a count of fitted nodes by `ModelKind`.
 
 See also [`LinearTreeClassifier`](@ref).
@@ -235,7 +235,7 @@ The fields of `fitted_params(mach)` are:
 
 The fields of `report(mach)` are:
 
-- `feature_importances`: split-gain feature importances, as in `feature_importance`.
+- `feature_importances`: node-model gain feature importances, as in `feature_importance`.
 - `kind_counts`: a count of fitted nodes by `ModelKind`.
 
 See also [`LinearTreeRegressor`](@ref).

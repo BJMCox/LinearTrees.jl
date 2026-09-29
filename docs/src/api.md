@@ -16,8 +16,12 @@ responses, while `score` returns values on the loss scale for PILOT models.
 
 ```@docs
 fit_tree
+refit_leaves
+prune_refit
+fit_model_tree
 fit_boost
 fit_continuous_tree
+fit_continuous_ensemble
 predict
 predict!
 predictive
@@ -30,8 +34,10 @@ These types describe the stored model. Fit models through the functions above.
 
 ```@docs
 LinearTree
+RefitTree
 LinearBoost
 ContinuousTree
+ContinuousEnsemble
 nrounds
 Node
 ModelKind

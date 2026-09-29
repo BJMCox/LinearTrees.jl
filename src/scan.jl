@@ -67,10 +67,11 @@ apply per split point, exactly as they would with the score inside the loop.
 function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::AbstractVector,
         ws::AbstractVector{T}, rule::SelectionRule, min_leaf, dmin) where {T<:Real,V}
     m = length(xs)
+    offset = fitting_offset(first(xs), last(xs))
     n = sum(ws)
     total = zero(MomentSums{V})
     for i in 1:m
-        total = addrow(total, xs[i], zs[i], hs[i])
+        total = addrow(total, xs[i] - offset, zs[i], hs[i])
     end
     best = nocandidate(T, V)
     nu = nunique(xs)
@@ -87,7 +88,7 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
     end
     # lin
     if allowed(rule, LIN) && nu >= MIN_UNIQUE_LIN
-        r = fit_lin(total, rule)
+        r = fit_lin(total, rule, offset)
         if r !== nothing
             a, b, rss = r
             sc = selection_score(rule, LIN, sum(rss), n, dmin, nc)
@@ -107,8 +108,8 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
     wleft = zero(T); wright = n
     uleft = 0
     for i in 1:(m - 1)
-        left = addrow(left, xs[i], zs[i], hs[i])
-        right = subrow(right, xs[i], zs[i], hs[i])
+        left = addrow(left, xs[i] - offset, zs[i], hs[i])
+        right = subrow(right, xs[i] - offset, zs[i], hs[i])
         wleft += ws[i]; wright -= ws[i]
         (i == 1 || xs[i] != xs[i - 1]) && (uleft += 1)
         xs[i] < xs[i + 1] || continue                  # only between distinct values
@@ -117,7 +118,7 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
         uright = nu - uleft
 
         pcon, blin, plin = split_candidates((pcon, blin, plin), left, right, t,
-            uleft, uright, rule, dmin, dopcon, doblin, doplin)
+            uleft, uright, rule, dmin, dopcon, doblin, doplin, offset)
     end
 
     # con and lin are already in `best`, so scoring pcon, blin and plin in that
@@ -139,7 +140,7 @@ end
 
 # Keep raw deviance keys until each kind has its best threshold.
 @inline function split_candidates(candidates, left, right, t, uleft, uright, rule, dmin,
-        dopcon, doblin, doplin, revisit::Val = Val(false))
+        dopcon, doblin, doplin, offset, revisit::Val = Val(false))
     pcon, blin, plin = candidates
     T = typeof(t); V = typeof(left.sw)
     if dopcon
@@ -149,15 +150,17 @@ end
         better_split(dk, t, pcon, revisit) && (pcon = Candidate{T,V}(PCON, t, zero(V), bl, zero(V), br, rss, dk))
     end
     if doblin
-        r = fit_blin(left, right, t)
+        r = fit_blin(left, right, t - offset)
         if r !== nothing
             al, bl, ar, br, rss = r
+            bl -= al * offset
+            br -= ar * offset
             dk = devkey(rule, sum(rss), dmin)
             better_split(dk, t, blin, revisit) && (blin = Candidate{T,V}(BLIN, t, al, bl, ar, br, rss, dk))
         end
     end
     if doplin && uleft >= MIN_UNIQUE_LIN && uright >= MIN_UNIQUE_LIN
-        rl = fit_lin(left, rule); rr = fit_lin(right, rule)
+        rl = fit_lin(left, rule, offset); rr = fit_lin(right, rule, offset)
         if rl !== nothing && rr !== nothing
             al, bl, rssl = rl; ar, br, rssr = rr
             rss = rssl + rssr

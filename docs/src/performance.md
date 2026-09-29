@@ -114,3 +114,32 @@ fit_tree(X, y; nthreads = 1) # compile before measuring
 Inspect allocation counts and bytes as well as runtime. For boosted fits
 with sampling, create a fresh seeded RNG for each repetition. Reusing an
 advanced RNG changes the sampled trees between calls.
+
+## Diagnose a slow fit
+
+The optional benchmark environment has a profiling runner for ordinary trees,
+boosting, continuous trees, prediction, and SHAP. Use one Julia thread when
+comparing search policies; the runner sets BLAS to one thread. The case filter
+avoids rerunning unrelated fits, and the output setting keeps generated
+profiles outside the checkout:
+
+```sh
+JULIA_NUM_THREADS=1 LT_PROFILE_CASES=7,8 \
+    LT_PROFILE_OUT=/tmp/lineartrees-profiles \
+    julia --project=bench bench/profile.jl
+```
+
+Cases 7 and 8 fit a 30-round boosted model and a four-split continuous tree
+on fixed synthetic data. Their inputs come from StableRNGs seeds. Each case
+records a BenchmarkTools median, total bytes and allocation count, a CPU
+profile, and a sampled allocation profile. The PProf flame graphs and their
+logs share the chosen output directory. Raw sampled bytes in an allocation
+profile are not a total-memory estimate; use the benchmark bytes for that.
+The synthetic cases locate expensive code paths, but do not measure accuracy
+or speed across datasets and machines.
+
+Run `bench/typecheck.jl` in the same bench environment to check targeted JET
+inference for tree, boost, and continuous calls and write `jet.txt` and
+`warntype.txt`. It fails on a new report in a direct model call. Reports from
+the data-driven table, MLJ, and dictionary adapters are shown separately in
+`jet.txt` for inspection.

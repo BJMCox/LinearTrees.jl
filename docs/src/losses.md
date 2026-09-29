@@ -75,7 +75,7 @@ For `Softmax(2)`, this diagonal is the exact logistic Hessian.
 
 Smooth losses fit each candidate model from gradients and Hessians on the raw score scale.
 The working response is `-g/h`, and the working weight is `h`.
-The method takes one local Newton step.
+The method proposes one local Newton step.
 It does not solve every node's full nonlinear optimization problem.
 
 The main derivatives are:
@@ -100,14 +100,15 @@ Boosting freezes the non-smooth working weights once per round.
 Its base tree does not run the node refit.
 See [Boosting](boosting.md) for the ensemble algorithm.
 
-## Logistic step safeguard
+## Smooth-loss step safeguard
 
-Small logistic Hessians can produce an excessive Newton step.
-Logistic trees and binary softmax trees compare each node update with the current
-weighted training loss.
-They keep a non-increasing full step.
-Otherwise, they halve all node coefficients together until the loss does not increase.
-They use a zero update if no tested scale succeeds.
+Small Hessians can produce an excessive Newton step, particularly for Huber
+residuals outside its quadratic region and for rare logistic outcomes.
+Huber trees minimize the convex loss along the proposed direction between
+zero and one full step. Logistic, binary softmax, and log-link trees keep a
+non-increasing full step or halve it until the actual weighted loss descends.
+They use a zero update if no tested scale succeeds. These checks include
+the same score and feature clamps used for prediction.
 
 The check includes score and feature truncation.
 It ensures descent for that node update within floating-point accuracy.
@@ -130,7 +131,12 @@ Lower values indicate a better fit under that loss.
 With `truncate=true`, [`scorebound`](@ref) limits fitted scores.
 Identity-link losses derive bounds from the target range.
 Logistic and softmax use `[-10, 10]`.
-Log-link losses use symmetric bounds based on the largest target.
+Log-link losses use an asymmetric score range: the lower bound admits small
+positive rates down to the representable exponential range, and the upper
+bound pads the largest observed response while keeping its exponential finite.
+Positive initial means retain their scale even below `1e-6`. An all-zero
+count target instead starts from a finite near-zero mean because its log-mean
+optimum is not finite.
 Set `truncate=false` when extrapolation beyond the training range is required.
 
 ## LossFunctions.jl losses

@@ -35,6 +35,13 @@ Use [`predict!`](@ref) when an output buffer is already available. For a
 vector target, both methods use a length-`n` vector. For a matrix target, they
 use an `n × q` matrix.
 
+`predict`, `predict!`, and `predictive` process rows in batches of 1024 by
+default. Set `batch_size` to a positive integer to bound temporary normalized
+predictors and, for `predictive`, the projected design and precision solve.
+The returned predictions still require storage proportional to the number of
+query rows. `predict!` computes all predictions before writing to its output,
+so an output view may overlap `X`.
+
 ```@example continuous
 out = similar(location)
 predict!(out, model, X)
@@ -118,6 +125,16 @@ a=a_0+n/2,
 b=b_0+\tfrac12\left(\lVert z-Bm\rVert^2+\lambda\lVert m\rVert^2\right).
 ```
 
+The solver normally factors `Λ` by Cholesky in `Float64`. An ill-conditioned
+factor triggers the library's `BigFloat` Cholesky solve for the coefficients,
+noise rate, and evidence. This retains the stated prior and weak data
+directions. The stored model and predictions remain `Float64`.
+
+The fallback uses the caller's current `BigFloat` precision and never changes
+global precision. It rejects conditioning beyond that precision with an
+informative error. Very large coefficients can still lose prediction accuracy
+through cancellation at `Float64` precision.
+
 At projected query row `r`, the Student-t distribution has `2a` degrees of
 freedom and normalized scale squared
 `(b/a) * (1 + r' * inv(Λ) * r)` for an observation. The latent version omits
@@ -143,7 +160,8 @@ spaced cut positions in its normalized training range. The same global grid is
 used throughout growth. Set `n_thresholds=nothing` to consider midpoints
 between all distinct training values. `min_leaf`, `max_depth`, and `max_splits`
 still restrict eligible trees. A zero-variance predictor is accepted but has
-no split candidate.
+no split candidate. A cut also needs a representable position strictly inside
+its region. Adjacent floating-point values can have no such midpoint.
 
 Incremental constraint reuse is an internal optimization and does not alter
 the interface or fitted model.

@@ -76,6 +76,15 @@ Without validation data, it contains training deviance for every fitted round.
 Early stopping only runs when validation data is present.
 [`nrounds`](@ref) reports the retained tree count.
 
+History and early stopping use the raw accumulated score after each round.
+Default [`score`](@ref) and [`predict`](@ref) apply the model's score clamp,
+so deviance recomputed from default predictions can differ from history.
+Use `score(model, X; clip = false)` when comparing scores with history.
+
+Huber, binary logistic, and log-link losses safeguard each round against
+the actual training loss. A reduced step scales the retained tree itself,
+so validation and later predictions use the same step.
+
 Keep validation rows independent from fitting rows.
 Repeated tuning against one validation set can still overfit that set.
 

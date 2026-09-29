@@ -147,3 +147,46 @@ end
 @inline fit_lin(s::MomentSums, ::SelectionRule; tol = SINGULAR_TOL) = fit_lin(s; tol)
 @inline fit_con(s::MomentSums, r::GainRule) = fit_con(s, r.lambda_intercept)
 @inline fit_lin(s::MomentSums, r::GainRule; tol = SINGULAR_TOL) = fit_lin(s, r.lambda_slope, r.lambda_intercept; tol)
+
+"Center a feature when its offset dominates its spread and raw moments lose precision."
+@inline function fitting_offset(lo, hi)
+    center = lo / 2 + hi / 2
+    return abs(center) > 8 * (hi - lo) ? center : zero(center)
+end
+
+"Fit moments accumulated at `x - offset`, returning coefficients on the original feature scale."
+@inline function fit_lin(s::MomentSums, rule::SelectionRule, offset)
+    result = fit_lin(s, rule)
+    result === nothing && return nothing
+    a, b, rss = result
+    return a, b .- a * offset, rss
+end
+
+@inline function fit_lin(s::MomentSums, rule::GainRule, offset)
+    E = eltype(s.sw)
+    λw, λb = E(rule.lambda_slope), E(rule.lambda_intercept)
+    if iszero(λb) || iszero(offset)
+        result = fit_lin(s, λw, λb)
+        result === nothing && return nothing
+        a, b, rss = result
+        return a, b .- a * offset, rss
+    end
+    # Center the arithmetic, not the prior: b_raw = b_centered - a*offset.
+    # Expanding the determinant and raw-intercept numerator avoids subtracting
+    # the large offset-squared terms from each other.
+    diagonal = s.sw .+ λb
+    cross = s.sx .- λb * offset
+    rawxx = s.sxx .+ (2offset) .* s.sx .+ (offset * offset) .* s.sw
+    determinant = s.sw .* s.sxx .- s.sx .* s.sx .+
+        λw .* diagonal .+ λb .* rawxx
+    massless = iszero.(s.sw)
+    any((.!massless) .& ((determinant .<= SINGULAR_TOL .* s.sw .* s.sxx) .|
+        .!isfinite.(determinant))) && return nothing
+    a = ifelse.(massless, zero(s.sxz), (diagonal .* s.sxz .- cross .* s.sz) ./ determinant)
+    centered_intercept = (s.sz .- cross .* a) ./ diagonal
+    numerator = s.sxx .* s.sz .- s.sx .* s.sxz .+ λw .* s.sz .+
+        offset .* (s.sx .* s.sz .- s.sw .* s.sxz)
+    b = ifelse.(massless, zero(s.sz), numerator ./ determinant)
+    rss = s.szz .- a .* s.sxz .- centered_intercept .* s.sz
+    return a, b, rss
+end

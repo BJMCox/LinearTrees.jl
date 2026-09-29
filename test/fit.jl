@@ -65,6 +65,15 @@ end
     end
 end
 
+@testset "fit_tree weight length matches training rows" begin
+    X = reshape([0.0, 1.0, 100.0], :, 1)
+    y = [0.0, 2.0, 200.0]
+    @test_throws DimensionMismatch fit_tree(X, y; weights = [1.0, 1.0])
+    @test_throws DimensionMismatch fit_tree(X, y; weights = [1.0, 1.0, 1.0, 0.0])
+    tree = fit_tree(X, y; weights = [1.0, 1.0, 0.0], max_depth = 0)
+    @test predict(tree, X) ≈ fill(1.0, 3)
+end
+
 @testset "stopping rules" begin
     X = reshape(collect(1.0:100.0), 100, 1); y = sin.(X[:, 1])
     t = fit_tree(X, y; max_depth = 2)

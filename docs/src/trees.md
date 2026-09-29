@@ -43,8 +43,9 @@ Start with the defaults and tune against validation data:
 | `max_lin_chain` | `10` | Limit consecutive unsplit linear nodes |
 
 Increasing `min_leaf` or reducing `max_depth` usually restricts complexity.
-The fitted size also depends on the selection rule and the data. There is
-no pruning step after growth.
+The fitted size also depends on the selection rule and the data. Growth does
+not prune automatically. For optional validation pruning, first fit
+[ridge leaf models](refit.md), then use [`prune_refit`](@ref).
 
 ```@example trees
 using LinearTrees, Random

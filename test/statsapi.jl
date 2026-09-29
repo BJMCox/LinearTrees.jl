@@ -32,6 +32,44 @@ end
     @test isfinite(predict(m2, df3)[1])
 end
 
+@testset "declared categorical pool levels remain known" begin
+    colour = categorical(["red", "blue", "red", "blue"];
+        levels = ["red", "blue", "green"])
+    X = (colour = colour, x = [0.0, 1.0, 2.0, 3.0])
+    m = fit(LinearTreeRegressorFit, X, [1.0, 2.0, 1.0, 2.0];
+        weights = [1.0, 1.0, 1.0, 0.0], max_depth = 0)
+    @test "green" in string.(m.encoder.levels[1])
+    @test isfinite(only(predict(m, (colour = categorical(["green"]), x = [1.5]))))
+end
+
+@testset "zero-weight table training agrees with matrix training" begin
+    X = hcat(collect(1.0:12.0), repeat([0.0, 1.0], 6))
+    X[end, 2] = NaN
+    table = (x1 = X[:, 1], x2 = X[:, 2])
+    w = vcat(ones(11), 0.0)
+    for (kind, y, kw) in ((LinearTreeRegressorFit, X[:, 1], (; max_depth = 1)),
+                          (LinearBoostRegressorFit, X[:, 1], (; nrounds = 2, max_depth = 1)),
+                          (LinearTreeClassifierFit, repeat(["a", "b"], 6), (; max_depth = 1)),
+                          (LinearBoostClassifierFit, repeat(["a", "b"], 6), (; nrounds = 2, max_depth = 1)))
+        matrix_fit = fit(kind, X, y; weights = w, kw...)
+        table_fit = fit(kind, table, y; weights = w, kw...)
+        @test predict(table_fit, (x1 = table.x1[1:1], x2 = table.x2[1:1])) ==
+              predict(matrix_fit, X[1:1, :])
+        @test nobs(table_fit) == 12 && weights(table_fit) == w
+        @test isnan(table_fit.X[end, 2])
+        @test deviance(table_fit) ≈ deviance(matrix_fit)
+        if kind <: StatsAPI.RegressionModel
+            @test isnan(residuals(table_fit)[end])
+        end
+    end
+    X[end, 2] = 0.0
+    m = fit(LinearTreeRegressorFit, (x1 = X[:, 1], x2 = X[:, 2]), X[:, 1];
+        weights = w, max_depth = 1)
+    @test isfinite(residuals(m)[end])
+    @test_throws DimensionMismatch predict(m, X[:, 1:1])
+    @test_throws DimensionMismatch predict(m, (x1 = X[:, 1], x2 = X[:, 2], x3 = X[:, 1]))
+end
+
 @testset "fit rejects an unrecognised unseen policy" begin
     # fails if a typo'd `unseen` silently selects :error instead of raising
     @test_throws ArgumentError fit(LinearTreeRegressorFit, rand(5, 2), rand(5); unseen = :nope)

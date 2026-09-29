@@ -224,7 +224,7 @@ function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem},
     end
     covl = tree.nodes[n.left].cover / n.cover; covr = 1 - covl
     if iscategorical(n)
-        goleft = isfinite(xraw) && category_is_left(tree, n, round(Int, xraw))
+        goleft = category_is_left(tree, n, xraw)
         lval = n.lintercept; rval = n.rintercept
         ownl = zero(V); ownr = zero(V)
     else
@@ -311,7 +311,11 @@ In-place [`shap`](@ref): write into `values` (`n × p`, or `n × p × (K-1)` for
 """
 function shap!(values, clipped::Vector{Bool}, tree::LinearTree{T,V}, X::AbstractMatrix;
         nthreads = Threads.nthreads()) where {T,V}
+    check_feature_width(tree, X)
     n = size(X, 1)
+    expected = V <: SVector ? (n, tree.nfeatures, length(V)) : (n, tree.nfeatures)
+    size(values) == expected || throw(DimensionMismatch("values must have size $expected, got $(size(values))"))
+    length(clipped) == n || throw(DimensionMismatch("clipped must have length $n, got $(length(clipped))"))
     fill!(values, 0)
     row_blocks(n, nthreads; minrows = shap_min_rows(tree)) do rs
         pool = PathPool()   # one per block: never shared between tasks; grows lazily, see PathPool

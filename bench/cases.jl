@@ -73,3 +73,21 @@ function case56_data()
     Xpred[:, p] = Float64.(rand(rng, 1:8, 1_000_000))
     return tree, Xpred
 end
+
+"Case 7 data: 30-round boosted regression, n = 6_000, p = 8."
+function case7_data()
+    rng = StableRNG(7)
+    X = rand(rng, 6_000, 8)
+    y = 2 .* X[:, 1] .- 1.5 .* X[:, 2] .+ 3 .* max.(X[:, 3] .- 0.5, 0) .+
+        2 .* X[:, 4] .* X[:, 5] .+ 0.1 .* randn(rng, size(X, 1))
+    return X, y
+end
+
+"Case 8 data: continuous fit with one interaction, n = 300, p = 4."
+function case8_data()
+    rng = StableRNG(8)
+    X = rand(rng, 300, 4)
+    y = X[:, 1] .* X[:, 2] .+ 2 .* max.(X[:, 1] .- 0.5, 0) .+
+        X[:, 3] .- X[:, 4] .+ 0.05 .* randn(rng, size(X, 1))
+    return X, y
+end

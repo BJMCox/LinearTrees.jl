@@ -93,6 +93,28 @@ end
     end
 end
 
+@testset "tree shap! validates buffers before changing them" begin
+    X = reshape(collect(1.0:20.0), 10, 2)
+    t = fit_tree(X, X[:, 1]; max_depth = 0)
+    values = fill(7.0, 10, 3)
+    clipped = fill(true, 10)
+    @test_throws DimensionMismatch shap!(values, clipped, t, X)
+    @test all(==(7.0), values) && all(clipped)
+    values = fill(7.0, 10, 2)
+    short = fill(true, 9)
+    @test_throws DimensionMismatch shap!(values, short, t, X)
+    @test all(==(7.0), values) && all(short)
+
+    ts = fit_tree(X, repeat([1, 2, 3, 1, 2], 2), Softmax(3); max_depth = 0)
+    cube = fill(7.0, 10, 2, 1)
+    @test_throws DimensionMismatch shap!(cube, clipped, ts, X)
+    @test all(==(7.0), cube) && all(clipped)
+    @test_throws DimensionMismatch score(ts, zeros(10, 1))
+    @test_throws DimensionMismatch predict(ts, zeros(10, 1))
+    @test_throws DimensionMismatch coeftable(ts, [1.0])
+    @test_throws DimensionMismatch shap(ts, zeros(10, 1))
+end
+
 @testset "tree.base is the SHAP empty-coalition value on a general (asymmetric) tree" begin
     # Before the fix, tree.base was the cover-weighted mean training score, not
     # the empty-coalition value shap uses; the two differed by 28% on a 62-node

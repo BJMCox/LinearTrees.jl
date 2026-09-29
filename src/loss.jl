@@ -149,16 +149,19 @@ end
     (p - y, p * (1 - p))
 end
 @inline gh(::Poisson, y, f) = (μ = exp(f); (μ - y, μ))
-@inline gh(::Gamma, y, f) = (μ = exp(f); (1 - y / μ, y / μ))
+@inline gh(::Gamma, y, f) = (ratio = exp(log(y) - f); (1 - ratio, ratio))
 @inline function gh(l::Tweedie, y, f)
     # `l.ρ` is always `Float64`; `^` between a narrower base and a `Float64`
     # exponent promotes to `Float64`, so match `ρ` to `f`'s type first
-    μ = exp(f); ρ = oftype(f, l.ρ)
-    (μ^(2 - ρ) - y * μ^(1 - ρ), (2 - ρ) * μ^(2 - ρ) - (1 - ρ) * y * μ^(1 - ρ))
+    ρ = oftype(f, l.ρ)
+    a = exp((2 - ρ) * f)
+    b = iszero(y) ? zero(f) : exp(log(y) + (1 - ρ) * f)
+    return a - b, (2 - ρ) * a - (1 - ρ) * b
 end
 @inline function gh(l::NegBin, y, f)
-    μ = exp(f); θ = oftype(f, l.θ)   # `l.θ` is always `Float64`
-    (θ * (μ - y) / (μ + θ), θ * μ * (θ + y) / (μ + θ)^2)
+    θ = oftype(f, l.θ)
+    p = inv(one(f) + exp(log(θ) - f))
+    return θ * p - y * (1 - p), (θ + y) * p * (1 - p)
 end
 
 """
@@ -428,20 +431,21 @@ l1weight(l::Quantile, r) = r >= 0 ? oftype(r, l.τ) : oftype(r, 1 - l.τ)
 IRLS refinement of a non-smooth node's coefficients on its own rows, including
 `CON` leaves. Runs `st.niter` iterations (the `niter` keyword on `fit_tree`);
 each recomputes the pseudo-hessian at the current node prediction and
-re-solves the chosen model kind. Logistic nodes and their binary softmax and
-LogitMarginLoss equivalents backtrack an ascending Newton step against weighted
-log loss. Other smooth losses return `n` unchanged. Takes and returns a `Node`
+re-solves the chosen model kind. Huber and logistic nodes, including binary
+softmax and LogitMarginLoss equivalents, check the actual weighted loss.
+Log-link losses also backtrack ascending steps. Other smooth losses return
+`n` unchanged. Takes and returns a `Node`
 value rather than a tree index, so it works the same on a
 node still local to a growing subtree. `tid` selects the caller's own worker
 scratch (`st.scratch[tid]`), reused as refit buffer storage.
 """
 function refit_node(st, n, rows, tid, masks = UInt64[])
-    backtracks(st.loss) && return logistic_backtrack(st, n, rows, tid, masks)
+    backtracks(st.loss) && return loss_backtrack(st, n, rows, tid, masks)
     return issmooth(st.loss) ? n : irls_refit(st, n, rows, tid, st.niter, masks)
 end
 
 backtracks(::Loss) = false
-backtracks(::Union{Logistic,Softmax{2}}) = true
+backtracks(::Union{Huber,Logistic,Softmax{2},Poisson,NegBin,Gamma,Tweedie}) = true
 
 # ---- init score ------------------------------------------------------------
 wmean(y, w) = sum(w .* y) / sum(w)
@@ -457,7 +461,12 @@ function initscore(::Logistic, y, w)
     p, q = m <= lo ? (lo, 1 - lo) : m >= 1 - lo ? (1 - lo, lo) : (m, 1 - m)
     return log(p / q)
 end
-initscore(::Union{Poisson,NegBin,Tweedie}, y, w) = log(max(wmean(y, w), 1e-6))
+function initscore(::Union{Poisson,NegBin,Tweedie}, y, w)
+    μ = wmean(y, w)
+    # The all-zero MLE lies at -Inf. Use a finite near-zero mean only there;
+    # positive rates retain their scale, however small they are.
+    return log(iszero(μ) ? eps(float(typeof(μ))) : μ)
+end
 initscore(::Gamma, y, w) = log(wmean(y, w))
 
 """
@@ -482,9 +491,19 @@ pointloss(::MAD, y, f) = abs(y - f)
 # stable softplus: log1p(exp(f)) overflows to Inf past f = 709, where the true value is ≈ f
 pointloss(::Logistic, y, f) = (f > 0 ? f + log1p(exp(-f)) : log1p(exp(f))) - y * f
 pointloss(::Poisson, y, f) = exp(f) - y * f
-pointloss(::Gamma, y, f) = y * exp(-f) + f
-pointloss(l::Tweedie, y, f) = (μ = exp(f); ρ = l.ρ; -y * μ^(1 - ρ) / (1 - ρ) + μ^(2 - ρ) / (2 - ρ))
-pointloss(l::NegBin, y, f) = (μ = exp(f); θ = l.θ; -y * log(μ / (μ + θ)) + θ * log1p(μ / θ))
+pointloss(::Gamma, y, f) = exp(log(y) - f) + f
+function pointloss(l::Tweedie, y, f)
+    ρ = oftype(f, l.ρ)
+    a = exp((2 - ρ) * f) / (2 - ρ)
+    b = iszero(y) ? zero(f) : exp(log(y) + (1 - ρ) * f) / (ρ - 1)
+    return a + b
+end
+@inline softplus(x) = x > 0 ? x + log1p(exp(-x)) : log1p(exp(x))
+function pointloss(l::NegBin, y, f)
+    θ = oftype(f, l.θ)
+    centered = f - log(θ)
+    return θ * softplus(centered) + (iszero(y) ? zero(f) : y * softplus(-centered))
+end
 
 pointloss(l::Softmax, y, f::SVector) = -log(probs(l, f)[Int(y)])
 function pointloss(::Frozen, y::Tuple, f)
@@ -506,9 +525,12 @@ deviance(loss::Loss, y, f, w) = 2 * sum(w[i] * pointloss(loss, y[i], f[i]) for i
     scorebound(loss, y; truncation_factor=3)
 
 `(lo, hi)` score-scale clamp bounds fit to the training target `y`, used when
-`fit_tree`'s `truncate` is set. With half-width `B = (max(y) - min(y)) / 2`,
+`fit_tree`'s `truncate` is set. For identity-link losses, with half-width `B = (max(y) - min(y)) / 2`,
 `truncation_factor` pads each side by `(truncation_factor - 1) * B`, so the
 bounds are `[min(y) - (truncation_factor - 1) B, max(y) + (truncation_factor - 1) B]`.
+Log-link losses allow every representable positive mean below an upper bound
+of `exp(3) * max(maximum(y), 1)`, capped below floating-point overflow.
+Logistic and softmax scores use `[-10, 10]`; frozen scores are unbounded.
 """
 function scorebound(::Union{MSE,Huber,Quantile,MAD}, y; truncation_factor = 3)
     lo, hi = extrema(y)
@@ -518,8 +540,12 @@ function scorebound(::Union{MSE,Huber,Quantile,MAD}, y; truncation_factor = 3)
 end
 scorebound(::Logistic, y; truncation_factor = 3) = (-10.0, 10.0)
 function scorebound(::Union{Poisson,NegBin,Gamma,Tweedie}, y; truncation_factor = 3)
-    S = log(max(maximum(y), 1)) + 3
-    return (-S, S)
+    T = float(eltype(y))
+    # Lower rates have no data-independent statistical floor. Bound only the
+    # representable exponential range, while padding the observed upper rate.
+    lo = log(nextfloat(zero(T)))
+    hi = min(log(max(maximum(y), one(T))) + T(3), prevfloat(log(floatmax(T))))
+    return (lo, hi)
 end
 function scorebound(::Softmax{K}, y; truncation_factor = 3) where {K}
     T = float(eltype(y))
@@ -580,7 +606,7 @@ struct AdaptedLoss{L<:SupervisedLoss,K} <: Loss
     scale::Float64
 end
 
-backtracks(::AdaptedLoss{<:LogitMarginLoss}) = true
+backtracks(loss::AdaptedLoss) = loss.inner isa LogitMarginLoss || loss.link isa LogLink
 
 "Newton-step scale that lines an inner loss up with the matching native `Loss`."
 canonical_scale(::L2DistLoss) = 0.5
