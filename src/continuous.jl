@@ -72,6 +72,34 @@ function _continuous_responses(Y::Matrix{Float64})
     return Z, center, scale
 end
 
+_continuous_responses(Y::Matrix{Float64}, ::Nothing) = _continuous_responses(Y)
+
+function _continuous_responses(Y::Matrix{Float64}, normalization)
+    normalization isa NamedTuple && length(normalization) == 2 &&
+        haskey(normalization, :center) && haskey(normalization, :scale) ||
+        throw(ArgumentError("response_normalization must be nothing or (center=..., scale=...)"))
+    center, scale = normalization.center, normalization.scale
+    outputs = size(Y, 2)
+    if center isa Real && scale isa Real
+        outputs == 1 || throw(DimensionMismatch("scalar response normalization requires one output"))
+        center, scale = [center], [scale]
+    elseif center isa AbstractVector{<:Real} && scale isa AbstractVector{<:Real}
+        Base.require_one_based_indexing(center, scale)
+        length(center) == length(scale) == outputs ||
+            throw(DimensionMismatch("response normalization needs one center and scale per output"))
+    else
+        throw(ArgumentError("response center and scale must both be real scalars or real vectors"))
+    end
+    all(isfinite, center) && all(s -> isfinite(s) && s > 0, scale) ||
+        throw(ArgumentError("response centers must be finite and scales finite and positive"))
+    owned_center, owned_scale = Vector{Float64}(center), Vector{Float64}(scale)
+    all(isfinite, owned_center) && all(s -> isfinite(s) && s > 0, owned_scale) ||
+        throw(ArgumentError("response centers and scales must remain finite with positive scales in Float64"))
+    Z = (Y .- transpose(owned_center)) ./ transpose(owned_scale)
+    all(isfinite, Z) || throw(ArgumentError("response transform must remain finite in Float64"))
+    return Z, owned_center, owned_scale
+end
+
 function _continuous_thresholds(X, n_thresholds)
     return map(axes(X, 2)) do j
         if n_thresholds === nothing
@@ -90,7 +118,7 @@ end
     fit_continuous_tree(X, y; pairs=:none, candidate_search=:full,
         max_splits=6, max_depth=4, min_leaf=8, n_thresholds=3,
         split_penalty=2.0, coefficient_precision=0.01,
-        noise_shape=2.0, noise_rate=1.0)
+        noise_shape=2.0, noise_rate=1.0, response_normalization=nothing)
 
 Fit a [`ContinuousTree`](@ref) to finite numeric predictors, with observations
 in rows. A vector target gives vector predictions. An `n × q` target matrix
@@ -101,15 +129,19 @@ Leaves use an intercept, all predictors, and the interactions selected by
 coefficients match across full leaf faces, including partial faces at
 T-junctions. Derivatives may jump.
 
-Predictors map their training ranges to `[-1, 1]`. Responses use their training
-means and population standard deviations. Constant columns use scale one.
+Predictors map their training ranges to `[-1, 1]`. By default, responses use
+their training means and population standard deviations, with scale one for
+constant columns. Pass `response_normalization=(center=..., scale=...)` to
+fix the response transform. Use two real scalars for one output or two real
+vectors with one entry per output. Values are copied; scales must be positive.
 The coefficient prior is isotropic normal with precision
 `coefficient_precision / σ²` on an orthonormal basis of continuous raw leaf
 coefficients. Independently for each output, `σ²` has an inverse-gamma prior
 with `noise_shape` and `noise_rate`. All three hyperparameters must be positive.
-This prior depends on the tree geometry and the fitted normalization.
-The posterior treats response centering and scaling as fixed, even though they
-are estimated from the fitting responses.
+This prior depends on the tree geometry and the response units after normalization.
+The posterior treats centering and scaling as fixed. Choose explicit transforms
+independently of fitting responses to avoid estimating prior units from those
+responses. This does not account for adaptive tree or hyperparameter selection.
 
 Greedy search compares single splits, paired sibling splits, and three-split
 crosses. It sums output log marginal likelihoods and subtracts
@@ -129,7 +161,7 @@ function fit_continuous_tree(X::AbstractMatrix,
         y::Union{AbstractVector,AbstractMatrix}; pairs=:none,
         candidate_search=:full, max_splits=6, max_depth=4, min_leaf=8,
         n_thresholds=3, split_penalty=2.0, coefficient_precision=0.01,
-        noise_shape=2.0, noise_rate=1.0)
+        noise_shape=2.0, noise_rate=1.0, response_normalization=nothing)
     n, p = size(X)
     n > 0 && p > 0 || throw(ArgumentError("X must have at least one row and one feature"))
     size(y, 1) == n || throw(DimensionMismatch("X and y must have the same number of rows"))
@@ -156,7 +188,7 @@ function fit_continuous_tree(X::AbstractMatrix,
     Z, xcenter, xscale = _continuous_predictors(_continuous_data(X, "X"))
     target = _continuous_data(y, "y")
     Y = y isa AbstractVector ? reshape(target, :, 1) : target
-    response, ycenter, yscale = _continuous_responses(Y)
+    response, ycenter, yscale = _continuous_responses(Y, response_normalization)
     thresholds = _continuous_thresholds(Z, n_thresholds)
     fitted = Continuous.fit(Z, response; pairs=selected, candidate_search,
         max_splits=Int(max_splits), max_depth=Int(max_depth), min_leaf=Int(min_leaf),

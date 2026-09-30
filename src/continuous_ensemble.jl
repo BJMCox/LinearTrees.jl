@@ -51,15 +51,20 @@ end
 
 """
     fit_continuous_ensemble(X, y, geometries; logprior=zeros(length(geometries)),
-        coefficient_precision=0.01, noise_shape=2.0, noise_rate=1.0)
+        coefficient_precision=0.01, noise_shape=2.0, noise_rate=1.0,
+        response_normalization=nothing)
 
 Refit each supplied continuous-tree geometry on common normalized `X` and `y`,
 then normalize prior-times-evidence weights across this finite model space.
 Entries with identical tree geometry and pair-term basis are rejected. Every
 geometry must use the normalization computed from `X`.
 
-The conjugate calculation is exact in the normalized model with this fixed
-model space, treating fitted response centering and scaling as fixed.
+Responses use their fitting means and population standard deviations by default.
+`response_normalization=(center=..., scale=...)` fixes a common transform for
+every component, with the same contract as [`fit_continuous_tree`](@ref).
+The conjugate calculation is exact conditional on fixed geometry, prior, and
+normalization choices. Fix these independently of fitting responses for a
+Bayesian model whose prior does not use those responses.
 Geometries selected using `y` make it a restricted, adaptive approximation to
 a posterior over all continuous trees.
 """
@@ -67,7 +72,7 @@ function fit_continuous_ensemble(X::AbstractMatrix,
         y::Union{AbstractVector,AbstractMatrix},
         geometries::AbstractVector{<:ContinuousTree};
         logprior=zeros(length(geometries)), coefficient_precision=0.01,
-        noise_shape=2.0, noise_rate=1.0)
+        noise_shape=2.0, noise_rate=1.0, response_normalization=nothing)
     n, p = size(X)
     n > 0 && p > 0 || throw(ArgumentError("X must have at least one row and one feature"))
     size(y, 1) == n || throw(DimensionMismatch("X and y must have the same number of rows"))
@@ -88,7 +93,7 @@ function fit_continuous_ensemble(X::AbstractMatrix,
     Z, xcenter, xscale = _continuous_predictors(_continuous_data(X, "X"))
     target = _continuous_data(y, "y")
     Y = y isa AbstractVector ? reshape(target, :, 1) : target
-    response, ycenter, yscale = _continuous_responses(Y)
+    response, ycenter, yscale = _continuous_responses(Y, response_normalization)
     scalar = y isa AbstractVector
     components = ContinuousTree{scalar}[]
     seen = _ContinuousGeometryKey[]

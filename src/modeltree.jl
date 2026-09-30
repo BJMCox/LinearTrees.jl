@@ -26,7 +26,7 @@ function _modeltree_objective(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Ve
     return rss + lambda * penalty
 end
 
-"Weighted raw moments of regressors and response centered once at the parent."
+"Weighted raw moments centered at the parent; only the upper triangle of sxx is stored."
 mutable struct _ModelTreeMoments{T<:AbstractFloat}
     W::T
     sx::Vector{T}
@@ -46,12 +46,12 @@ function _modeltree_update!(m::_ModelTreeMoments{T}, z::Matrix{T}, r::Int,
     m.W += mass
     m.sy += mass * target
     m.syy += mass * abs2(target)
-    for a in axes(z, 2)
-        za = z[r, a]
-        m.sx[a] += mass * za
-        m.sxy[a] += mass * za * target
-        for b in axes(z, 2)
-            m.sxx[a, b] += mass * za * z[r, b]
+    for b in axes(z, 2)
+        zb = z[r, b]
+        m.sx[b] += mass * zb
+        m.sxy[b] += mass * zb * target
+        for a in 1:b
+            m.sxx[a, b] += mass * z[r, a] * zb
         end
     end
     return m
