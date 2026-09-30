@@ -46,12 +46,12 @@ function _modeltree_update!(m::_ModelTreeMoments{T}, z::Matrix{T}, r::Int,
     m.W += mass
     m.sy += mass * target
     m.syy += mass * abs2(target)
-    for b in axes(z, 2)
-        zb = z[r, b]
+    for b in axes(z, 1)
+        zb = z[b, r]
         m.sx[b] += mass * zb
         m.sxy[b] += mass * zb * target
         for a in 1:b
-            m.sxx[a, b] += mass * z[r, a] * zb
+            m.sxx[a, b] += mass * z[a, r] * zb
         end
     end
     return m
@@ -61,13 +61,12 @@ end
 struct _ModelTreeSolve{T<:AbstractFloat}
     factor::Matrix{T}
     rhs::Vector{T}
-    slopes::Vector{T}
     active::Vector{Int}
 end
 
 _ModelTreeSolve(::Type{T}, q::Int) where {T<:AbstractFloat} =
     _ModelTreeSolve(Matrix{T}(undef, q, q), Vector{T}(undef, q),
-        Vector{T}(undef, q), Vector{Int}(undef, q))
+        Vector{Int}(undef, q))
 
 "Child penalized ridge objective from centered covariance and cross moments."
 function _modeltree_moment_objective!(work::_ModelTreeSolve{T},
@@ -92,23 +91,14 @@ function _modeltree_moment_objective!(work::_ModelTreeSolve{T},
     for b in 1:nactive
         j = work.active[b]
         work.rhs[b] = m.sxy[j] - m.sx[j] * (m.sy / W)
-        work.slopes[b] = work.rhs[b]
         for a in 1:b
             i = work.active[a]
             covariance = m.sxx[i, j] - m.sx[i] * m.sx[j] / W
             work.factor[a, b] = a == b ? covariance + lambda * covariance / W : covariance
         end
     end
-    # Pad inactive coordinates with an independent identity block and zero RHS.
-    # This keeps the factor and solve buffers dense and fixed-size as columns
-    # become constant, without changing the active objective or condition test.
-    for b in (nactive + 1):q
-        work.rhs[b] = work.slopes[b] = zero(T)
-        for a in 1:b
-            work.factor[a, b] = a == b ? one(T) : zero(T)
-        end
-    end
-    A = Symmetric(work.factor, :U)
+    # Leading views retain stride-one columns for the library factorization.
+    A = Symmetric(view(work.factor, 1:nactive, 1:nactive), :U)
     # The library's Float16 method factors in Float32 before rounding back.
     F = T === Float16 ? cholesky(A; check=false) : cholesky!(A; check=false)
     issuccess(F) || return nothing
@@ -119,10 +109,10 @@ function _modeltree_moment_objective!(work::_ModelTreeSolve{T},
         largest = max(largest, diagonal)
     end
     smallest > sqrt(eps(T)) * largest || return nothing
-    rhs = work.rhs
-    slopes = work.slopes
-    ldiv!(F, slopes)
-    objective = cYY - dot(rhs, slopes)
+    rhs = view(work.rhs, 1:nactive)
+    # b'A^-1 b = ||U'\b||² for A = U'U, so scoring needs only one solve.
+    ldiv!(adjoint(F.U), rhs)
+    objective = cYY - dot(rhs, rhs)
     tolerance = T(128) * eps(T) * max(one(T), abs(cYY))
     isfinite(objective) && objective >= -tolerance || return nothing
     return max(zero(T), objective)
@@ -199,11 +189,12 @@ function _modeltree_split(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector
     W = sum(w[i] for i in rows)
     means = T[sum(w[i] * X[i, j] for i in rows) / W for j in regressors]
     ymean = sum(w[i] * y[i] for i in rows) / W
-    z = Matrix{T}(undef, length(rows), length(regressors))
+    # Each observation's regressors are contiguous during moment accumulation.
+    z = Matrix{T}(undef, length(regressors), length(rows))
     centered_y = Vector{T}(undef, length(rows))
     for (r, i) in enumerate(rows)
         for (c, j) in enumerate(regressors)
-            z[r, c] = X[i, j] - means[c]
+            z[c, r] = X[i, j] - means[c]
         end
         centered_y[r] = y[i] - ymean
     end

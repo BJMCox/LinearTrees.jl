@@ -225,7 +225,7 @@ function _nullspace_dense_qr(C::Matrix{Float64})
         tail[rank + column, column] = 1.0
     end
     Q = LinearAlgebra.QRPackedQ(packed, getfield(factor, :τ))
-    N = Matrix(Q * tail)
+    N = lmul!(Q, tail)
     isempty(N) && return N
 
     probe_columns = unique((1, cld(size(N, 2), 2), size(N, 2)))
@@ -281,7 +281,8 @@ function _try_nullspace_spqr(C::Matrix{Float64})
     # Q is a computed property on older Julia versions.
     Q = factor.Q::SparseArrays.SPQR.QRSparseQ{Float64,Int}
     # Use the stored inverse row permutation instead of inverting prow twice.
-    N = (Q * tail)[getfield(factor, :rpivinv), :]
+    lmul!(Q, tail)
+    N = tail[getfield(factor, :rpivinv), :]
     isempty(N) && return N
     # Individually discarded columns can form a significant direction together.
     BLAS.nrm2(transpose(A) * N) <= tolerance / 4 || return nothing
@@ -488,19 +489,14 @@ function _incremental_design(ctx::IncrementalContext, nodes::Vector{TreeNode},
     fixed_slots = Dict(leaf => slot for (slot, leaf) in pairs(basis.leaves))
     new_leaf_count = count(leaf -> !haskey(fixed_slots, leaf), leaves)
     unchanged_dimension = size(basis.N, 2)
-    M = zeros(Float64, term_count * length(leaves),
-        unchanged_dimension + term_count * new_leaf_count)
+    # The embedding is block diagonal: an unchanged orthonormal basis and one
+    # identity block per new leaf. Keep those blocks implicit.
+    width = unchanged_dimension + term_count * new_leaf_count
+    new_offsets = zeros(Int, length(leaves))
     column = unchanged_dimension
     for (slot, leaf) in pairs(leaves)
-        offset = (slot - 1) * term_count
-        if haskey(fixed_slots, leaf)
-            source = (fixed_slots[leaf] - 1) * term_count
-            M[offset+1:offset+term_count, 1:unchanged_dimension] .=
-                view(basis.N, source+1:source+term_count, :)
-        else
-            for j in 1:term_count
-                M[offset + j, column + j] = 1.0
-            end
+        if !haskey(fixed_slots, leaf)
+            new_offsets[slot] = column
             column += term_count
         end
     end
@@ -518,24 +514,46 @@ function _incremental_design(ctx::IncrementalContext, nodes::Vector{TreeNode},
         row_count += length(ctx.traces[normal])
     end
 
-    reduced = zeros(Float64, row_count, size(M, 2))
+    reduced = zeros(Float64, row_count, width)
     row = 0
     for (left, right, normal, threshold) in faces
         for group in ctx.traces[normal]
             row += 1
             for (j, contains_normal) in group
                 weight = contains_normal ? threshold : 1.0
-                for col in axes(M, 2)
-                    reduced[row, col] += weight *
-                        (M[(left - 1) * term_count + j, col] -
-                         M[(right - 1) * term_count + j, col])
+                for (slot, sign) in ((left, 1.0), (right, -1.0))
+                    fixed = get(fixed_slots, leaves[slot], 0)
+                    if fixed == 0
+                        reduced[row, new_offsets[slot] + j] += sign * weight
+                    else
+                        source = (fixed - 1) * term_count + j
+                        for col in 1:unchanged_dimension
+                            reduced[row, col] += sign * weight * basis.N[source, col]
+                        end
+                    end
                 end
             end
         end
     end
-    N = M * _nullspace_qr(reduced)
-    if size(N, 2) < term_count
-        N = _nullspace_svd(_constraints(nodes, leaves, ctx.p, ctx.terms))
+    Z = _nullspace_qr(reduced)
+    N = if size(Z, 2) < term_count
+        _nullspace_svd(_constraints(nodes, leaves, ctx.p, ctx.terms))
+    elseif size(Z, 2) <= current_dimension
+        return nothing
+    elseif isempty(basis.leaves)
+        Z
+    else
+        unchanged = basis.N * view(Z, 1:unchanged_dimension, :)
+        expanded = Matrix{Float64}(undef, term_count * length(leaves), size(Z, 2))
+        for (slot, leaf) in pairs(leaves)
+            offset = (slot - 1) * term_count
+            fixed = get(fixed_slots, leaf, 0)
+            source = fixed == 0 ? new_offsets[slot] : (fixed - 1) * term_count
+            block = fixed == 0 ? Z : unchanged
+            expanded[offset+1:offset+term_count, :] .=
+                view(block, source+1:source+term_count, :)
+        end
+        expanded
     end
     # Search already rejects refinements that add no degrees of freedom.
     size(N, 2) > current_dimension || return nothing
