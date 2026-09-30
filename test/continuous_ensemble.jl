@@ -13,9 +13,6 @@ using Statistics
     prior = [log(2.0), 0.0]
     ensemble = fit_continuous_ensemble(X, y, [root, split]; logprior=prior,
         coefficient_precision=0.03)
-    logmass = [prior[j] + ensemble.components[j].fit.post.score for j in 1:2]
-    mass = exp.(logmass .- maximum(logmass))
-    @test ensemble.weights ≈ mass ./ sum(mass)
     @test all(component.fit.post.score != source.fit.post.score
         for (component, source) in zip(ensemble.components, (root, split)))
 
@@ -103,4 +100,64 @@ using Statistics
     single = fit_continuous_tree(single_X, single_y; max_splits=0)
     heavy = fit_continuous_ensemble(single_X, single_y, [single]; noise_shape=0.2)
     @test predictive(heavy, single_X).variance == [Inf]
+end
+
+@testset "Continuous ensemble matches a sample-space continuity oracle" begin
+    x = collect(range(-1.0, 1.0; length=25))
+    X = reshape(x, :, 1)
+    proposal = max.(x .- 1 / 3, 0)
+    root = fit_continuous_tree(X, proposal; max_splits=0)
+    split = fit_continuous_tree(X, proposal; max_splits=1, n_thresholds=2,
+        min_leaf=3, split_penalty=0.0, coefficient_precision=0.2)
+    t = split.fit.nodes[1].threshold
+    y = sin.(2x) .+ 0.2cos.(9x)
+    λ, a0, b0 = 0.7, 2.5, 0.8
+    prior = log.([2.0, 1.0])
+    ensemble = fit_continuous_ensemble(X, y, [root, split]; logprior=prior,
+        coefficient_precision=λ, noise_shape=a0, noise_rate=b0)
+    query = [-1.4, -0.65, t, 0.55, 1.3]
+    center, scale = mean(y), std(y; corrected=false)
+    z = (y .- center) ./ scale
+    a = a0 + length(y) / 2
+    # Raw leaf coefficients satisfy c'θ=0. This explicit projector avoids the
+    # production nullspace, projected design, and coefficient-space ridge solve.
+    c = [1.0, t, -1.0, -t]
+    projector = Matrix{Float64}(I, 4, 4) - c * c' / dot(c, c)
+    routed(u) = u <= t ? [1.0, u, 0.0, 0.0] : [0.0, 0.0, 1.0, u]
+    Dsplit = reduce(vcat, transpose.(routed.(x)))
+    Qsplit = reduce(vcat, transpose.(routed.(query)))
+    designs = ((hcat(ones(length(x)), x), hcat(ones(length(query)), query),
+        Matrix{Float64}(I, 2, 2)), (Dsplit, Qsplit, projector))
+    oracles = map(designs) do (D, Q, P)
+        V = I + D * P * D' / λ
+        k = Q * P * D' / λ
+        b = b0 + dot(z, V \ z) / 2
+        location = center .+ scale .* (k * (V \ z))
+        latent = diag(Q * P * Q' / λ - k * (V \ k'))
+        scale2 = scale^2 * b / a .* (1 .+ latent)
+        logmass = -logdet(Symmetric(V)) / 2 - a * log(b)
+        (;location, scale2, logmass)
+    end
+    logmass = [oracles[j].logmass + prior[j] for j in 1:2]
+    weights = exp.(logmass .- maximum(logmass))
+    weights ./= sum(weights)
+    @test ensemble.weights ≈ weights rtol=1e-10
+    posterior = predictive(ensemble, reshape(query, :, 1))
+    for j in 1:2
+        @test posterior.components[j].location ≈ oracles[j].location rtol=1e-10
+        @test posterior.components[j].scale2 ≈ oracles[j].scale2 rtol=1e-10
+        @test posterior.components[j].dof == 2a
+    end
+    for i in eachindex(query)
+        expected = Distributions.MixtureModel([
+            Distributions.LocationScale(oracles[j].location[i], sqrt(oracles[j].scale2[i]),
+                Distributions.TDist(2a)) for j in 1:2], weights)
+        actual = Distributions.MixtureModel([
+            Distributions.LocationScale(part.location[i], sqrt(part.scale2[i]),
+                Distributions.TDist(part.dof)) for part in posterior.components], posterior.weights)
+        @test Distributions.logpdf(actual, sin(2query[i])) ≈
+            Distributions.logpdf(expected, sin(2query[i])) rtol=1e-10
+        @test Distributions.cdf(actual, sin(2query[i])) ≈
+            Distributions.cdf(expected, sin(2query[i])) rtol=1e-10
+    end
 end

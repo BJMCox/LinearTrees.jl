@@ -73,7 +73,7 @@ For `Softmax(2)`, this diagonal is the exact logistic Hessian.
 
 ## How losses are fitted
 
-Smooth losses fit each candidate model from gradients and Hessians on the raw score scale.
+Most smooth losses fit each candidate model from gradients and Hessians on the raw score scale.
 The working response is `-g/h`, and the working weight is `h`.
 The method proposes one local Newton step.
 It does not solve every node's full nonlinear optimization problem.
@@ -90,6 +90,15 @@ Here `f` is the score, `p` is the logistic inverse link, and `μ = exp(f)`.
 [`gradhess!`](@ref) provides the complete loss-specific definitions.
 Ordinary row Hessians have a floor of `1e-6` before sample weights apply.
 
+Huber fitting uses the residual weight `min(1, δ / abs(f - y))`, with weight
+one at zero residual. This gives a tangent quadratic majorizer and avoids the
+inflated working responses caused by zero tail curvature. The same rule applies
+to `Loss(HuberLoss(δ))` with positive loss scale and to boosting.
+[`gradhess!`](@ref) still reports the exact gradient and floored true Hessian.
+BIC compares the working quadratic fits, so it remains a surrogate
+selection criterion for Huber rather than exact likelihood BIC. Choose `δ` on
+the response scale using independent validation data.
+
 [`Quantile`](@ref) and [`MAD`](@ref) are non-smooth.
 They use iteratively reweighted least squares instead of a true Newton step.
 Split search computes one set of residual weights.
@@ -102,15 +111,17 @@ See [Boosting](boosting.md) for the ensemble algorithm.
 
 ## Smooth-loss step safeguard
 
-Small Hessians can produce an excessive Newton step, particularly for Huber
-residuals outside its quadratic region and for rare logistic outcomes.
+Small Hessians can produce an excessive Newton step, particularly for rare
+logistic outcomes.
 Huber trees minimize the convex loss along the proposed direction between
-zero and one full step. Logistic, binary softmax, and log-link trees keep a
+zero and one full step. A selected constant Huber node retains its original
+Newton direction before this check, allowing the step to reach a robust
+location when one residual-weighted update would stop short.
+Logistic, binary softmax, and log-link trees keep a
 non-increasing full step or halve it until the actual weighted loss descends.
 They use a zero update if no tested scale succeeds. These checks include
 the same score and feature clamps used for prediction.
 
-The check includes score and feature truncation.
 It ensures descent for that node update within floating-point accuracy.
 It does not find the exact maximum-likelihood node fit or calibrate held-out probabilities.
 

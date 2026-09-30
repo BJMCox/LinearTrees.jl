@@ -50,14 +50,14 @@ end
     # non-uniform: MAD and Quantile disagreed with duplication by ~1.8e-3 and
     # ~1.9e-3 (measured interactively at FIX_BASE) despite the other losses
     # already agreeing to 1e-11 or tighter.
-    # one loss per weighting path: MSE for the smooth scan, MAD and Quantile
-    # for the IRLS refit, where the defect was.
+    # Cover the ordinary smooth scan, Huber's majorizer, and the MAD/Quantile
+    # IRLS refit, where the original defect was.
     rng = StableRNG(8)
     n = 60
     X = rand(rng, n, 2); y = X[:, 1] .+ 0.3 .* randn(rng, n)
     w = Float64.(rand(rng, 1:3, n))
     rows = reduce(vcat, [fill(i, Int(w[i])) for i in 1:n])
-    for (loss, yy) in ((MSE(), y), (MAD(), y), (Quantile(0.7), y))
+    for (loss, yy) in ((MSE(), y), (Huber(0.2), y), (MAD(), y), (Quantile(0.7), y))
         tw = fit_tree(X, yy, loss; weights = w)
         td = fit_tree(X[rows, :], yy[rows], loss)
         @test maximum(abs.(predict(tw, X) .- predict(td, X))) < 1e-8

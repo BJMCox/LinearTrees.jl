@@ -673,7 +673,7 @@ end
 function refresh_chunk!(st::FitState, rows, ε)
     yv = view(st.y, rows); fv = view(st.f, rows)
     gv = view(st.g, rows); hv = view(st.h, rows)
-    gradhess!(gv, hv, st.loss, yv, fv)
+    working_gradhess!(gv, hv, st.loss, yv, fv)
     issmooth(st.loss) || irls_weights!(hv, st.loss, yv, fv; ε)
     for i in rows
         st.g[i] *= st.w[i]
@@ -1251,6 +1251,20 @@ end
 function loss_backtrack(st::FitState{T,V}, n::Node{T,V}, rows, tid, masks) where {T,V}
     # Search has finished and partition has not started, so this worker's
     # response buffer is free, as it is during the non-smooth IRLS refit.
+    δ = huber_transition(st.loss)
+    if δ !== nothing && n.model == CON
+        # Search uses Huber's majorizer, but preserve the larger Newton interval
+        # for a selected constant. The directional safeguard can then reach the
+        # robust location even when one majorizer step would stop short.
+        gradient, curvature = zero(T), zero(T)
+        for i in rows
+            g, h = gh(st.loss, st.y[i], st.f[i])
+            gradient += st.w[i] * T(g)
+            curvature += st.w[i] * T(max(h, oftype(h, HMIN)))
+        end
+        b = -gradient / (curvature + T(last(ridge(st.rule))))
+        n = Node{T,V}(n; lintercept = b, rintercept = b)
+    end
     inc = st.scratch[tid].zs
     ensure_len!(inc, length(rows))
     baseline = zero(T)
@@ -1258,7 +1272,7 @@ function loss_backtrack(st::FitState{T,V}, n::Node{T,V}, rows, tid, masks) where
         inc[k] = node_increment(st, n, i, masks)
         baseline += st.w[i] * pointloss(st.loss, st.y[i], st.f[i])
     end
-    st.loss isa Huber && return huber_step(st, n, rows, inc)
+    δ === nothing || return huber_step(st, n, rows, inc)
     scale = one(T)
     while scale >= eps(T)
         candidate = zero(T)
@@ -1279,10 +1293,9 @@ function loss_backtrack(st::FitState{T,V}, n::Node{T,V}, rows, tid, masks) where
 end
 
 "Minimize the convex Huber loss along a node's direction on the interval [0, 1]."
-function huber_step(st::FitState{T,V,<:Any,<:Huber}, n::Node{T,V}, rows, inc) where {T,V}
-    δ = st.loss.δ
+function huber_step(st::FitState{T,V}, n::Node{T,V}, rows, inc) where {T,V}
     derivative(scale) = sum(st.w[i] * inc[k] *
-        clamp(st.f[i] + scale * inc[k] - st.y[i], -δ, δ) for (k, i) in enumerate(rows))
+        first(gh(st.loss, st.y[i], st.f[i] + scale * inc[k])) for (k, i) in enumerate(rows))
     scale = if derivative(zero(T)) >= 0
         zero(T)
     elseif derivative(one(T)) <= 0
