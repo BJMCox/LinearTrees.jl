@@ -49,6 +49,15 @@ struct UnchangedBasis
     N::Matrix{Float64}
 end
 
+"Candidate-only scratch; fitted models never retain either matrix."
+mutable struct CandidateWorkspace
+    design::Matrix{Float64}
+    residual::Matrix{Float64}
+end
+
+CandidateWorkspace() = CandidateWorkspace(
+    Matrix{Float64}(undef, 0, 0), Matrix{Float64}(undef, 0, 0))
+
 mutable struct IncrementalContext
     nodes::Vector{TreeNode}
     leaves::Vector{Int}
@@ -57,6 +66,7 @@ mutable struct IncrementalContext
     cache::Dict{Vector{Int},UnchangedBasis}
     traces::Dict{Int,Vector{Vector{Tuple{Int,Bool}}}}
     row_basis::Union{Nothing,Matrix{Float64}}
+    workspace::Union{Nothing,CandidateWorkspace}
     builds::Int
     hits::Int
 end
@@ -306,14 +316,23 @@ end
 
 function _projected_design(nodes::Vector{TreeNode}, slots::Vector{Int},
         X::Matrix{Float64}, terms::Vector{Vector{Int}}, N::Matrix{Float64},
-        row_basis::Union{Nothing,Matrix{Float64}} = nothing)
+        row_basis::Union{Nothing,Matrix{Float64}} = nothing,
+        workspace::Union{Nothing,CandidateWorkspace} = nothing)
     term_count = length(terms)
     # Wider bases benefit from BLAS with contiguous output columns. Keep the
     # scalar loop for small bases, where one GEMV call per row costs more.
     transposed = term_count >= 11
     n, dimension = size(X, 1), size(N, 2)
-    B = Matrix{Float64}(undef, transposed ? (dimension, n) : (n, dimension))
-    scratch = zeros(Float64, term_count)
+    shape = transposed ? (dimension, n) : (n, dimension)
+    B = if workspace === nothing
+        Matrix{Float64}(undef, shape)
+    else
+        if size(workspace.design) != shape
+            workspace.design = Matrix{Float64}(undef, shape)
+        end
+        workspace.design
+    end
+    scratch = Vector{Float64}(undef, term_count)
     for i in axes(X, 1)
         x = view(X, i, :)
         basis = if row_basis === nothing
@@ -347,7 +366,8 @@ end
 
 function _posterior(B::Union{Matrix{Float64},Transpose{Float64,Matrix{Float64}}},
         Y::Matrix{Float64}, coefficient_precision::Float64,
-        noise_shape::Float64, noise_rate::Float64)
+        noise_shape::Float64, noise_rate::Float64,
+        workspace::Union{Nothing,CandidateWorkspace} = nothing)
     gram = B' * B
     factor = cholesky(Symmetric(gram + coefficient_precision * I); check=false)
     scale = maximum(gram[i, i] for i in axes(gram, 1); init=0.0)
@@ -357,7 +377,16 @@ function _posterior(B::Union{Matrix{Float64},Transpose{Float64,Matrix{Float64}}}
     end
     precision = RidgePrecision(factor.U)
     coef = precision \ (B' * Y)
-    residual = Y - B * coef
+    residual = if workspace === nothing
+        Y - B * coef
+    else
+        if size(workspace.residual) != size(Y)
+            workspace.residual = similar(Y)
+        end
+        mul!(workspace.residual, B, coef)
+        workspace.residual .= Y .- workspace.residual
+        workspace.residual
+    end
     shape = noise_shape + size(Y, 1) / 2
     rate = Vector{Float64}(undef, size(Y, 2))
     for output in axes(Y, 2)
@@ -429,10 +458,10 @@ function fit_fixed(nodes::Vector{TreeNode}, X::Matrix{Float64}, Y::Matrix{Float6
     return _make_fit(nodes, terms, fitted.leaves, fitted.N, post)
 end
 
-function IncrementalContext(nodes, p, terms, row_basis=nothing)
+function IncrementalContext(nodes, p, terms, row_basis=nothing, workspace=nothing)
     IncrementalContext(nodes, leafindices(nodes), terms, p,
         Dict{Vector{Int},UnchangedBasis}(),
-        Dict{Int,Vector{Vector{Tuple{Int,Bool}}}}(), row_basis, 0, 0)
+        Dict{Int,Vector{Vector{Tuple{Int,Bool}}}}(), row_basis, workspace, 0, 0)
 end
 
 function _unchanged_basis(ctx::IncrementalContext, nodes)
@@ -510,7 +539,8 @@ function _incremental_design(ctx::IncrementalContext, nodes::Vector{TreeNode},
     end
     # Search already rejects refinements that add no degrees of freedom.
     size(N, 2) > current_dimension || return nothing
-    B = _projected_design(nodes, slots, X, ctx.terms, N, ctx.row_basis)
+    # With a workspace, B is borrowed until the next candidate. N remains owned.
+    B = _projected_design(nodes, slots, X, ctx.terms, N, ctx.row_basis, ctx.workspace)
     return (; N, B, leaves)
 end
 
@@ -518,7 +548,7 @@ function _fit_refined(ctx, nodes, X, Y, coefficient_precision, noise_shape, nois
         current_dimension::Int)
     fitted = _incremental_design(ctx, nodes, X; current_dimension)
     fitted === nothing && return nothing
-    post = _posterior(fitted.B, Y, coefficient_precision, noise_shape, noise_rate)
+    post = _posterior(fitted.B, Y, coefficient_precision, noise_shape, noise_rate, ctx.workspace)
     return _make_fit(nodes, ctx.terms, fitted.leaves, fitted.N, post)
 end
 
@@ -621,9 +651,11 @@ function fit(X::Matrix{Float64}, Y::Matrix{Float64};
     cache_hits = 0
     used = 0
     graph = Set(pairs)
+    workspace = max_splits > 0 && reuse_constraints ? CandidateWorkspace() : nothing
 
     while used < max_splits
-        context = reuse_constraints ? IncrementalContext(nodes, size(X, 2), terms, row_basis) : nothing
+        context = reuse_constraints ?
+            IncrementalContext(nodes, size(X, 2), terms, row_basis, workspace) : nothing
         current_dimension = size(current.N, 2)
         best = current
         best_score = score

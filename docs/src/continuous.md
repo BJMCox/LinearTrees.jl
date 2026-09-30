@@ -100,15 +100,46 @@ extrapolates outside the observed region.
 
 ## Conditional posterior
 
-Predictors and each target coordinate are normalized using training rows only;
-the fitted transforms are stored and reused at prediction. A constant target
-uses scale one. The solver uses `Float64`.
+Predictors map their training ranges to `[-1, 1]`. By default,
+`response_normalization=nothing` centers each target coordinate at its fitting
+mean and divides it by its population standard deviation. A constant target
+uses scale one. The transforms are stored and reused at prediction, and the
+solver uses `Float64`.
 
-The posterior treats those fitted transforms as fixed. In particular, response
-centering and scaling are estimated from the same responses used for fitting.
-The conjugate calculation therefore does not establish exact Bayesian coverage
-for that entire estimation procedure on the original response scale. Assess
-predictive calibration on separate data, at several interval levels.
+Supply `response_normalization=(center=..., scale=...)` to fix response prior
+units instead. Each response becomes `(y - center) / scale`. For one output,
+both values may be real scalars or length-one vectors; an `n × 1` target still
+gives matrix predictions. For multiple outputs, supply two one-based real
+vectors with one entry per output. Scalars are not broadcast across outputs,
+and scalar/vector pairs cannot be mixed. The named tuple must contain exactly
+`center` and `scale`, in either order. Centers must be finite, and scales must
+be finite and positive after conversion to `Float64`. The normalized responses
+must also remain finite. Values are copied, so later changes to supplied
+vectors do not change the model. Constant outputs retain the explicit transform.
+
+```julia
+model = fit_continuous_tree(X, y;
+    response_normalization=(center=1.0, scale=2.0))
+# For an n × 2 target:
+model = fit_continuous_tree(X, Y;
+    response_normalization=(center=[1.0, -2.0], scale=[2.0, 5.0]))
+```
+
+The same keyword applies to [`fit_continuous_ensemble`](@ref), which uses one
+common response transform for all supplied geometries. Use zero centers and
+unit scales for identity normalization.
+
+The conditional prior is specified in normalized response units: `center` is
+its original-scale function location, and `scale² * σ²` is its original-scale noise
+variance. Changing these values generally changes the prior. Choose them
+independently of fitting responses to avoid estimating prior units from those
+same responses. The default posterior treats fitted response means and scales
+as fixed, so its conjugate calculation does not establish exact Bayesian
+coverage for the entire estimation procedure on the original response scale.
+Predictor normalization can depend on the observed design in a regression model
+conditional on `X`. Fixed response transforms still do not account for
+response-driven tree or hyperparameter selection. Assess predictive calibration
+on separate data, at several interval levels.
 
 Let `D` be the raw routed leaf design and let `C\theta=0` collect all face
 constraints. An orthonormal nullspace basis `N` gives `\theta=N\beta` and
@@ -216,3 +247,4 @@ The principal fitting keywords and defaults are:
 | `coefficient_precision` | `0.01` | `\lambda` in the coefficient prior |
 | `noise_shape` | `2.0` | Inverse-gamma shape `a_0` |
 | `noise_rate` | `1.0` | Inverse-gamma rate `b_0` |
+| `response_normalization` | `nothing` | Fitting mean/SD, or fixed `(center=..., scale=...)` |

@@ -16,6 +16,12 @@ function continuous_cases()
     return (
         ("fit/vector", fit_continuous_tree, (Matrix{Float64}, Vector{Float64})),
         ("fit/matrix", fit_continuous_tree, (Matrix{Float64}, Matrix{Float64})),
+        ("fit/fixed-response/vector", (X, y) -> fit_continuous_tree(X, y;
+            response_normalization=(center=0.0, scale=1.0)),
+            (Matrix{Float64}, Vector{Float64})),
+        ("fit/fixed-response/matrix", (X, Y) -> fit_continuous_tree(X, Y;
+            response_normalization=(center=zeros(size(Y, 2)), scale=ones(size(Y, 2)))),
+            (Matrix{Float64}, Matrix{Float64})),
         ("fit/pairs+pruning", (X, y) -> fit_continuous_tree(X, y;
             pairs=[(1, 2)], candidate_search=:graph_pruned, n_thresholds=nothing),
             (Matrix{Float64}, Vector{Float64})),
@@ -28,6 +34,12 @@ function continuous_cases()
         ("ensemble/fit/vector", fit_continuous_ensemble,
             (Matrix{Float64}, Vector{Float64}, typeof(geometries))),
         ("ensemble/fit/matrix", fit_continuous_ensemble,
+            (Matrix{Float64}, Matrix{Float64}, typeof(geometries))),
+        ("ensemble/fit/fixed-response/vector", (X, y, gs) -> fit_continuous_ensemble(X, y, gs;
+            response_normalization=(center=0.0, scale=1.0)),
+            (Matrix{Float64}, Vector{Float64}, typeof(geometries))),
+        ("ensemble/fit/fixed-response/matrix", (X, Y, gs) -> fit_continuous_ensemble(X, Y, gs;
+            response_normalization=(center=zeros(size(Y, 2)), scale=ones(size(Y, 2)))),
             (Matrix{Float64}, Matrix{Float64}, typeof(geometries))),
         ("ensemble/predict/vector", predict, (typeof(ensemble), Matrix{Float64})),
         ("ensemble/predict/matrix", predict, (typeof(multi_ensemble), Matrix{Float64})),

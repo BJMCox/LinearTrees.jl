@@ -33,12 +33,25 @@ The model weights are proportional to `exp(logprior[k] + evidence[k])`,
 normalized with a log-sum-exp shift. Every evidence uses the member's
 conjugate linear-coefficient and inverse-gamma model. It conditions on the
 provided tree and pair-term basis. The result is exact conjugate averaging in
-the normalized model, treating normalization as fixed. The public fitting
-procedure estimates response center and scale from fitting responses. Fixing
+the normalized model, treating normalization as fixed. By default, fitting
+estimates response center and scale from fitting responses. Fixing
 the candidate space alone therefore does not establish prior-predictive
-calibration for the whole procedure. If candidates were selected or tuned using
+calibration for that procedure. If candidates were selected or tuned using
 those same responses, this is a restricted adaptive approximation: the weights do not
 account for the selection process or for omitted geometries.
+
+Use `response_normalization=(center=..., scale=...)` to specify one common
+response transform for every refitted component. For example, identity
+normalization for one output uses `(center=0.0, scale=1.0)`. Multiple outputs
+require vectors with one center and positive scale per output. Values are
+copied. The supplied geometries' response transforms do not affect refitting.
+
+The prior uses these normalized response units. Choose the transform, geometry
+space, and hyperparameters independently of the fitting responses for a fixed
+conditional Bayesian model. A common response transform contributes the same
+likelihood Jacobian to every geometry, so it cancels in model weights. The
+stored comparison scores omit common constants and are not complete log
+evidences in original response units.
 
 [`predict`](@ref) returns the weighted conditional mean. [`predict!`](@ref)
 writes that mean after reading all predictor rows, so its output may overlap
@@ -80,4 +93,5 @@ mean misspecification: near-nominal observation coverage does not imply that
 credible intervals cover the latent function. Check several nominal levels,
 since one level can appear calibrated by coincidence. Aggregate coverage also
 need not hold at each predictor value. The benchmark protocol in `bench/VALIDATION.md`
-separates a frozen-prior calibration check from the public fitting procedure.
+separates a fixed-transform prior-predictive check from the default procedure
+that estimates response normalization.

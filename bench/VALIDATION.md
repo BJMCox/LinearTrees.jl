@@ -51,14 +51,23 @@ Two experiments answer different questions:
   generating any responses. It draws the root or an off-center split with equal
   probability, inverse-gamma noise variance, and normal continuous coefficients.
   An explicit continuity projector generates split coefficients. It fits the
-  internal fixed-geometry core and wraps it with identity transforms. This is a
-  diagnostic for the frozen conjugate model, not the public normalization policy.
+  public ensemble API with identity response normalization. This checks the
+  frozen conjugate model through the public fixed-transform route.
   The default uses 500 fitted replicates with seed `8100 + replicate`.
 - `bench_calibration` measures empirical coverage of the public fitting policy.
   It draws independent structure, fitting, validation, and test responses on
   predeclared predictor grids. Shared support endpoints preserve the exact
   predictor normalization required by the public ensemble API. Response center
   and scale still come from fitting responses and are treated as fixed.
+
+The public tree and ensemble APIs also accept
+`response_normalization=(center=..., scale=...)`. Identity response normalization
+uses center zero and scale one. To check that public route under a frozen prior,
+choose the response transform, geometry space, and hyperparameters before
+drawing fitting responses, conditional on the observed predictor design. Giving
+the API fixed values estimated from those same responses does not meet this
+condition. Fixed response transforms also do not account for response-driven
+geometry discovery or hyperparameter tuning.
 
 The public-fit experiment uses 64 structure rows, 64 fitting rows, 32 validation
 rows, and 32 in-support test rows. Five cases isolate affine Gaussian truth, a

@@ -28,6 +28,68 @@ using StableRNGs
         @test predictive(model, X; observation=false, batch_size=7).scale2 ≈ latent
     end
 
+    @testset "Fixed response units agree with independent output posteriors" begin
+        x = collect(range(-1.0, 1.0; length=9))
+        X = reshape(x, :, 1)
+        Y = hcat(2 .+ 1.5x .+ 0.1cos.(3x), fill(7.0, length(x)))
+        center, scale = [1.0, -2.0], [2.0, 3.0]
+        λ, a0, b0 = 0.4, 2.5, 0.8
+        model = fit_continuous_tree(X, Y; max_splits=0,
+            response_normalization=(; center, scale), coefficient_precision=λ,
+            noise_shape=a0, noise_rate=b0)
+        B = hcat(ones(length(x)), x)
+        z = (Y .- center') ./ scale'
+        H = B'B + λ * I
+        coef = H \ (B'z)
+        shape = a0 + length(x) / 2
+        rate = [b0 + (sum(abs2, z[:, k] - B * coef[:, k]) +
+            λ * sum(abs2, coef[:, k])) / 2 for k in axes(Y, 2)]
+        query = [-1.3, -0.2, 0.8, 1.4]
+        Q = hcat(ones(length(query)), query)
+        expected = center' .+ (Q * coef) .* scale'
+        latent = diag(Q * (H \ Q')) .* (scale.^2 .* rate ./ shape)'
+        inputs = reshape(query, :, 1)
+        posterior = predictive(model, inputs; observation=false, batch_size=2)
+        observed = predictive(model, inputs; batch_size=2)
+        @test predict(model, inputs; batch_size=2) ≈ expected
+        @test posterior.location ≈ expected
+        @test posterior.scale2 ≈ latent
+        @test posterior.dof == fill(2shape, 2)
+        @test observed.scale2 ≈ latent .+ (scale.^2 .* rate ./ shape)'
+
+        # Normalization argument shape must not determine target rank.
+        scalar = fit_continuous_tree(X, Y[:, 1]; max_splits=0,
+            response_normalization=(scale=scale[1:1], center=center[1:1]),
+            coefficient_precision=λ, noise_shape=a0, noise_rate=b0)
+        singleton = fit_continuous_tree(X, Y[:, 1:1]; max_splits=0,
+            response_normalization=(center=center[1], scale=scale[1]),
+            coefficient_precision=λ, noise_shape=a0, noise_rate=b0)
+        @test predict(scalar, inputs) ≈ expected[:, 1]
+        @test predict(singleton, inputs) ≈ expected[:, 1:1]
+        @test predictive(scalar, inputs).scale2 ≈ observed.scale2[:, 1]
+        @test predictive(singleton, inputs).scale2 ≈ observed.scale2[:, 1:1]
+
+        center .= 100
+        scale .= 200
+        @test predict(model, inputs) ≈ expected
+        @test predictive(model, inputs; observation=false).scale2 ≈ latent
+    end
+
+    @testset "Repeated fits preserve earlier predictive distributions" begin
+        X = 2rand(StableRNG(731), 96, 2) .- 1
+        Y = hcat(1 .+ 2abs.(X[:, 1]) .+ 0.4X[:, 2],
+            -0.5 .+ X[:, 1] .- abs.(X[:, 2]))
+        model = fit_continuous_tree(X, Y; max_splits=3, n_thresholds=1)
+        point = predict(model, X)
+        expected = predictive(model, X)
+        fit_continuous_tree(X, reverse(Y; dims=1); max_splits=3, n_thresholds=1,
+            pairs=:all)
+        repeated = predictive(model, X)
+        @test predict(model, X) == point
+        @test repeated.location == expected.location
+        @test repeated.scale2 == expected.scale2
+    end
+
     @testset "Collinear root retains a positive coefficient prior" begin
         for (n, λ) in ((4, 1e-20), (41, 1e-20), (41, 0.2))
             x = collect(range(-1.0, 1.0; length=n))
@@ -145,6 +207,12 @@ using StableRNGs
         Q = [-3.0 3.0; -0.2 3.0; 0.4 3.0; 3.0 3.0]
         @test predict(changed, Q .* [1e6 7.0] .+ [12.0 -200.0]) ≈ 100 .+ 9predict(model, Q)
         @test predictive(changed, Q .* [1e6 7.0] .+ [12.0 -200.0]).scale2 ≈ 81predictive(model, Q).scale2
+        fixed = fit_continuous_tree(X, y; max_splits=1,
+            response_normalization=(center=0.25, scale=2.0))
+        fixed_changed = fit_continuous_tree(X, 100 .+ 9y; max_splits=1,
+            response_normalization=(center=102.25, scale=18.0))
+        @test predict(fixed_changed, Q) ≈ 100 .+ 9predict(fixed, Q)
+        @test predictive(fixed_changed, Q).scale2 ≈ 81predictive(fixed, Q).scale2
         @test predict(model, Q[2:2, :])[1] == predict(model, Q)[2]
         @test isempty(predict(model, zeros(0, 2)))
         @test isempty(predictive(model, zeros(0, 2)).scale2)

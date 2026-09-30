@@ -162,7 +162,7 @@ function bench_calibration(; replicates=500, seed=7100, output=nothing)
     return rows
 end
 
-"Frozen-transform prior-predictive diagnostic, separate from the public plug-in procedure."
+"Prior-predictive diagnostic using the public API with a fixed response transform."
 function bench_prior_calibration(; replicates=500, seed=8100, output=nothing)
     C = LinearTrees.Continuous
     x = collect(range(-1.0, 1.0; length=32))
@@ -176,6 +176,8 @@ function bench_prior_calibration(; replicates=500, seed=8100, output=nothing)
     H = (hcat(ones(length(q)), q), reduce(vcat, transpose.(routed.(q))))
     projections = (Matrix{Float64}(I, 2, 2), P)
     nodes = (C.root(1), C.grow(C.root(1), 1, 1, t))
+    geometries = [ContinuousTree{true}(C.fit_fixed(n, X, zeros(length(x), 1);
+        pairs=Tuple{Int,Int}[]), [0.0], [1.0], [0.0], [1.0]) for n in nodes]
     rows = NamedTuple[]
     for rep in 1:replicates
         rng = StableRNG(seed + rep)
@@ -185,13 +187,9 @@ function bench_prior_calibration(; replicates=500, seed=8100, output=nothing)
         fitting = D[member] * coef + sqrt(variance) .* randn(rng, length(x))
         truth = H[member] * coef
         testing = truth + sqrt(variance) .* randn(rng, length(q))
-        components = [ContinuousTree{true}(C.fit_fixed(deepcopy(n), X, reshape(fitting, :, 1);
-            pairs=Tuple{Int,Int}[], coefficient_precision=λ, noise_shape=a0, noise_rate=b0),
-            [0.0], [1.0], [0.0], [1.0]) for n in nodes]
-        logmass = [part.fit.post.score for part in components]
-        weights = exp.(logmass .- maximum(logmass))
-        weights ./= sum(weights)
-        model = ContinuousEnsemble{true}(components, weights, zeros(2))
+        model = fit_continuous_ensemble(X, fitting, geometries;
+            coefficient_precision=λ, noise_shape=a0, noise_rate=b0,
+            response_normalization=(center=0.0, scale=1.0))
         record!(rows, (;case=:prior_predictive, rep, method=:frozen_mixture,
             predictive_metrics(model, Q, testing, truth)...), nothing)
     end
