@@ -104,6 +104,12 @@ Predictors and each target coordinate are normalized using training rows only;
 the fitted transforms are stored and reused at prediction. A constant target
 uses scale one. The solver uses `Float64`.
 
+The posterior treats those fitted transforms as fixed. In particular, response
+centering and scaling are estimated from the same responses used for fitting.
+The conjugate calculation therefore does not establish exact Bayesian coverage
+for that entire estimation procedure on the original response scale. Assess
+predictive calibration on separate data, at several interval levels.
+
 Let `D` be the raw routed leaf design and let `C\theta=0` collect all face
 constraints. An orthonormal nullspace basis `N` gives `\theta=N\beta` and
 `B=DN`. With coefficient precision `\lambda`,

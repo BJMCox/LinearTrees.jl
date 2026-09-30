@@ -5,7 +5,7 @@ CurrentModule = LinearTrees
 # Boosted trees
 
 [`fit_boost`](@ref) builds an additive ensemble of linear model trees.
-Each round fits one tree to the current loss gradient and Hessian.
+Each round fits one tree to the current loss gradient and fitting curvature.
 The learning rate `eta` scales that tree before adding it to the ensemble.
 
 Use boosting when one tree cannot capture enough structure.
@@ -84,6 +84,9 @@ Use `score(model, X; clip = false)` when comparing scores with history.
 Huber, binary logistic, and log-link losses safeguard each round against
 the actual training loss. A reduced step scales the retained tree itself,
 so validation and later predictions use the same step.
+Huber freezes its residual-majorizer weights for the round. The learning rate
+still caps the accepted step. `Loss(HuberLoss(δ))` with positive loss scale
+uses the same weights and step safeguard.
 
 Keep validation rows independent from fitting rows.
 Repeated tuning against one validation set can still overfit that set.

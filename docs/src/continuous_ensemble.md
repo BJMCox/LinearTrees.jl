@@ -32,10 +32,12 @@ mass to all supplied members.
 The model weights are proportional to `exp(logprior[k] + evidence[k])`,
 normalized with a log-sum-exp shift. Every evidence uses the member's
 conjugate linear-coefficient and inverse-gamma model. It conditions on the
-provided tree and pair-term basis. The result is exact finite-model Bayesian
-averaging when the candidate space and prior were fixed independently of the
-responses. If the candidates were selected or tuned using those same
-responses, this is a restricted adaptive approximation: the weights do not
+provided tree and pair-term basis. The result is exact conjugate averaging in
+the normalized model, treating normalization as fixed. The public fitting
+procedure estimates response center and scale from fitting responses. Fixing
+the candidate space alone therefore does not establish prior-predictive
+calibration for the whole procedure. If candidates were selected or tuned using
+those same responses, this is a restricted adaptive approximation: the weights do not
 account for the selection process or for omitted geometries.
 
 [`predict`](@ref) returns the weighted conditional mean. [`predict!`](@ref)
@@ -72,3 +74,10 @@ interval = [quantile(mixture, p) for p in (0.05, 0.95)]
 Held-out log density and interval coverage should be assessed separately from
 training evidence, using the same candidate-generation policy intended for
 future data. The current API does not generate or enumerate candidate trees.
+
+Check latent and observation intervals separately. Observation noise can hide
+mean misspecification: near-nominal observation coverage does not imply that
+credible intervals cover the latent function. Check several nominal levels,
+since one level can appear calibrated by coincidence. Aggregate coverage also
+need not hold at each predictor value. The benchmark protocol in `bench/VALIDATION.md`
+separates a frozen-prior calibration check from the public fitting procedure.

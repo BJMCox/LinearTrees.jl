@@ -123,12 +123,16 @@ end
 function finite_ensemble_fit(split)
     geometries = [continuous_fit(split; max_splits=0), continuous_fit(split),
         continuous_fit(split; pairs=[(1, 2)])]
+    return fit_continuous_ensemble(split.Xtrain, split.ytrain, distinct_geometries(geometries))
+end
+
+function distinct_geometries(geometries)
     # The API rejects duplicate model space entries. Equal leaf boxes and basis
     # define the same model even when a different split order produced them.
     keys = [(sort([(Tuple(node.lo), Tuple(node.hi)) for node in model.fit.nodes
         if node.feature == 0]), sort(Tuple.(model.fit.terms))) for model in geometries]
     keep = [i for i in eachindex(keys) if !any(isequal(keys[i]), keys[1:i-1])]
-    return fit_continuous_ensemble(split.Xtrain, split.ytrain, geometries[keep])
+    return geometries[keep]
 end
 
 function fit_method(method, split, seed)

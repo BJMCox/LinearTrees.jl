@@ -115,6 +115,28 @@ Inspect allocation counts and bytes as well as runtime. For boosted fits
 with sampling, create a fresh seeded RNG for each repetition. Reusing an
 advanced RNG changes the sampled trees between calls.
 
+### Wider inputs
+
+The benchmark suite in `bench/validation.jl` compares nine fitting methods on
+nested row and predictor subsets. `bench/VALIDATION.md` records the data,
+validation policy, model budgets, and commands. It measures full fits, including
+the routing tree before a ridge refit, and records test error alongside cost.
+
+For example, the 8,000-row, 32-predictor model-tree fixture gave these results
+on an Apple M4 Pro with Julia 1.13, one Julia thread, and one BLAS thread:
+
+| Search | Fit time | Allocated memory | Test RMSE |
+|:--|--:|--:|--:|
+| Exact | 4.37 s | 45.2 MiB | 0.2065 |
+| 32 bins, no refinement | 0.714 s | 45.3 MiB | 0.2059 |
+| 32 bins, with refinement | 1.56 s | 55.3 MiB | 0.2065 |
+
+These are averages over two seeds, with three warmed timing samples per seed.
+All model trees used every predictor, depth 3, minimum leaf 40, and ridge
+penalty 1. The signal used four predictors and noise SD 0.2. Coarse search was
+6.1 times faster here, while refinement used more memory. This synthetic result
+does not establish an accuracy ranking or a speedup on other datasets.
+
 ## Diagnose a slow fit
 
 The optional benchmark environment has a profiling runner for ordinary trees,
@@ -130,7 +152,8 @@ JULIA_NUM_THREADS=1 LT_PROFILE_CASES=7,8 \
 ```
 
 Cases 7 and 8 fit a 30-round boosted model and a four-split continuous tree
-on fixed synthetic data. Their inputs come from StableRNGs seeds. Each case
+on fixed synthetic data. Case 9 compares exact, refined, and coarse model-tree
+fits. Their inputs come from StableRNGs seeds. Each case
 records a BenchmarkTools median, total bytes and allocation count, a CPU
 profile, and a sampled allocation profile. The PProf flame graphs and their
 logs share the chosen output directory. Raw sampled bytes in an allocation

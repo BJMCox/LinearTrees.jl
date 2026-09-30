@@ -74,12 +74,14 @@ end
 
 function _continuous_thresholds(X, n_thresholds)
     return map(axes(X, 2)) do j
-        values = sort!(unique(X[:, j]))
-        length(values) == 1 && return Float64[]
         if n_thresholds === nothing
+            values = sort!(unique(X[:, j]))
+            length(values) == 1 && return Float64[]
             cuts = [values[i] / 2 + values[i + 1] / 2 for i in 1:length(values)-1]
             return unique!(filter(t -> -1 < t < 1, cuts))
         end
+        column = view(X, :, j)
+        all(isequal(first(column)), column) && return Float64[]
         return collect(range(-1.0, 1.0; length=n_thresholds + 2))[2:end-1]
     end
 end
@@ -106,6 +108,8 @@ The coefficient prior is isotropic normal with precision
 coefficients. Independently for each output, `σ²` has an inverse-gamma prior
 with `noise_shape` and `noise_rate`. All three hyperparameters must be positive.
 This prior depends on the tree geometry and the fitted normalization.
+The posterior treats response centering and scaling as fixed, even though they
+are estimated from the fitting responses.
 
 Greedy search compares single splits, paired sibling splits, and three-split
 crosses. It sums output log marginal likelihoods and subtracts

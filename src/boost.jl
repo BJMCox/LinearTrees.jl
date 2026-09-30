@@ -12,13 +12,13 @@ end
 
 """
 Fill `target[i] = (-g0/h0, h0)` at ensemble score `F`. Smooth losses use
-`gradhess!` (which floors `h` at `HMIN`); non-smooth losses take the IRLS
-weight at `F` as the frozen Hessian, the same weight the single tree uses in
+their fitting curvature (Huber uses its residual majorizer); non-smooth losses
+take the IRLS weight at `F` as the frozen Hessian, the same weight the single tree uses in
 its split search, so the round is one IRLS step rather than an exact L1 fit.
 """
 function frozen_target!(target::Vector{Tuple{V,V}}, g0::Vector{V}, h0::Vector{V}, loss::L,
         y::Vector{T}, F::Vector{V}, w::Vector{T}) where {T,V,L<:Loss}
-    gradhess!(g0, h0, loss, y, F)
+    working_gradhess!(g0, h0, loss, y, F)
     if !issmooth(loss)
         S = eltype(V)
         ε = max(irls_epsilon(y .- F, w), sqrt(eps(S)) * max(maximum(abs, y), one(S)))
@@ -61,10 +61,11 @@ boost_step_scale(loss::Loss, y, F, w, increment, start::T) where {T} =
     boost_backtrack_scale(loss, y, F, w, increment, start)
 
 "Minimize Huber's convex directional loss before checking the actual objective."
-function boost_step_scale(loss::Huber, y, F, w, increment, start::T) where {T}
-    δ = T(loss.δ)
+function boost_step_scale(loss::Union{Huber,AdaptedLoss{<:HuberLoss}}, y, F, w, increment, start::T) where {T}
+    huber_transition(loss) === nothing &&
+        return boost_backtrack_scale(loss, y, F, w, increment, start)
     derivative(scale) = sum(w[i] * increment[i] *
-        clamp(F[i] + scale * increment[i] - y[i], -δ, δ) for i in eachindex(y))
+        first(gh(loss, y[i], F[i] + scale * increment[i])) for i in eachindex(y))
     scale = if derivative(zero(T)) >= 0
         zero(T)
     elseif derivative(one(T)) <= 0

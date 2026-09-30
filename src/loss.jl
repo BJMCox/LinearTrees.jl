@@ -192,6 +192,31 @@ function gradhess!(g::AbstractVector, h::AbstractVector, loss::Loss, y::Abstract
     return g
 end
 
+"Fitting curvature; public `gradhess!` continues to report true derivatives."
+working_gradhess!(g, h, loss::Loss, y, f) = gradhess!(g, h, loss, y, f)
+
+function huber_working_gradhess!(g, h, y, f, δ, scale)
+    # True curvature is zero in the tails. Its floor creates enormous working
+    # responses whose common RSS hides fit gains inside BIC's logarithm.
+    # The residual majorizer stays tangent while giving useful weighted fits.
+    scaled_delta = scale * δ
+    for i in eachindex(g, h, y, f)
+        r = float(f[i] - y[i])
+        # Scale before narrowing: tiny delta and large adapter scale can have
+        # a representable product even when delta alone underflows in Float32.
+        g[i] = abs(r) <= δ ? scale * r : copysign(scaled_delta, r)
+        curvature = abs(r) <= δ ? scale * one(r) : scaled_delta / abs(r)
+        h[i] = max(curvature, HMIN)
+    end
+    return g
+end
+
+working_gradhess!(g, h, loss::Huber, y, f) =
+    huber_working_gradhess!(g, h, y, f, loss.δ, 1)
+
+huber_transition(::Loss) = nothing
+huber_transition(loss::Huber) = loss.δ
+
 """
     gradhess!(g, h, ::Softmax, y, f)
 
@@ -584,7 +609,7 @@ function _validate(::Softmax{K}, y) where {K}
 end
 
 # ---- LossFunctions.jl adapter -----------------------------------------------
-using LossFunctions: SupervisedLoss, DistanceLoss, MarginLoss, L2DistLoss, L1DistLoss, QuantileLoss, PoissonLoss, LogitMarginLoss, deriv, deriv2
+using LossFunctions: SupervisedLoss, DistanceLoss, MarginLoss, L2DistLoss, L1DistLoss, HuberLoss, QuantileLoss, PoissonLoss, LogitMarginLoss, deriv, deriv2
 
 "Score-space link between the tree's raw score and the value the inner loss expects."
 struct IdentityLink end
@@ -606,7 +631,13 @@ struct AdaptedLoss{L<:SupervisedLoss,K} <: Loss
     scale::Float64
 end
 
-backtracks(loss::AdaptedLoss) = loss.inner isa LogitMarginLoss || loss.link isa LogLink
+backtracks(loss::AdaptedLoss) = loss.inner isa LogitMarginLoss || loss.link isa LogLink ||
+    (loss.inner isa HuberLoss && loss.scale > 0)
+
+working_gradhess!(g, h, loss::AdaptedLoss{<:HuberLoss}, y, f) =
+    loss.scale > 0 ? huber_working_gradhess!(g, h, y, f, loss.inner.d, loss.scale) :
+        gradhess!(g, h, loss, y, f)
+huber_transition(loss::AdaptedLoss{<:HuberLoss}) = loss.scale > 0 ? loss.inner.d : nothing
 
 "Newton-step scale that lines an inner loss up with the matching native `Loss`."
 canonical_scale(::L2DistLoss) = 0.5

@@ -58,7 +58,8 @@ then normalize prior-times-evidence weights across this finite model space.
 Entries with identical tree geometry and pair-term basis are rejected. Every
 geometry must use the normalization computed from `X`.
 
-The posterior is exact conditional on this fixed, supplied model space.
+The conjugate calculation is exact in the normalized model with this fixed
+model space, treating fitted response centering and scaling as fixed.
 Geometries selected using `y` make it a restricted, adaptive approximation to
 a posterior over all continuous trees.
 """
