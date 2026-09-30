@@ -91,3 +91,13 @@ function case8_data()
         X[:, 3] .- X[:, 4] .+ 0.05 .* randn(rng, size(X, 1))
     return X, y
 end
+
+"Case 9 data: linear-child split scoring, n = 900, p = 4."
+function case9_data()
+    rng = StableRNG(29092026 + 900 + 4)
+    X = rand(rng, 900, 4)
+    y = ifelse.(X[:, 1] .< 0.5,
+        1 .+ 2X[:, 2] .- X[:, 3], -1 .- 3X[:, 2] .+ 2X[:, 3]) .+
+        0.4X[:, 4] .+ 0.2randn(rng, size(X, 1))
+    return X, y
+end
