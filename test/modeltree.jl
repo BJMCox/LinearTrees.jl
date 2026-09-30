@@ -37,7 +37,9 @@ end
 
 @testset "exact model-tree split matches exhaustive QR child fits" begin
     x = collect(range(-1.5, 1.5; length=19))
-    X = hcat(x, cos.(2 .* x))
+    # The binary column becomes constant in some children. Together with the
+    # global constant it checks solves whose active regressor set changes.
+    X = hcat(x, cos.(2 .* x), Float64.(x .> 0), ones(length(x)))
     y = [x[i] <= 0 ? 0.5 + 2x[i] - 0.2X[i, 2] : 0.5 - x[i] - 0.2X[i, 2]
         for i in eachindex(x)]
     w = Float64[isodd(i) ? 1 : 2 for i in eachindex(x)]
@@ -55,7 +57,8 @@ end
         scales[scales .== 0] .= 1
         A = sqrt.(mass) .* ((X[indices, :] .- permutedims(μx)) ./ permutedims(scales))
         b = sqrt.(w[indices]) .* (y[indices] .- μy)
-        coefficient = qr([A; sqrt(λ) .* Matrix{Float64}(I, 2, 2)]) \ [b; zeros(2)]
+        q = size(X, 2)
+        coefficient = qr([A; sqrt(λ) .* Matrix{Float64}(I, q, q)]) \ [b; zeros(q)]
         return sum(abs2, A * coefficient - b) + λ * sum(abs2, coefficient)
     end
 

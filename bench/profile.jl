@@ -18,6 +18,7 @@
 #   julia --project=bench bench/typecheck.jl        # JET + @code_warntype
 #
 # Set `LT_PROFILE_CASES=7,8` to run only boosting and continuous fits.
+# Set `LT_PROFILE_CASES=9` to profile exact, refined, and coarse model-tree fits.
 # Set `LT_PROFILE_OUT` to write artifacts outside the checkout.
 
 using Profile, PProf, BenchmarkTools, Printf, LinearAlgebra
@@ -134,7 +135,7 @@ function run_case(name, f; label = name)
     return nothing
 end
 
-wanted = haskey(ENV, "LT_PROFILE_CASES") ? parse.(Int, split(ENV["LT_PROFILE_CASES"], ",")) : collect(1:8)
+wanted = haskey(ENV, "LT_PROFILE_CASES") ? parse.(Int, split(ENV["LT_PROFILE_CASES"], ",")) : collect(1:9)
 
 println("Julia ", VERSION, "  threads=", NT, "  BLAS=", BLAS.get_num_threads(),
     "  CPU=", Sys.cpu_info()[1].model)
@@ -176,6 +177,16 @@ if 8 in wanted
     X8, y8 = case8_data()
     run_case("case8-continuous", () -> fit_continuous_tree(X8, y8;
         pairs = [(1, 2)], max_splits = 4))
+end
+if 9 in wanted
+    X9, y9 = case9_data()
+    for (name, search) in (("exact", ExactSearch()),
+            ("refined", BinnedSearch(nbins = 24)),
+            ("coarse", BinnedSearch(nbins = 24, refine = false)))
+        run_case("case9-modeltree-$name", () -> fit_model_tree(X9, y9;
+            max_depth = 4, min_leaf = 12, lambda = 1.0, split_penalty = 0.0,
+            split_search = search))
+    end
 end
 
 open(joinpath(OUT, "summary-$TAG.txt"), "w") do fh

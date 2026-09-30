@@ -1,6 +1,6 @@
 # Greedy numeric partitions scored by full-response linear ridge child fits.
 
-using LinearAlgebra: Symmetric, cholesky, diag, dot, issuccess, norm, transpose
+using LinearAlgebra: Symmetric, cholesky, cholesky!, dot, issuccess, ldiv!, norm
 
 "The weighted penalized objective minimized by `fit_ridge_leaf` on these rows."
 function _modeltree_objective(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{Int},
@@ -57,31 +57,71 @@ function _modeltree_update!(m::_ModelTreeMoments{T}, z::Matrix{T}, r::Int,
     return m
 end
 
+"Scratch space reused by child solves; it never owns accumulated moments."
+struct _ModelTreeSolve{T<:AbstractFloat}
+    factor::Matrix{T}
+    rhs::Vector{T}
+    slopes::Vector{T}
+    active::Vector{Int}
+end
+
+_ModelTreeSolve(::Type{T}, q::Int) where {T<:AbstractFloat} =
+    _ModelTreeSolve(Matrix{T}(undef, q, q), Vector{T}(undef, q),
+        Vector{T}(undef, q), Vector{Int}(undef, q))
+
 "Child penalized ridge objective from centered covariance and cross moments."
-function _modeltree_moment_objective(m::_ModelTreeMoments{T}, lambda::T) where {T<:AbstractFloat}
+function _modeltree_moment_objective!(work::_ModelTreeSolve{T},
+        m::_ModelTreeMoments{T}, lambda::T) where {T<:AbstractFloat}
     W = m.W
     W > 0 || return nothing
     cYY = m.syy - abs2(m.sy) / W
     q = length(m.sx)
     q == 0 && return max(zero(T), cYY)
-    cXX = m.sxx - m.sx * transpose(m.sx) / W
-    cXY = m.sxy - m.sx * (m.sy / W)
     # A child ridge solve standardizes each regressor by its own weighted RMS.
     # In raw centered coordinates that penalty is lambda*diag(Cxx)/W.
-    variances = diag(cXX)
-    any(v -> !isfinite(v) || v < 0, variances) && return nothing
-    active = findall(>(zero(T)), variances)
-    isempty(active) && return max(zero(T), cYY)
-    A = cXX[active, active]
-    for (a, c) in enumerate(active)
-        A[a, a] += lambda * variances[c] / W
+    nactive = 0
+    for c in 1:q
+        variance = m.sxx[c, c] - abs2(m.sx[c]) / W
+        isfinite(variance) && variance >= 0 || return nothing
+        if variance > 0
+            nactive += 1
+            work.active[nactive] = c
+        end
     end
-    F = cholesky(Symmetric(A); check=false)
+    nactive == 0 && return max(zero(T), cYY)
+    for b in 1:nactive
+        j = work.active[b]
+        work.rhs[b] = m.sxy[j] - m.sx[j] * (m.sy / W)
+        work.slopes[b] = work.rhs[b]
+        for a in 1:b
+            i = work.active[a]
+            covariance = m.sxx[i, j] - m.sx[i] * m.sx[j] / W
+            work.factor[a, b] = a == b ? covariance + lambda * covariance / W : covariance
+        end
+    end
+    # Pad inactive coordinates with an independent identity block and zero RHS.
+    # This keeps the factor and solve buffers dense and fixed-size as columns
+    # become constant, without changing the active objective or condition test.
+    for b in (nactive + 1):q
+        work.rhs[b] = work.slopes[b] = zero(T)
+        for a in 1:b
+            work.factor[a, b] = a == b ? one(T) : zero(T)
+        end
+    end
+    A = Symmetric(work.factor, :U)
+    # The library's Float16 method factors in Float32 before rounding back.
+    F = T === Float16 ? cholesky(A; check=false) : cholesky!(A; check=false)
     issuccess(F) || return nothing
-    diagonal = abs.(diag(F.U))
-    minimum(diagonal) > sqrt(eps(T)) * maximum(diagonal) || return nothing
-    rhs = cXY[active]
-    slopes = F \ rhs
+    smallest, largest = T(Inf), zero(T)
+    for c in 1:nactive
+        diagonal = abs(F.U[c, c])
+        smallest = min(smallest, diagonal)
+        largest = max(largest, diagonal)
+    end
+    smallest > sqrt(eps(T)) * largest || return nothing
+    rhs = work.rhs
+    slopes = work.slopes
+    ldiv!(F, slopes)
     objective = cYY - dot(rhs, slopes)
     tolerance = T(128) * eps(T) * max(one(T), abs(cYY))
     isfinite(objective) && objective >= -tolerance || return nothing
@@ -108,7 +148,8 @@ end
 function _modeltree_scan(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{Int},
         regressors::Vector{Int}, z::Matrix{T}, centered_y::Vector{T},
         order::Vector{Int}, j::Int,
-        eligible::BitVector, lambda::T, min_leaf::T) where {T<:AbstractFloat}
+        eligible::BitVector, lambda::T, min_leaf::T,
+        work::_ModelTreeSolve{T}) where {T<:AbstractFloat}
     n = length(order)
     right = _modeltree_moments(T, length(regressors))
     right_objectives = fill(T(Inf), n - 1)
@@ -120,7 +161,7 @@ function _modeltree_scan(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{
         eligible[k] || continue
         X[rows[order[k]], j] < X[rows[r], j] || continue
         right.W >= min_leaf || continue
-        objective = _modeltree_moment_objective(right, lambda)
+        objective = _modeltree_moment_objective!(work, right, lambda)
         if objective === nothing
             right_rows = Int[rows[order[t]] for t in (k + 1):n]
             leaf = fit_ridge_leaf(X, y, w, right_rows, regressors, lambda)
@@ -135,7 +176,7 @@ function _modeltree_scan(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{
         r = order[k]
         _modeltree_update!(left, z, r, centered_y[r], w[rows[r]])
         isfinite(right_objectives[k]) && left.W >= min_leaf || continue
-        left_objective = _modeltree_moment_objective(left, lambda)
+        left_objective = _modeltree_moment_objective!(work, left, lambda)
         if left_objective === nothing
             left_rows = Int[rows[order[t]] for t in 1:k]
             leaf = fit_ridge_leaf(X, y, w, left_rows, regressors, lambda)
@@ -168,6 +209,7 @@ function _modeltree_split(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector
     end
     best = nothing
     best_objective = parent_objective - split_penalty
+    work = _ModelTreeSolve(T, length(regressors))
     for j in features
         order = sortperm(rows; by=i -> X[i, j], alg=MergeSort)
         ncuts = length(order) - 1
@@ -180,14 +222,14 @@ function _modeltree_split(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector
             eligible[edges] .= true
         end
         cut, objective = _modeltree_scan(X, y, w, rows, regressors, z,
-            centered_y, order, j, eligible, lambda, min_leaf)
+            centered_y, order, j, eligible, lambda, min_leaf, work)
         if search isa BinnedSearch && search.refine && !isempty(edges) && cut > 0
             where = searchsortedfirst(edges, cut)
             lo = where == 1 ? 1 : edges[where - 1] + 1
             hi = where == length(edges) ? ncuts : edges[where + 1]
             eligible[lo:hi] .= true
             cut, objective = _modeltree_scan(X, y, w, rows, regressors, z,
-                centered_y, order, j, eligible, lambda, min_leaf)
+                centered_y, order, j, eligible, lambda, min_leaf, work)
         end
         if cut > 0 && objective < best_objective
             best_objective = objective
