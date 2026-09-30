@@ -78,6 +78,13 @@ end
     @test maximum(abs, predict(t, reshape(x, 200, 1))[clean] .- y[clean]) < 0.5
 end
 
+@testset "Huber selects a noiseless line across its transition" begin
+    x = collect(range(-1.0, 1.0; length = 11))
+    X, y = reshape(x, :, 1), 2 .* x
+    tree = fit_tree(X, y, Huber(1.0); max_depth = 1)
+    @test predict(tree, X) ≈ y atol = 1e-8
+end
+
 @testset "Huber constant update descends on outliers" begin
     X = zeros(100, 1)
     y = vcat(zeros(90), fill(100.0, 10))
@@ -88,6 +95,11 @@ end
     fitted = only(unique(predict(tree, X)))
     @test objective(fitted) < objective(initial)
     @test 0 <= fitted < initial
+    # Preserve the Newton interval: one majorizer step would stop at 50/41.
+    @test fitted ≈ 1 / 9 atol = 1e-8
+    penalized = fit_tree(X, y, Huber(δ); max_depth = 0,
+        rule = GainRule(lambda_intercept = 100.0))
+    @test predict(penalized, X) ≈ fill(10 - 80 / (100 + 100e-6), length(y))
 end
 
 @testset "count losses return positive means" begin

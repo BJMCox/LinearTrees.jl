@@ -9,6 +9,39 @@ import Distributions
     @test [n.model for n in t1.nodes] == [n.model for n in t2.nodes]
 end
 
+@testset "HuberLoss adapter preserves robust fitting and loss scale" begin
+    x = collect(range(-1.0, 1.0; length = 41))
+    X, y = reshape(x, :, 1), 2 .* x
+    y[1:4] .+= 20
+    native = fit_tree(X, y, Huber(1.0))
+    adapted = fit_tree(X, y, Loss(HuberLoss(1.0)))
+    scaled = fit_tree(X, y, Loss(HuberLoss(1.0); scale = 2.0))
+    @test predict(adapted, X) ≈ predict(native, X)
+    # The fixed true-Hessian floor slightly changes the constant Newton step.
+    @test maximum(abs, predict(scaled, X) - predict(native, X)) < 1e-6
+    native_boost = fit_boost(X, y, Huber(1.0); nrounds = 3, eta = 0.5, max_depth = 1)
+    adapted_boost = fit_boost(X, y, Loss(HuberLoss(1.0)); nrounds = 3, eta = 0.5, max_depth = 1)
+    @test predict(adapted_boost, X) ≈ predict(native_boost, X)
+    @test adapted_boost.history ≈ native_boost.history
+end
+
+@testset "HuberLoss keeps representable scaled Float32 directions" begin
+    loss = Loss(HuberLoss(1e-50); scale = 1e50)
+    X = reshape(Float32[-3, -2, -1, 1, 2, 3], :, 1)
+    y = Float32[-6, -4, -2, 2, 4, 6]
+    tree = fit_tree(X, y, loss; max_depth = 1, min_fit = 2,
+        min_sum_hessian = 0, max_lin_chain = 1, rule = MinDeviance((LIN,)))
+    @test predict(tree, X) ≈ y
+    Xb, yb = zeros(Float32, 3, 1), Float32[-3, -2, 5]
+    boost = fit_boost(Xb, yb, loss; nrounds = 1, eta = 0.5, max_depth = 0)
+    @test all(score(boost, Xb; clip = false) .< 0)
+    @test only(boost.history) < deviance(loss, yb, zeros(Float32, 3), ones(Float32, 3))
+    # Nonpositive adapter scales retain the existing generic loss path.
+    inverted = Loss(HuberLoss(1.0); scale = -1.0)
+    inverse_boost = fit_boost(Xb, yb, inverted; nrounds = 1, eta = 0.5, max_depth = 0)
+    @test only(inverse_boost.history) < deviance(inverted, yb, zeros(Float32, 3), ones(Float32, 3))
+end
+
 @testset "LogitMarginLoss adapter preserves logistic damping" begin
     X = reshape([0.0, 0.0, 1.0, 1.0], :, 1)
     y = [0.0, 1.0, 0.0, 1.0]
