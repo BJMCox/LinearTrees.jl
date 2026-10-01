@@ -34,19 +34,27 @@ mutable struct _ModelTreeMoments{T<:AbstractFloat}
     sxx::Matrix{T}
     sxy::Vector{T}
     syy::T
+    first_row::Int
+    varies::Vector{Bool}
 end
 
 _modeltree_moments(::Type{T}, q::Int) where {T<:AbstractFloat} =
     _ModelTreeMoments{T}(zero(T), zeros(T, q), zero(T), zeros(T, q, q),
-        zeros(T, q), zero(T))
+        zeros(T, q), zero(T), 0, fill(false, q))
 
 "Accumulate one centered weighted observation in a child's moments."
 function _modeltree_update!(m::_ModelTreeMoments{T}, z::Matrix{T}, r::Int,
-        target::T, mass::T) where {T<:AbstractFloat}
+        target::T, mass::T, X::Matrix{T}, row::Int,
+        regressors::Vector{Int}) where {T<:AbstractFloat}
+    m.first_row == 0 && (m.first_row = row)
     m.W += mass
     m.sy += mass * target
     m.syy += mass * abs2(target)
     for b in axes(z, 1)
+        j = regressors[b]
+        if !m.varies[b] && X[row, j] != X[m.first_row, j]
+            m.varies[b] = true
+        end
         zb = z[b, r]
         m.sx[b] += mass * zb
         m.sxy[b] += mass * zb * target
@@ -74,18 +82,22 @@ function _modeltree_moment_objective!(work::_ModelTreeSolve{T},
     W = m.W
     W > 0 || return nothing
     cYY = m.syy - abs2(m.sy) / W
+    isfinite(cYY) && cYY >= 0 || return nothing
     q = length(m.sx)
     q == 0 && return max(zero(T), cYY)
+    # Removing constant columns can expose inaccurate Float16 moment scores
+    # that their spurious variance previously sent to the QR fallback.
+    T === Float16 && any(!, m.varies) && return nothing
     # A child ridge solve standardizes each regressor by its own weighted RMS.
     # In raw centered coordinates that penalty is lambda*diag(Cxx)/W.
     nactive = 0
     for c in 1:q
+        # Check original observations: parent centering can erase small gaps.
+        m.varies[c] || continue
         variance = m.sxx[c, c] - abs2(m.sx[c]) / W
-        isfinite(variance) && variance >= 0 || return nothing
-        if variance > 0
-            nactive += 1
-            work.active[nactive] = c
-        end
+        isfinite(variance) && variance > 0 || return nothing
+        nactive += 1
+        work.active[nactive] = c
     end
     nactive == 0 && return max(zero(T), cYY)
     for b in 1:nactive
@@ -147,7 +159,7 @@ function _modeltree_scan(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{
     # weight to zero. Build right-child moments from the right instead.
     for k in (n - 1):-1:1
         r = order[k + 1]
-        _modeltree_update!(right, z, r, centered_y[r], w[rows[r]])
+        _modeltree_update!(right, z, r, centered_y[r], w[rows[r]], X, rows[r], regressors)
         eligible[k] || continue
         X[rows[order[k]], j] < X[rows[r], j] || continue
         right.W >= min_leaf || continue
@@ -164,7 +176,7 @@ function _modeltree_scan(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{
     best_objective = T(Inf)
     for k in 1:(n - 1)
         r = order[k]
-        _modeltree_update!(left, z, r, centered_y[r], w[rows[r]])
+        _modeltree_update!(left, z, r, centered_y[r], w[rows[r]], X, rows[r], regressors)
         isfinite(right_objectives[k]) && left.W >= min_leaf || continue
         left_objective = _modeltree_moment_objective!(work, left, lambda)
         if left_objective === nothing

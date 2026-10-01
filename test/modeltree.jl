@@ -1,5 +1,6 @@
 using Statistics: mean
 using LinearAlgebra: qr, I
+using StableRNGs: StableRNG
 
 @testset "greedy model tree finds a change in slope" begin
     x = collect(range(-2.0, 2.0; length=81))
@@ -37,9 +38,9 @@ end
 
 @testset "exact model-tree split matches exhaustive QR child fits" begin
     x = collect(range(-1.5, 1.5; length=19))
-    # The binary column becomes constant in some children. Together with the
+    # The two-valued column becomes constant in some children. Together with the
     # global constant it checks solves whose active regressor set changes.
-    X = hcat(x, cos.(2 .* x), Float64.(x .> 0), ones(length(x)))
+    X = hcat(x, cos.(2 .* x), ifelse.(x .> 0, 0.7, -0.2), fill(0.1, length(x)))
     y = [x[i] <= 0 ? 0.5 + 2x[i] - 0.2X[i, 2] : 0.5 - x[i] - 0.2X[i, 2]
         for i in eachindex(x)]
     w = Float64[isodd(i) ? 1 : 2 for i in eachindex(x)]
@@ -81,6 +82,32 @@ end
     left_cost = child_cost(findall(i -> X[i, root.feature] <= root.threshold, axes(X, 1)))
     right_cost = child_cost(findall(i -> X[i, root.feature] > root.threshold, axes(X, 1)))
     @test left_cost + right_cost ≈ oracle.objective atol=1e-9
+    @test root.gain ≈ child_cost(collect(eachindex(y))) - oracle.objective atol=1e-9
+end
+
+@testset "model-tree split retains variation lost by parent centering" begin
+    # Subtracting the parent mean rounds the first two predictors to one value.
+    X = reshape([-1.0, 1.0, 2.0^55, 2.0^55], :, 1)
+    y = [-1.0, 1.0, 0.0, 0.0]
+    model = fit_model_tree(X, y; lambda=0.2, min_leaf=2,
+        max_depth=1, split_penalty=0.0, truncate=false)
+    @test length(model.leaves) == 2
+    @test model.routing.nodes[1].threshold == 1.0
+    @test predict(model, X) ≈ [-10 / 11, 10 / 11, 0.0, 0.0] atol=1e-12
+end
+
+@testset "Float16 constant columns preserve the split ranking" begin
+    x = collect(range(-1.5, 1.5; length=25))
+    X = Float16.(hcat(x, sin.(x), ifelse.(x .> 0, 0.7, -0.2), fill(0.1, 25)))
+    y = Float16.([v <= 0 ? 1 + 2v : 1 - 3v for v in x] +
+        0.1randn(StableRNG(6), length(x)))
+    w = Float16[isodd(i) ? 0.7 : 1.3 for i in eachindex(x)]
+    options = (; lambda=Float16(0.2), max_depth=1, min_leaf=5,
+        split_penalty=0, truncate=false)
+    model = fit_model_tree(X, y; weights=w, options...)
+    reference = fit_model_tree(Float64.(X), Float64.(y); weights=Float64.(w), options...)
+    @test (model.routing.nodes[1].feature, model.routing.nodes[1].threshold) == (1, Float16(0.125))
+    @test predict(model, X) ≈ predict(reference, Float64.(X)) atol=0.02
 end
 
 @testset "model-tree exact split retains a tiny suffix weight" begin
@@ -93,6 +120,16 @@ end
     @test predict(model, X) ≈ y atol=1e-12
 end
 
+@testset "model-tree constant regressors retain overflow fallback" begin
+    X = hcat(fill(1e100, 4), [0.0, 0.0, 1.0, 1.0])
+    y = [1e20, 1e20, 1e20 + 2.0^20, 1e20 + 2.0^20]
+    model = fit_model_tree(X, y; weights=fill(1e290, 4), max_features=1,
+        lambda=0.2, min_leaf=1e290, max_depth=1, split_penalty=0.0, truncate=false)
+    @test length(model.leaves) == 2
+    @test model.routing.nodes[1].feature == 2
+    @test predict(model, X) == y
+end
+
 @testset "model-tree split is invariant to extreme predictor units" begin
     x = collect(range(-2.0, 2.0; length=41))
     X = reshape(x, :, 1)
@@ -101,9 +138,11 @@ end
         split_penalty=0.01, truncate=false)
     ordinary = fit_model_tree(X, y; options...)
     huge = fit_model_tree(1e200 .* X, y; options...)
+    tiny = fit_model_tree(1e-200 .* X, y; options...)
     @test length(huge.leaves) == length(ordinary.leaves) == 2
     @test all(isfinite, predict(huge, 1e200 .* X))
     @test predict(huge, 1e200 .* X) ≈ predict(ordinary, X) atol=1e-7
+    @test predict(tiny, 1e-200 .* X) ≈ predict(ordinary, X) atol=1e-7
 end
 
 @testset "model tree weights and feature translation" begin
