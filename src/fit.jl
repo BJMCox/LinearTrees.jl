@@ -1189,10 +1189,9 @@ function irls_refit(st::FitState{T,V}, n::Node{T,V}, rows, tid, niter, masks::Ve
         left = zero(MomentSums{V}); right = zero(MomentSums{V})
         for (k, i) in enumerate(rows)
             r = resid[k]
-            # floor the unweighted pseudo-hessian at HMIN before scaling by st.w[i],
-            # the same order irls_weights! applies it in, so a zero-weight row can't
-            # be the only thing keeping a non-smooth refit's Hessian away from zero
-            hi = st.w[i] * max(l1weight(st.loss, r) / max(abs(r), ε), oftype(r, HMIN))
+            # Apply the native curvature floor, adapter scale, and frequency
+            # weight in the same order as the initial IRLS fit.
+            hi = st.w[i] * irls_hessian(st.loss, r, ε)
             if n.model == CON
                 left = addrow(left, zero(T), st.z[i], hi)
             else

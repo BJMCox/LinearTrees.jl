@@ -96,6 +96,18 @@ end
     @test predict(model, X) ≈ [-10 / 11, 10 / 11, 0.0, 0.0] atol=1e-12
 end
 
+@testset "model-tree split resolves a small jump beside a large slope" begin
+    # The moment objective subtracts quantities around 1e18. A false zero at
+    # an earlier threshold must not hide the exact piecewise-linear fit.
+    x = collect(range(-1.0, 1.0; length=40))
+    X = reshape(x, :, 1)
+    y = 1e9 .* x .+ 10 .* (x .> 0)
+    model = fit_model_tree(X, y; lambda=1e-20, max_depth=1,
+        min_leaf=5, split_penalty=0.1, truncate=false)
+    @test model.routing.nodes[1].threshold == x[20]
+    @test maximum(abs, predict(model, X) .- y) < 2e-6
+end
+
 @testset "Float16 constant columns preserve the split ranking" begin
     x = collect(range(-1.5, 1.5; length=25))
     X = Float16.(hcat(x, sin.(x), ifelse.(x .> 0, 0.7, -0.2), fill(0.1, 25)))

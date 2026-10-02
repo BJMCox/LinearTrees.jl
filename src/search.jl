@@ -90,6 +90,17 @@ function bin_sums!(buf::BinSums{T,V}, xs, zs, hs, ws, nbins, offset = zero(T)) w
     return buf
 end
 
+"Sum remaining bins without subtracting a rounded prefix from their total."
+function bin_suffix(moments::Vector{MomentSums{V}}, masses::Vector{T}, first) where {T,V}
+    total = zero(MomentSums{V})
+    mass = zero(T)
+    for i in first:length(moments)
+        total += moments[i]
+        mass += masses[i]
+    end
+    return total, mass
+end
+
 # Score once per kind, after choosing thresholds by deviance. Reusing the
 # unsplit winner keeps the fixed CON, LIN, PCON, BLIN, PLIN score-tie order.
 function score_splits(best::Candidate{T,V}, candidates, rule, n, dmin) where {T,V}
@@ -132,9 +143,15 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs, ws,
     doplin = allowed(rule, PLIN)
     left = zero(MomentSums{V}); right = total
     wleft = zero(T); wright = n; uleft = 0
+    tolerance = sqrt(eps(float(T)))
+    limits = suffix_limits(total, n, tolerance)
     for i in 1:(length(moments) - 1)
         left += moments[i]; right -= moments[i]
         wleft += masses[i]; wright -= masses[i]; uleft += uniques[i]
+        if rebuild_suffix(right, wright, limits)
+            right, wright = bin_suffix(moments, masses, i + 1)
+            limits = suffix_limits(right, wright, tolerance)
+        end
         (wleft >= min_leaf && wright >= min_leaf) || continue
         candidates = split_candidates(candidates, left, right, edges[i], uleft, nu - uleft,
             rule, dmin, dopcon, doblin, doplin, offset)
@@ -153,12 +170,17 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs, ws,
         left += moments[i]; wleft += masses[i]; uleft += uniques[i]
     end
     right = total - left; wright = n - wleft
+    limits = suffix_limits(total, n, tolerance)
     for i in lo:hi
         left = addrow(left, xs[i] - offset, zs[i], hs[i])
         right = subrow(right, xs[i] - offset, zs[i], hs[i])
         wleft += ws[i]; wright -= ws[i]
         (i == 1 || xs[i] != xs[i - 1]) && (uleft += 1)
         xs[i] < xs[i + 1] || continue
+        if rebuild_suffix(right, wright, limits)
+            right, wright = row_suffix(xs, zs, hs, ws, i + 1, offset)
+            limits = suffix_limits(right, wright, tolerance)
+        end
         (wleft >= min_leaf && wright >= min_leaf) || continue
         candidates = split_candidates(candidates, left, right, xs[i], uleft, nu - uleft,
             rule, dmin, dopcon, doblin, doplin, offset, Val(true))

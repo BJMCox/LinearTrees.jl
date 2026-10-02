@@ -1,6 +1,23 @@
 using LossFunctions, StableRNGs
 import Distributions
 
+@testset "nonsmooth adapter scales preserve the ridge objective" begin
+    x = collect(-10.0:10)
+    X = reshape(x, :, 1)
+    y = x .+ 0.2 .* sin.(x)
+    opts = (; rule = GainRule(lambda_intercept = 2, lambda_slope = 2),
+        max_depth = 1, min_fit = 1, min_leaf = 5)
+    adapted = fit_tree(X, y, Loss(L1DistLoss(); scale = 10); opts...)
+    weighted = fit_tree(X, y, MAD(); weights = fill(10.0, length(y)), opts...)
+    @test predict(adapted, X) ≈ predict(weighted, X) atol = 1e-12
+
+    # Large residuals put the native curvature floor before the loss scale.
+    ylarge = 1e10 .* y
+    quantile = fit_tree(X, ylarge, Loss(QuantileLoss(0.3); scale = 10); opts...)
+    reference = fit_tree(X, ylarge, Quantile(0.3); weights = fill(10.0, length(y)), opts...)
+    @test predict(quantile, X) ≈ predict(reference, X) rtol = 1e-12
+end
+
 @testset "L2DistLoss adapter equals MSE" begin
     rng = StableRNG(24)
     X = rand(rng, 200, 2); y = X[:, 1] .+ 0.2 .* randn(rng, 200)

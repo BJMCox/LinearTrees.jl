@@ -29,6 +29,30 @@ distinct values on the rows in hand: `lin` and `blin` need it over the node,
 """
 const MIN_UNIQUE_LIN = 5
 
+"Precompute cancellation thresholds; zero or infinite references cannot trigger them."
+@inline remainder_limit(reference, tolerance) =
+    ifelse.((reference .> 0) .& isfinite.(reference), tolerance .* reference, oftype.(reference, NaN))
+
+@inline suffix_limits(s::MomentSums, mass, tolerance) =
+    (mass=remainder_limit(mass, tolerance), sw=remainder_limit(s.sw, tolerance),
+        sxx=remainder_limit(s.sxx, tolerance), szz=remainder_limit(s.szz, tolerance))
+
+@inline function rebuild_suffix(right::MomentSums, mass, limits)
+    return mass <= limits.mass || any(right.sw .<= limits.sw) ||
+        any(right.sxx .<= limits.sxx) || any(right.szz .<= limits.szz)
+end
+
+"Accumulate the remaining rows independently when prefix subtraction loses scale."
+function row_suffix(xs, zs::AbstractVector{V}, hs, ws::AbstractVector{T}, first, offset) where {T,V}
+    moments = zero(MomentSums{V})
+    mass = zero(T)
+    for i in first:length(xs)
+        moments = addrow(moments, xs[i] - offset, zs[i], hs[i])
+        mass += ws[i]
+    end
+    return moments, mass
+end
+
 "Count of distinct values in a sorted vector."
 function nunique(xs::AbstractVector)
     isempty(xs) && return 0
@@ -106,6 +130,8 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
     doplin = allowed(rule, PLIN)
     left = zero(MomentSums{V}); right = total
     wleft = zero(T); wright = n
+    tolerance = sqrt(eps(float(T)))
+    limits = suffix_limits(total, n, tolerance)
     uleft = 0
     for i in 1:(m - 1)
         left = addrow(left, xs[i] - offset, zs[i], hs[i])
@@ -113,6 +139,10 @@ function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs::Abstract
         wleft += ws[i]; wright -= ws[i]
         (i == 1 || xs[i] != xs[i - 1]) && (uleft += 1)
         xs[i] < xs[i + 1] || continue                  # only between distinct values
+        if rebuild_suffix(right, wright, limits)
+            right, wright = row_suffix(xs, zs, hs, ws, i + 1, offset)
+            limits = suffix_limits(right, wright, tolerance)
+        end
         (wleft >= min_leaf && wright >= min_leaf) || continue
         t = xs[i]                                      # PILOT parity: split point and blin knot are the largest left value
         uright = nu - uleft

@@ -210,7 +210,7 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     if hasval
         size(Xval, 2) == p || throw(DimensionMismatch("Xval has $(size(Xval, 2)) columns, X has $p"))
         length(yval) == size(Xval, 1) || throw(DimensionMismatch("Xval has $(size(Xval, 1)) rows, yval has $(length(yval))"))
-        validate_target(loss, yval)
+        validate_validation_target(loss, yval)
         wv = wval === nothing ? ones(T, length(yval)) : Vector{T}(wval)
         length(wv) == length(yval) || throw(DimensionMismatch("wval has length $(length(wv)), yval has $(length(yval))"))
         all(v -> isfinite(v) && v >= 0, wv) || throw(ArgumentError("wval must be finite and non-negative"))

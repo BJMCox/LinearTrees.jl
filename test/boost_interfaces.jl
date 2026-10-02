@@ -100,12 +100,13 @@ end
     f3 = [SVector{2}(log(P3[i, 1] / P3[i, 3]), log(P3[i, 2] / P3[i, 3])) for i in axes(P3, 1)]
     y3code = [v == "p" ? 1 : v == "q" ? 2 : 3 for v in y3]
     @test deviance(m3) ≈ deviance(Softmax(3), y3code, f3, ones(n))
-    yv = categorical(String.(y3[1:100]))
+    valrows = findall(!=("r"), y3)[1:100]
+    yv = categorical(String.(y3[valrows]))
     levels!(yv, ["r", "p", "q"])
     wv = Float64.(1:100)
-    mv = fit(LinearBoostClassifierFit, X, y3; nrounds = 1, Xval = X[1:100, :], yval = yv, wval = wv)
+    mv = fit(LinearBoostClassifierFit, X, y3; nrounds = 1, Xval = X[valrows, :], yval = yv, wval = wv)
     @test mv.boost.validated
-    Pv = predict(mv, X[1:100, :])
+    Pv = predict(mv, X[valrows, :])
     fv = [SVector{2}(log(Pv[i, 1] / Pv[i, 3]), log(Pv[i, 2] / Pv[i, 3])) for i in axes(Pv, 1)]
     yvcode = [v == "p" ? 1 : v == "q" ? 2 : 3 for v in yv]
     @test only(mv.boost.history) ≈ deviance(Softmax(3), yvcode, fv, wv)

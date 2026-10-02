@@ -538,7 +538,7 @@ function _incremental_design(ctx::IncrementalContext, nodes::Vector{TreeNode},
     Z = _nullspace_qr(reduced)
     N = if size(Z, 2) < term_count
         _nullspace_svd(_constraints(nodes, leaves, ctx.p, ctx.terms))
-    elseif size(Z, 2) <= current_dimension
+    elseif size(Z, 2) < current_dimension
         return nothing
     elseif isempty(basis.leaves)
         Z
@@ -555,8 +555,8 @@ function _incremental_design(ctx::IncrementalContext, nodes::Vector{TreeNode},
         end
         expanded
     end
-    # Search already rejects refinements that add no degrees of freedom.
-    size(N, 2) > current_dimension || return nothing
+    # Equal function dimensions can still give different raw-leaf priors.
+    size(N, 2) >= current_dimension || return nothing
     # With a workspace, B is borrowed until the next candidate. N remains owned.
     B = _projected_design(nodes, slots, X, ctx.terms, N, ctx.row_basis, ctx.workspace)
     return (; N, B, leaves)
@@ -640,7 +640,7 @@ function _coordinated_candidates(nodes, X, thresholds, graph;
 end
 
 function _consider(best, best_score, best_move, current_dimension, trial, score, move)
-    size(trial.N, 2) > current_dimension || return best, best_score, best_move, true
+    size(trial.N, 2) >= current_dimension || return best, best_score, best_move, true
     score > best_score + 1e-8 || return best, best_score, best_move, false
     return trial, score, move, false
 end

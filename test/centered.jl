@@ -112,3 +112,43 @@ end
     @test maximum(abs, getindex.(fitted, 1) .- (2 .* u .+ 3)) < 1e-5
     @test all(iszero, getindex.(fitted, 2))
 end
+
+@testset "Float16 regression solves preserve representable fits" begin
+    x = Float16.(1:40)
+    X = reshape(x, :, 1)
+    kw = (; max_depth = 1, max_lin_chain = 1, truncate = false, nthreads = 1)
+    tree = fit_tree(X, x; kw...)
+    @test tree.nodes[1].model == LIN
+    @test maximum(abs, predict(tree, X) .- x) < 0.05
+
+    # The three-parameter solve has its own Gram arithmetic. Its moment sums
+    # still round in Float16, so allow the observed accumulated rounding error.
+    hinge = Float16.(0.125f0 .* Float32.(x) .+ 0.25f0 .* max.(Float32.(x) .- 20f0, 0))
+    broken = fit_tree(X, hinge; rule = MinDeviance((BLIN,)), kw...)
+    @test maximum(abs, predict(broken, X) .- hinge) < 0.25
+
+    V = SVector{2,Float16}
+    target = [(V(value, value / 2), ones(V)) for value in x]
+    vector = fit_tree(X, target, Frozen{V}(); rule = MinDeviance((LIN,)), kw...)
+    fitted = score(vector, X)
+    @test maximum(maximum(abs, fitted[i] .- first(target[i])) for i in eachindex(x)) < 0.05
+
+    rawx = Float16(1024) .+ x
+    rawX = reshape(rawx, :, 1)
+    z = x ./ Float16(8)
+    λw, λb = 0.7, 1e-5
+    ridged = fit_tree(rawX, [(value, Float16(1)) for value in z], Frozen{Float16}();
+        rule = GainRule(lambda_slope = λw, lambda_intercept = λb), kw...)
+    root = ridged.nodes[1]
+    @test root.model == PLIN
+    if root.model == PLIN
+        cut = findlast(<=(root.threshold), rawx)
+        fitted = Float64.(score(ridged, rawX))
+        for ids in (1:cut, (cut + 1):length(x))
+            D = hcat(Float64.(rawx[ids]), ones(length(ids)))
+            A = vcat(D, Diagonal(sqrt.([λw, λb])))
+            β = qr(A) \ vcat(Float64.(z[ids]), 0.0, 0.0)
+            @test maximum(abs, fitted[ids] .- D * β) < 0.06
+        end
+    end
+end

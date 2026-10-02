@@ -53,6 +53,8 @@ end
         [(V(2.0, 10.0), V(1.0, 0.0)), (V(4.0, -10.0), V(1.0, 0.0))],
         LinearTrees.Frozen{V}(); max_depth = 0, truncate = false)
     @test score(vector, X) == fill(V(3.0, 0.0), 2)
+    @test predict(vector, X) == score(vector, X)
+    @test predict!(Vector{V}(undef, 2), vector, X) == score(vector, X)
 end
 
 @testset "a zero-mass vector coordinate preserves an identifiable PLIN fit" begin

@@ -95,7 +95,7 @@ score_type(::LinearBoost{T,V}) where {T,V} = V
 Prediction on the response scale, `linkinv(tree_or_ensemble.loss, score)`.
 """
 predict(m::Union{LinearTree{T,V},LinearBoost{T,V}}, X::AbstractMatrix; nthreads = Threads.nthreads()) where {T,V} =
-    predict!(Vector{eltype(V)}(undef, size(X, 1)), m, X; nthreads)
+    predict!(Vector{V}(undef, size(X, 1)), m, X; nthreads)
 
 function predict!(out::AbstractVector, m::Union{LinearTree{T,V},LinearBoost{T,V}}, X::AbstractMatrix;
         nthreads = Threads.nthreads()) where {T,V}

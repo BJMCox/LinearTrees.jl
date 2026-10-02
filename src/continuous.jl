@@ -282,7 +282,14 @@ function predictive(model::ContinuousTree{Scalar}, X::AbstractMatrix;
     n = size(X, 1)
     location = Matrix{Float64}(undef, n, length(model.ycenter))
     scale2 = similar(location)
-    response_scale2 = (post.rate ./ post.shape) .* model.yscale.^2
+    # Keep powers of two separate until the final scale is formed: either the
+    # response scale squared or rate/shape can overflow or underflow on its own.
+    response_scale2 = map(post.rate, model.yscale) do rate, scale
+        r, re = frexp(rate)
+        a, ae = frexp(post.shape)
+        s, se = frexp(scale)
+        (r / a * s^2, re - ae + 2se)
+    end
     for first_row in 1:batch_size:n
         rows = first_row:(first_row + min(batch_size, n - first_row + 1) - 1)
         B = Continuous.design(model.fit, _continuous_input(model, view(X, rows, :)))
@@ -292,9 +299,11 @@ function predictive(model::ContinuousTree{Scalar}, X::AbstractMatrix;
         copyto!(view(location, rows, :), location_chunk)
         projected = transpose(post.precision.R) \ transpose(B)
         for (column, row) in enumerate(rows)
-            leverage = sum(abs2, view(projected, :, column)) + observation
+            # The norm also avoids overflowing a squared projected coordinate.
+            leverage, exponent = frexp(hypot(norm(view(projected, :, column)), observation))
             for output in axes(scale2, 2)
-                scale2[row, output] = leverage * response_scale2[output]
+                factor, power = response_scale2[output]
+                scale2[row, output] = ldexp(factor * leverage^2, power + 2exponent)
             end
         end
     end

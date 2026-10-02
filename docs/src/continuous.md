@@ -187,6 +187,8 @@ The default `candidate_search=:full` retains single splits, paired sibling
 splits, and three-split crosses. Growth is greedy: each round accepts the best
 improving candidate under summed output log evidence and charges the geometry
 complexity once. It is not a global optimization over trees.
+Refinements remain candidates when the continuous function space has the same
+dimension, because their raw-leaf coefficient prior can still change the evidence.
 
 `candidate_search=:graph_pruned` is an explicit approximation. It removes only
 cross candidates unsupported by `pairs`; all single and sibling candidates

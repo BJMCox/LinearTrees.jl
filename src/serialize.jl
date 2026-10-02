@@ -58,13 +58,17 @@ lossdict(l::AdaptedLoss) = throw(ArgumentError(
     "AdaptedLoss wraps a LossFunctions.jl loss and cannot round-trip through to_dict"))
 
 """
-    lossfromdict(d)
+    lossfromdict(d, V)
 
 Rebuild a `Loss` from a [`lossdict`](@ref) dict. Dispatches on the loss name
 as a `Val` rather than looking a `DataType` up and reflecting on it, so each
 loss's constructor call is concretely typed and JET-clean.
+`Frozen` uses the restored coefficient type `V`.
 """
 lossfromdict(d) = _lossfromname(Val(Symbol(d["name"])), d["params"])
+lossfromdict(d, ::Type{V}) where {V} = _lossfromname(Val(Symbol(d["name"])), d["params"], V)
+_lossfromname(name, ps, ::Type) = _lossfromname(name, ps)
+_lossfromname(::Val{:Frozen}, ps, ::Type{V}) where {V} = Frozen{V}()
 
 _lossfromname(::Val{:MSE}, ps) = MSE()
 _lossfromname(::Val{:Huber}, ps) = Huber(ps["δ"])
@@ -97,7 +101,7 @@ function from_dict(d::AbstractDict)
         fromjsonnum(T, n["xmin"]), fromjsonnum(T, n["xmax"]), fromjsonnum(T, n["cover"]),
         fromjsonnum(T, n["xmean"]), fromjsonnum(T, n["gain"]),
         Int32(n["catstart"]), Int32(n["catwords"]), ModelKind(Int(n["model"]))) for n in d["nodes"]]
-    loss = lossfromdict(d["loss"])
+    loss = lossfromdict(d["loss"], V)
     catmasks = [parse(UInt64, s; base = 16) for s in d["catmasks"]]
     return LinearTree{T,V,typeof(loss)}(nodes, catmasks, loss, convV(d["lo"]), convV(d["hi"]),
         convV(d["base"]), Int(d["nfeatures"]), Bool(d["truncate"]))

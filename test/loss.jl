@@ -94,6 +94,15 @@ end
     @test linkinv(Logistic(), 0.0) == 0.5 && linkinv(Poisson(), 0.0) == 1.0
 end
 
+@testset "weighted initialization avoids intermediate overflow" begin
+    y, w = Float32[-2e38, 1e38], Float32[2, 1]
+    oracle = Float32(sum(BigFloat.(w) .* BigFloat.(y)) / sum(BigFloat.(w)))
+    @test initscore(MSE(), y, w) === oracle
+    # Here only the denominator overflows; its numerator remains finite.
+    @test initscore(MSE(), Float32[0.25, 0.5], fill(floatmax(Float32), 2)) === 0.375f0
+    @test initscore(MSE(), repeat(Float16[0, 1], 50_000), ones(Float16, 100_000)) === Float16(0.5)
+end
+
 @testset "deviance differences match Distributions.jl logpdf" begin
     # `deviance(loss, y, f1, w) - deviance(loss, y, f2, w)` must equal
     # `-2 Σ w (logpdf(D(f1), y) - logpdf(D(f2), y))` for the matching

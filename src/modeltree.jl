@@ -1,6 +1,6 @@
 # Greedy numeric partitions scored by full-response linear ridge child fits.
 
-using LinearAlgebra: Symmetric, cholesky, cholesky!, dot, issuccess, ldiv!, norm
+using LinearAlgebra: Symmetric, cholesky!, dot, issuccess, ldiv!, norm
 
 "The weighted penalized objective minimized by `fit_ridge_leaf` on these rows."
 function _modeltree_objective(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{Int},
@@ -43,9 +43,10 @@ _modeltree_moments(::Type{T}, q::Int) where {T<:AbstractFloat} =
         zeros(T, q), zero(T), 0, fill(false, q))
 
 "Accumulate one centered weighted observation in a child's moments."
-function _modeltree_update!(m::_ModelTreeMoments{T}, z::Matrix{T}, r::Int,
-        target::T, mass::T, X::Matrix{T}, row::Int,
-        regressors::Vector{Int}) where {T<:AbstractFloat}
+function _modeltree_update!(m::_ModelTreeMoments{A}, z::Matrix{A}, r::Int,
+        target::A, weight::T, X::Matrix{T}, row::Int,
+        regressors::Vector{Int}) where {T<:AbstractFloat,A<:AbstractFloat}
+    mass = A(weight)
     m.first_row == 0 && (m.first_row = row)
     m.W += mass
     m.sy += mass * target
@@ -85,9 +86,6 @@ function _modeltree_moment_objective!(work::_ModelTreeSolve{T},
     isfinite(cYY) && cYY >= 0 || return nothing
     q = length(m.sx)
     q == 0 && return max(zero(T), cYY)
-    # Removing constant columns can expose inaccurate Float16 moment scores
-    # that their spurious variance previously sent to the QR fallback.
-    T === Float16 && any(!, m.varies) && return nothing
     # A child ridge solve standardizes each regressor by its own weighted RMS.
     # In raw centered coordinates that penalty is lambda*diag(Cxx)/W.
     nactive = 0
@@ -111,8 +109,7 @@ function _modeltree_moment_objective!(work::_ModelTreeSolve{T},
     end
     # Leading views retain stride-one columns for the library factorization.
     A = Symmetric(view(work.factor, 1:nactive, 1:nactive), :U)
-    # The library's Float16 method factors in Float32 before rounding back.
-    F = T === Float16 ? cholesky(A; check=false) : cholesky!(A; check=false)
+    F = cholesky!(A; check=false)
     issuccess(F) || return nothing
     smallest, largest = T(Inf), zero(T)
     for c in 1:nactive
@@ -125,9 +122,11 @@ function _modeltree_moment_objective!(work::_ModelTreeSolve{T},
     # b'A^-1 b = ||U'\b||² for A = U'U, so scoring needs only one solve.
     ldiv!(adjoint(F.U), rhs)
     objective = cYY - dot(rhs, rhs)
-    tolerance = T(128) * eps(T) * max(one(T), abs(cYY))
-    isfinite(objective) && objective >= -tolerance || return nothing
-    return max(zero(T), objective)
+    # A small nonnegative difference can be as inaccurate as a negative one.
+    # Rescore with QR before it can win against an accurately scored split.
+    tolerance = T(128) * eps(T) * abs(cYY)
+    isfinite(objective) && objective > tolerance || return nothing
+    return objective
 end
 
 "Approximately equal-count boundaries, keeping tied split values together."
@@ -148,13 +147,13 @@ end
 
 "Scan independently accumulated prefix/suffix moments; QR covers singular cases."
 function _modeltree_scan(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{Int},
-        regressors::Vector{Int}, z::Matrix{T}, centered_y::Vector{T},
+        regressors::Vector{Int}, z::Matrix{A}, centered_y::Vector{A},
         order::Vector{Int}, j::Int,
         eligible::BitVector, lambda::T, min_leaf::T,
-        work::_ModelTreeSolve{T}) where {T<:AbstractFloat}
+        work::_ModelTreeSolve{A}) where {T<:AbstractFloat,A<:AbstractFloat}
     n = length(order)
-    right = _modeltree_moments(T, length(regressors))
-    right_objectives = fill(T(Inf), n - 1)
+    right = _modeltree_moments(A, length(regressors))
+    right_objectives = fill(A(Inf), n - 1)
     # Subtracting a large prefix from total moments can round a small suffix
     # weight to zero. Build right-child moments from the right instead.
     for k in (n - 1):-1:1
@@ -163,7 +162,7 @@ function _modeltree_scan(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{
         eligible[k] || continue
         X[rows[order[k]], j] < X[rows[r], j] || continue
         right.W >= min_leaf || continue
-        objective = _modeltree_moment_objective!(work, right, lambda)
+        objective = _modeltree_moment_objective!(work, right, A(lambda))
         if objective === nothing
             right_rows = Int[rows[order[t]] for t in (k + 1):n]
             leaf = fit_ridge_leaf(X, y, w, right_rows, regressors, lambda)
@@ -171,20 +170,20 @@ function _modeltree_scan(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{
         end
         right_objectives[k] = objective
     end
-    left = _modeltree_moments(T, length(regressors))
+    left = _modeltree_moments(A, length(regressors))
     best_k = 0
-    best_objective = T(Inf)
+    best_objective = A(Inf)
     for k in 1:(n - 1)
         r = order[k]
         _modeltree_update!(left, z, r, centered_y[r], w[rows[r]], X, rows[r], regressors)
         isfinite(right_objectives[k]) && left.W >= min_leaf || continue
-        left_objective = _modeltree_moment_objective!(work, left, lambda)
+        left_objective = _modeltree_moment_objective!(work, left, A(lambda))
         if left_objective === nothing
             left_rows = Int[rows[order[t]] for t in 1:k]
             leaf = fit_ridge_leaf(X, y, w, left_rows, regressors, lambda)
             left_objective = _modeltree_objective(X, y, w, left_rows, leaf, lambda)
         end
-        objective = left_objective + right_objectives[k]
+        objective = A(left_objective) + right_objectives[k]
         if isfinite(objective) && objective < best_objective
             best_k = k
             best_objective = objective
@@ -198,21 +197,26 @@ function _modeltree_split(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector
         parent_objective::T, features::Vector{Int}, regressors::Vector{Int},
         lambda::T, min_leaf::T, split_penalty::T,
         search::Union{ExactSearch,BinnedSearch}) where {T<:AbstractFloat}
-    W = sum(w[i] for i in rows)
-    means = T[sum(w[i] * X[i, j] for i in rows) / W for j in regressors]
-    ymean = sum(w[i] * y[i] for i in rows) / W
+    # Penalized child objectives are nonnegative, so no split can improve this.
+    parent_objective <= split_penalty && return nothing
+    # Narrow moments cannot resolve near-affine residuals and would repeatedly
+    # require full child QR fits. Widen only scan arithmetic, retaining T leaves.
+    A = promote_type(T, Float64)
+    W = sum(A(w[i]) for i in rows)
+    means = A[sum((A(w[i]) / W) * A(X[i, j]) for i in rows) for j in regressors]
+    ymean = sum((A(w[i]) / W) * A(y[i]) for i in rows)
     # Each observation's regressors are contiguous during moment accumulation.
-    z = Matrix{T}(undef, length(regressors), length(rows))
-    centered_y = Vector{T}(undef, length(rows))
+    z = Matrix{A}(undef, length(regressors), length(rows))
+    centered_y = Vector{A}(undef, length(rows))
     for (r, i) in enumerate(rows)
         for (c, j) in enumerate(regressors)
-            z[c, r] = X[i, j] - means[c]
+            z[c, r] = A(X[i, j]) - means[c]
         end
-        centered_y[r] = y[i] - ymean
+        centered_y[r] = A(y[i]) - ymean
     end
     best = nothing
-    best_objective = parent_objective - split_penalty
-    work = _ModelTreeSolve(T, length(regressors))
+    best_objective = A(parent_objective) - A(split_penalty)
+    work = _ModelTreeSolve(A, length(regressors))
     for j in features
         order = sortperm(rows; by=i -> X[i, j], alg=MergeSort)
         ncuts = length(order) - 1
@@ -360,7 +364,7 @@ function fit_model_tree(X::AbstractMatrix, y::AbstractVector;
     root_objective = _modeltree_objective(Xm, yv, wv, rows, root_leaf, λ)
     _modeltree_grow!(ctx, rows, 0, root_leaf, root_objective)
     lo, hi = truncate ? map(T, scorebound(MSE(), yv)) : (T(-Inf), T(Inf))
-    base = sum(wv .* yv) / sum(wv)
+    base = wmean(yv, wv)
     routing = LinearTree{T,T,MSE}(ctx.nodes, UInt64[], MSE(), lo, hi, base, p, truncate)
     return RefitTree{T}(routing, ctx.leaf_index, ctx.leaves)
 end

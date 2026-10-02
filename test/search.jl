@@ -63,6 +63,32 @@ using StableRNGs
         @test LinearTrees.iscategorical(cat.nodes[1])
     end
 
+    @testset "small suffix mass survives a large prefix" begin
+        # Frequency mass and fitting moments both need independent suffix sums.
+        for T in (Float32, Float64)
+            sx = reshape(T[0, 0, 0, 1], :, 1)
+            sy = T[0, 0, 0, 100]
+            sw = T[T === Float32 ? 2^24 : 1e16, 1, 1, 5]
+            for search in (ExactSearch(), BinnedSearch(nbins=2), HybridSearch(nbins=2))
+                tree = fit_tree(sx, sy; weights=sw, min_fit=1, min_leaf=5,
+                    max_depth=1, split_search=search)
+                @test predict(tree, sx) ≈ sy atol=1e-5
+            end
+        end
+        cx = reshape(Float32[1, 2], :, 1)
+        cy = Float32[0, 100]
+        cat = fit_tree(cx, cy; weights=Float32[2^24, 5], categorical=[1],
+            min_fit=1, min_leaf=5, max_depth=1)
+        @test predict(cat, cx) ≈ cy atol=1e-5
+
+        # Frozen curvature can differ greatly even when frequency weights match.
+        fx = reshape([0.0, 1.0], :, 1)
+        frozen = fit_tree(fx, [(0.0, 1e16), (100.0, 1.0)], Frozen{Float64}();
+            rule=GainRule(lambda_slope=0, lambda_intercept=0),
+            min_fit=1, min_leaf=1, max_depth=1)
+        @test score(frozen, fx) ≈ [0.0, 100.0] atol=1e-10
+    end
+
     @testset "thread and RNG invariants" begin
         bigX = rand(rng, 20_000, 4)
         bigy = Float64.(bigX[:, 1] .> 0.43) .+ 0.2 .* bigX[:, 2]

@@ -103,16 +103,17 @@ function refit_centered_ratio(x::T, mean::T, scale::T) where {T<:AbstractFloat}
 end
 
 "Solve one centered, scaled weighted ridge problem with an unpenalized intercept."
-function fit_ridge_leaf(X::AbstractMatrix{T}, y::AbstractVector{T}, w::AbstractVector{T},
+function fit_ridge_leaf(X::Matrix{T}, y::Vector{T}, w::Vector{T},
         rows::Vector{Int}, features::Vector{Int}, lambda::T) where {T<:AbstractFloat}
-    W = sum(w[i] for i in rows)
+    wr = view(w, rows)
+    W = sum(wr)
     isfinite(W) && W > 0 || throw(ArgumentError("terminal region must have finite positive weight"))
     q = length(features)
-    ymin = sum((w[i] / W) * y[i] for i in rows)
+    ymin = T(wmean(view(y, rows), wr))
     xmin = T[minimum(X[i, j] for i in rows) for j in features]
     xmax = T[maximum(X[i, j] for i in rows) for j in features]
     q == 0 && return RidgeLeaf{T}(Int[], T[], ymin, xmin, xmax)
-    means = T[sum((w[i] / W) * X[i, j] for i in rows) for j in features]
+    means = T[wmean(view(X, rows, j), wr) for j in features]
     deviations = Vector{T}(undef, length(rows))
     scales = Vector{T}(undef, q)
     for (c, j) in enumerate(features)
