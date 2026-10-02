@@ -1,8 +1,6 @@
 using StableRNGs, JSON3
 
-# test/loss.jl includes this file first for its fit-identity check; a second
-# include would redefine `partition_cases` and warn
-@isdefined(partition_cases) || include(joinpath(@__DIR__, "fixtures", "partition", "cases.jl"))
+include(joinpath(@__DIR__, "fixtures", "partition", "cases.jl"))
 
 # The scan reads `st.idx` as "sorted by feature j, ties in ascending row order",
 # so `presort!` owes each column exactly the permutation `sortperm` with a stable

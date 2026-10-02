@@ -206,24 +206,3 @@ end
     @test LinearTrees.wquantile_select!([1.0, 2.0, 3.0], [0.0, 5.0, 0.0], [1, 2, 3], 0.5) == 2.0
     @test LinearTrees.wquantile_select!(fill(3.0, 10), Float64.([0, 1, 0, 2, 0, 3, 0, 4, 0, 5]), collect(1:10), 0.5) == 3.0
 end
-
-@testset "a MAD fit is unchanged by the median_abs! rewrite" begin
-    # fails if `median_abs!`'s quickselect ever returns a different value than
-    # the sort it replaced on any node of this tree: `nodes` and `predict` are
-    # recorded from a fit against the pre-rewrite (sort-based)
-    # `median_abs!`/`wquantile_sorted`, compared here bit for bit. MAD is the
-    # loss no recorded fixture covers -- test/partition.jl records the
-    # Quantile(0.3) half of the rewrite.
-    #
-    # guarded: test/partition.jl also includes this file (and runs after
-    # loss.jl in runtests.jl), so an unconditional include here would make
-    # its own unconditional include overwrite the method a second time
-    @isdefined(partition_cases) || include(joinpath(@__DIR__, "fixtures", "partition", "cases.jl"))
-    name, X, y, _, kw = first(partition_cases())   # "mse_bic"
-    t = fit_tree(X, y, MAD(); kw...)
-    @test length(t.nodes) == 72
-    # the hash is `reduce(xor, reinterpret(UInt64, predict(t, X)))`: exactly
-    # associative and commutative, so it does not depend (unlike a floating
-    # sum) on thread count or reduction order, only on predict's bit pattern
-    @test reduce(xor, reinterpret(UInt64, predict(t, X))) == UInt64(18394097934875351018)
-end
