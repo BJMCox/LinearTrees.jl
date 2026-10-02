@@ -444,7 +444,7 @@ function StatsAPI.fit(::Type{LinearBoostRegressorFit}, X, y; loss::Loss = MSE(),
     w = weights === nothing ? ones(length(y)) : Vector{Float64}(weights)
     Xm = encode_training(enc, X, w; nthreads)
     nval = validation_length(Xval, yval, wval)
-    yval === nothing || validate_target(loss, yval)
+    yval === nothing || validate_validation_target(loss, yval)
     T = float(promote_type(eltype(Xm), eltype(y)))
     rows = positive_validation_rows(wval, nval, T)
     boost = fit_boost(Xm, y, loss; weights = w, categorical = enc.categorical, nthreads,
@@ -466,7 +466,7 @@ function StatsAPI.fit(::Type{LinearBoostClassifierFit}, X, y; weights = nothing,
     yvi = yval === nothing ? nothing : [get(code, v) do
             throw(ArgumentError("validation label $v is not a training class"))
         end for v in yval]
-    yvi === nothing || validate_target(loss, encode_y(yvi))
+    yvi === nothing || validate_validation_target(loss, encode_y(yvi))
     T = float(promote_type(eltype(Xm), eltype(ytarget)))
     rows = positive_validation_rows(wval, nval, T)
     boost = fit_boost(Xm, ytarget, loss; weights = w, categorical = enc.categorical, nthreads,

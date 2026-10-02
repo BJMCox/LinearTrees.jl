@@ -16,6 +16,13 @@ using Statistics
     @test all(component.fit.post.score != source.fit.post.score
         for (component, source) in zip(ensemble.components, (root, split)))
 
+    equal_prior = fit_continuous_ensemble(X, y, [root, split])
+    shifted = fit_continuous_ensemble(X, y, [root, split]; logprior=fill(1e20, 2))
+    @test shifted.weights ≈ equal_prior.weights
+    excluded = fit_continuous_ensemble(X, y, [root, split]; logprior=[1e20, -Inf])
+    @test excluded.weights == [1.0, 0.0]
+    @test predict(excluded, X) == predict(excluded.components[1], X)
+
     query = reshape([-0.9, -0.3, 0.2, 0.8], :, 1)
     posterior = predictive(ensemble, query; batch_size=2)
     members = [predictive(component, query; batch_size=2)

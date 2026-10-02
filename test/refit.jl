@@ -1,5 +1,14 @@
 using LinearAlgebra
 
+@testset "affine refits preserve exact constant responses" begin
+    X = reshape(Float32.(1:2000), :, 1)
+    y = ones(Float32, 2000)
+    tree = fit_tree(X, y; max_depth = 0, truncate = false)
+    model = refit_leaves(tree, X, y; features = [1], truncate = false)
+    @test predict(model, X) == y
+    @test coeftable(model, Float32[1]) == (1f0, Float32[0])
+end
+
 @testset "weighted affine refit matches a raw-coordinate ridge oracle" begin
     T = Float64
     tree = LinearTree{T,T,MSE}([Node{T,T}(lintercept = 50.0)], UInt64[],

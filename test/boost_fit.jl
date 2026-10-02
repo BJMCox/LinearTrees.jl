@@ -1,5 +1,25 @@
 using Random: randperm
-using StableRNGs, Statistics
+using StableRNGs, Statistics, StaticArrays
+
+@testset "multiclass validation may omit a known class" begin
+    X = reshape(collect(1.0:12), :, 1)
+    y = repeat(1:3, 4)
+    loss = Softmax(3)
+    Xv, yv = X[1:2, :], y[1:2]
+    boost = fit_boost(X, y, loss; nrounds = 1, Xval = Xv, yval = yv)
+    f = score(boost, Xv; clip = false)
+    @test only(boost.history) ≈ deviance(loss, yv, [SVector{2}(r) for r in eachrow(f)], ones(2))
+end
+
+@testset "large finite constant targets initialize exact boosts" begin
+    X = reshape(Float32.(1:20), :, 1)
+    y = fill(1f38, 20)
+    @test initscore(MSE(), y, ones(Float32, 20)) === first(y)
+    @test initscore(MSE(), fill(0.1, 20), ones(20)) === 0.1
+    boost = fit_boost(X, y; nrounds = 1, max_depth = 0, truncate = false)
+    @test predict(boost, X) == y
+    @test only(boost.history) == 0
+end
 
 @testset "one root-only round is a regularised Newton step" begin
     rng = StableRNG(110)

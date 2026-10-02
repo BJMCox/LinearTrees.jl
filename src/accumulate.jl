@@ -20,6 +20,14 @@ Base.:+(a::MomentSums{V}, b::MomentSums{V}) where {V} =
 Base.:-(a::MomentSums{V}, b::MomentSums{V}) where {V} =
     MomentSums{V}(a.sw - b.sw, a.sx - b.sx, a.sxx - b.sxx, a.sz - b.sz, a.sxz - b.sxz, a.szz - b.szz)
 
+# Float16 moments may be finite while products in the Gram solve overflow.
+# Widen only the solve; tree coefficients and stored deviances keep their type.
+const HalfCoefficient = Union{Float16,SVector{<:Any,Float16}}
+@inline wide_moments(s::MomentSums) = MomentSums(Float32.(s.sw), Float32.(s.sx),
+    Float32.(s.sxx), Float32.(s.sz), Float32.(s.sxz), Float32.(s.szz))
+@inline narrow_fit(::Type{V}, result) where {V} =
+    result === nothing ? nothing : map(V, result)
+
 """
 Stands in for a row hessian that is exactly one. `addrow` and `subrow` have
 methods for it that drop the multiplication by one; the value it stands for
@@ -87,6 +95,9 @@ zero total mass takes the minimum-norm intercept zero.
     return b, s.szz .- s.sz .* b
 end
 
+@inline fit_con(s::MomentSums{V}) where {V<:HalfCoefficient} =
+    narrow_fit(V, fit_con(wide_moments(s)))
+
 """
 Simple linear fit `a x + b`. Returns `nothing` when the Gram determinant is
 below `tol · sw · sxx` for any coordinate, which covers a constant feature.
@@ -104,6 +115,9 @@ per-coordinate fits).
     return a, b, rss
 end
 
+@inline fit_lin(s::MomentSums{V}; tol = SINGULAR_TOL) where {V<:HalfCoefficient} =
+    narrow_fit(V, fit_lin(wide_moments(s); tol))
+
 """
 Constant fit with intercept ridge `λb`: `b = sz / (sw + λb)`, regularised
 deviance `szz − b·sz`. Dotted so `V` may be a scalar or an `SVector`. `λb` is
@@ -114,6 +128,9 @@ converted to the coordinate type so `Float32` sums stay `Float32`.
     b = ifelse.(iszero.(sww), zero(s.sz), s.sz ./ sww)
     return b, s.szz .- s.sz .* b
 end
+
+@inline fit_con(s::MomentSums{V}, λb::Real) where {V<:HalfCoefficient} =
+    narrow_fit(V, fit_con(wide_moments(s), λb))
 
 """
 Simple linear fit `a x + b` with slope ridge `λw` and intercept ridge `λb`
@@ -136,6 +153,9 @@ coordinate takes zero coefficients.
     rss = s.szz .- a .* s.sxz .- b .* s.sz
     return a, b, rss
 end
+
+@inline fit_lin(s::MomentSums{V}, λw::Real, λb::Real; tol = SINGULAR_TOL) where {V<:HalfCoefficient} =
+    narrow_fit(V, fit_lin(wide_moments(s), λw, λb; tol))
 
 """
 Broken linear fit with knot `t`: basis `[x, 1, max(x - t, 0)]`. Hinge sums
@@ -162,6 +182,9 @@ The `2×2`-plus-Schur-update form of this solve was measured and rejected: see
     rss = s.szz - a * s.sxz - b * s.sz - c * suz
     return a, b, a + c, b - c * t, rss
 end
+
+@inline fit_blin(sl::MomentSums{Float16}, sr::MomentSums{Float16}, t; tol = SINGULAR_TOL) =
+    narrow_fit(Float16, fit_blin(wide_moments(sl), wide_moments(sr), Float32(t); tol))
 
 "Coordinate `k` of a vector `MomentSums`, as a scalar one."
 @inline coordsums(s::MomentSums{V}, k) where {T,V<:SVector{<:Any,T}} =

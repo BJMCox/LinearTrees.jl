@@ -156,7 +156,7 @@ end
         @test length(reused.moves) > 1
         @test reused.moves == rebuilt.moves
         @test reused.evaluations == rebuilt.evaluations
-        @test reused.skipped_dimension == rebuilt.skipped_dimension > 0
+        @test reused.skipped_dimension == rebuilt.skipped_dimension
         @test reused.history ≈ rebuilt.history atol=3e-9 rtol=3e-9
         @test reused.rawcoef ≈ rebuilt.rawcoef atol=3e-9 rtol=3e-9
         reused_cov = reused.N * (reused.post.precision \ reused.N')

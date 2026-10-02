@@ -192,6 +192,8 @@ function refine_hybrid(st::FitState{T,V}, rows, j, dmin, buffer, unsplit,
     uleft = prefix
     right = total - left
     wright = n - wleft
+    tolerance = sqrt(eps(float(T)))
+    limits = suffix_limits(total, n, tolerance)
     rule = st.rule
     dopcon = allowed(rule, PCON)
     doblin = allowed(rule, BLIN) && nu >= MIN_UNIQUE_LIN
@@ -204,6 +206,13 @@ function refine_hybrid(st::FitState{T,V}, rows, j, dmin, buffer, unsplit,
         (k == 1 || xs[k] != xs[k - 1]) && (uleft += 1)
         k == length(xs) && suffix == 0 && continue
         (k == length(xs) || xs[k] < xs[k + 1]) || continue
+        if rebuild_suffix(right, wright, limits)
+            right, wright = row_suffix(xs, zs, hs, ws, k + 1, offset)
+            tail, tail_mass = bin_suffix(buffer.moments, buffer.masses, hi + 1)
+            right += tail
+            wright += tail_mass
+            limits = suffix_limits(right, wright, tolerance)
+        end
         (wleft >= st.min_leaf && wright >= st.min_leaf) || continue
         candidates = split_candidates(candidates, left, right, xs[k], uleft, nu - uleft,
             rule, dmin, dopcon, doblin, doplin, offset, Val(true))
@@ -263,6 +272,8 @@ function hybrid_scan_feature(st::FitState{T,V}, rows, j, dmin,
     right = total
     wleft = zero(T)
     wright = n
+    tolerance = sqrt(eps(float(T)))
+    limits = suffix_limits(total, n, tolerance)
     uleft = 0
     for bin in 1:(nbins - 1)
         left += buffer.moments[bin]
@@ -274,6 +285,10 @@ function hybrid_scan_feature(st::FitState{T,V}, rows, j, dmin,
         # A positive rounded mass cannot supply a child without any rows.
         buffer.suffix_counts[bin + 1] > 0 || continue
         threshold = buffer.maxima[bin]
+        if rebuild_suffix(right, wright, limits)
+            right, wright = bin_suffix(buffer.moments, buffer.masses, bin + 1)
+            limits = suffix_limits(right, wright, tolerance)
+        end
         (wleft >= st.min_leaf && wright >= st.min_leaf && isfinite(threshold)) || continue
         candidates = split_candidates(candidates, left, right, threshold, uleft,
             buffer.suffix_counts[bin + 1], rule, dmin, dopcon, doblin, doplin, offset)

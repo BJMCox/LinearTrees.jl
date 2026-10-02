@@ -75,6 +75,44 @@ using StableRNGs
         @test predictive(model, inputs; observation=false).scale2 ≈ latent
     end
 
+    @testset "Predictive scales retain representable response units" begin
+        X = reshape([0.0, 1.0], :, 1)
+        for (scale, rate) in ((1e200, 1e-300), (1e-200, 1e300), (1e200, 1.0))
+            model = fit_continuous_tree(X, zeros(2); max_splits=0,
+                response_normalization=(center=0.0, scale=scale), noise_rate=rate)
+            # Normalized design [1 -1; 1 1] gives precision 2.01I and
+            # observation leverage 1 + 2/2.01. Zero responses leave rate fixed.
+            expected = Float64((1 + 2 / (2 + BigFloat(0.01))) *
+                BigFloat(rate) / 3 * BigFloat(scale)^2)
+            @test predictive(model, X).scale2 ≈ fill(expected, 2) rtol=3e-15
+        end
+    end
+
+    @testset "Full search evaluates equal-dimension prior changes" begin
+        grid = collect(range(-1.0, 1.0; length=9))
+        X = reduce(vcat, ([x y] for x in grid for y in grid))
+        y = abs.(X[:, 1])
+        λ = 1e-6
+        model = fit_continuous_tree(X, y; max_splits=2, n_thresholds=1,
+            min_leaf=4, split_penalty=0.0, coefficient_precision=λ)
+        # Three raw leaves duplicate the left x slope and share the intercept
+        # and y slope three ways. These scales give an orthonormal parameter
+        # norm for that prior without using the production face constraints.
+        B = hcat(fill(1 / sqrt(3), length(y)), min.(X[:, 1], 0) / sqrt(2),
+            max.(X[:, 1], 0), X[:, 2] / sqrt(3))
+        center, scale = mean(y), std(y; corrected=false)
+        z = (y .- center) ./ scale
+        precision = B'B + λ * I
+        coef = precision \ (B'z)
+        shape = 2 + length(y) / 2
+        rate = 1 + (sum(abs2, z - B * coef) + λ * sum(abs2, coef)) / 2
+        evidence = 2log(λ) - logdet(Symmetric(precision)) / 2 - shape * log(rate)
+        @test model.fit.post.score ≈ evidence atol=1e-9
+        @test predict(model, X) ≈ center .+ scale .* (B * coef) atol=1e-10
+        expected_scale2 = (1 .+ diag(B * (precision \ B'))) .* (scale^2 * rate / shape)
+        @test predictive(model, X).scale2 ≈ expected_scale2 rtol=1e-9
+    end
+
     @testset "Repeated fits preserve earlier predictive distributions" begin
         X = 2rand(StableRNG(731), 96, 2) .- 1
         Y = hcat(1 .+ 2abs.(X[:, 1]) .+ 0.4X[:, 2],

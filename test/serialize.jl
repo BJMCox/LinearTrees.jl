@@ -1,4 +1,4 @@
-using StableRNGs, Serialization, JSON3
+using StableRNGs, Serialization, JSON3, StaticArrays
 
 "One tree per distinct serialization branch: a plain MSE tree, a vector-valued
 Softmax tree, a categorical tree (mask words), a loss that carries parameters,
@@ -17,6 +17,18 @@ function serialize_trees()
         ("categorical", fit_tree(Xc, y; categorical = [4]), Xc),
         ("mad", fit_tree(X, 3 .* X[:, 1] .+ 2 .+ 0.01 .* randn(rng, 200), MAD()), X),
         ("lin root", fit_tree(Xlin, 3 .* Xlin[:, 1] .+ 2), Xlin)]
+end
+
+@testset "Frozen JSON round trips preserve raw scores" begin
+    X = reshape(Float32[1, 2, 3], :, 1)
+    scalar = fit_tree(X, [(x, 1f0) for x in X[:, 1]], Frozen{Float32}(); max_depth = 0)
+    V = SVector{2,Float32}
+    vector = fit_tree(X, [(V(x, 2x), ones(V)) for x in X[:, 1]], Frozen{V}(); max_depth = 0)
+    for tree in (scalar, vector)
+        restored = from_dict(JSON3.read(JSON3.write(to_dict(tree)), Dict{String,Any}))
+        @test score(restored, X) == score(tree, X)
+        @test predict(restored, X) == score(tree, X)
+    end
 end
 
 @testset "to_dict round trip" begin

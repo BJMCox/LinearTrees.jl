@@ -89,6 +89,9 @@ function fit_continuous_ensemble(X::AbstractMatrix,
     priors = Float64.(logprior)
     all(value -> isfinite(value) || value == -Inf, priors) ||
         throw(ArgumentError("logprior entries must remain finite or -Inf in Float64"))
+    prior_shift = maximum(priors)
+    isfinite(prior_shift) ||
+        throw(ArgumentError("at least one geometry must have finite posterior log mass"))
 
     Z, xcenter, xscale = _continuous_predictors(_continuous_data(X, "X"))
     target = _continuous_data(y, "y")
@@ -112,7 +115,8 @@ function fit_continuous_ensemble(X::AbstractMatrix,
             coefficient_precision=λ, noise_shape=a, noise_rate=b)
         push!(components, ContinuousTree{scalar}(fitted, copy(xcenter), copy(xscale),
             copy(ycenter), copy(yscale)))
-        scores[index] = fitted.post.score + priors[index]
+        # A common log-prior offset must not swallow the evidence differences.
+        scores[index] = fitted.post.score + (priors[index] - prior_shift)
     end
     maximum_score = maximum(scores)
     isfinite(maximum_score) ||

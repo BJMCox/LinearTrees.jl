@@ -190,3 +190,8 @@ end
     rss = s.szz .- a .* s.sxz .- centered_intercept .* s.sz
     return a, b, rss
 end
+
+@inline fit_lin(s::MomentSums{V}, rule::SelectionRule, offset) where {V<:HalfCoefficient} =
+    narrow_fit(V, fit_lin(wide_moments(s), rule, Float32(offset)))
+@inline fit_lin(s::MomentSums{V}, rule::GainRule, offset) where {V<:HalfCoefficient} =
+    narrow_fit(V, fit_lin(wide_moments(s), rule, Float32(offset)))

@@ -259,11 +259,11 @@ boundary of its case split), which would zero out the very row sitting at
 the current fit and bias the step; `l1weight` gives that row its correct
 one-sided weight (`τ` or `1-τ`) instead.
 """
-function irls_weights!(h::AbstractVector{T}, loss::Union{Quantile,MAD}, y::AbstractVector, f::AbstractVector;
+function irls_weights!(h::AbstractVector{T}, loss::Loss, y::AbstractVector, f::AbstractVector;
         ε) where {T}
     for i in eachindex(h, y, f)
         r = y[i] - f[i]
-        h[i] = max(l1weight(loss, r) / max(abs(r), ε), T(HMIN))
+        h[i] = irls_hessian(loss, r, ε)
     end
     return h
 end
@@ -450,6 +450,8 @@ Majorizer weight on residual `r` for the L1-type losses: flat for MAD,
 l1weight(::MAD, r) = one(r)
 l1weight(l::Quantile, r) = r >= 0 ? oftype(r, l.τ) : oftype(r, 1 - l.τ)
 
+irls_hessian(loss::Loss, r, ε) = max(l1weight(loss, r) / max(abs(r), ε), oftype(r, HMIN))
+
 """
     refit_node(st, n, rows, tid, masks=UInt64[]) -> Node
 
@@ -473,7 +475,30 @@ backtracks(::Loss) = false
 backtracks(::Union{Huber,Logistic,Softmax{2},Poisson,NegBin,Gamma,Tweedie}) = true
 
 # ---- init score ------------------------------------------------------------
-wmean(y, w) = sum(w .* y) / sum(w)
+function wmean(y, w)
+    total = sum(w)
+    numerator = sum(i -> w[i] * y[i], eachindex(y, w))
+    mean = numerator / total
+    # Constant responses must initialize exactly, leaving no spurious residual.
+    if total > 0 && !isempty(y) && all(==(first(y)), y)
+        return oftype(mean, first(y))
+    end
+    isfinite(numerator) && isfinite(total) && return mean
+    return scaled_wmean(y, w, typeof(mean))
+end
+
+function scaled_wmean(y, w, ::Type{T}) where {T}
+    # Float16 reductions can overflow or saturate even after bounded scaling.
+    A = promote_type(T, Float32)
+    wscale = A(maximum(w))
+    lo, hi = extrema(y[i] for i in eachindex(y, w) if w[i] > 0)
+    yscale = A(max(abs(lo), abs(hi)))
+    iszero(yscale) && return zero(T)
+    total = sum(wi -> A(wi) / wscale, w)
+    scaled = sum(i -> (A(w[i]) / wscale) * (A(y[i]) / yscale), eachindex(y, w)) / total
+    # Rounding must not push a convex mean beyond its finite response range.
+    return T(clamp(scaled, lo / yscale, hi / yscale) * yscale)
+end
 
 
 initscore(::Union{MSE,Huber}, y, w) = wmean(y, w)
@@ -603,8 +628,20 @@ _validate(::Logistic, y) = all(v -> v == 0 || v == 1, y) || throw(ArgumentError(
 _validate(::Union{Poisson,NegBin}, y) = all(v -> v >= 0 && isinteger(v), y) || throw(ArgumentError("count losses need non-negative integers"))
 _validate(::Gamma, y) = all(>(0), y) || throw(ArgumentError("Gamma needs positive targets"))
 _validate(::Tweedie, y) = all(>=(0), y) || throw(ArgumentError("Tweedie needs non-negative targets"))
-function _validate(::Softmax{K}, y) where {K}
+function validate_validation_target(loss::Loss, y)
+    return validate_target(loss, y)
+end
+function validate_validation_target(loss::Softmax, y)
+    all(isfinite, y) || throw(ArgumentError("target contains NaN or Inf"))
+    validate_labels(loss, y)
+    return nothing
+end
+function validate_labels(::Softmax{K}, y) where {K}
     all(v -> isinteger(v) && 1 <= v <= K, y) || throw(ArgumentError("Softmax($K) needs integer targets in 1:$K"))
+    return nothing
+end
+function _validate(loss::Softmax{K}, y) where {K}
+    validate_labels(loss, y)
     all(k -> any(==(k), y), 1:K) || throw(ArgumentError("every class in 1:$K must be present"))
 end
 
@@ -695,13 +732,8 @@ pointloss(a::AdaptedLoss, y, f) = a.scale * a.inner(f, _target(a.inner, y))
 
 _irls_inner(a::AdaptedLoss) = a.inner isa L1DistLoss ? MAD() : Quantile(a.inner.τ)
 
-function irls_weights!(h::AbstractVector{T}, a::AdaptedLoss, y::AbstractVector, f::AbstractVector; ε) where {T}
-    irls_weights!(h, _irls_inner(a), y, f; ε)
-    h .*= a.scale
-    return h
-end
-
-l1weight(a::AdaptedLoss, r) = l1weight(_irls_inner(a), r)
+# The native floor precedes the declared loss scale, as in the initial fit.
+irls_hessian(a::AdaptedLoss, r, ε) = a.scale * irls_hessian(_irls_inner(a), r, ε)
 
 initscore(a::AdaptedLoss{<:Any,IdentityLink}, y, w) = a.inner isa QuantileLoss ? wquantile(y, w, a.inner.τ) :
     a.inner isa L1DistLoss ? wquantile(y, w, 0.5) : wmean(y, w)
