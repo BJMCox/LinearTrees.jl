@@ -4,7 +4,8 @@ using LinearAlgebra: Symmetric, cholesky!, dot, issuccess, ldiv!, norm
 
 "The weighted penalized objective minimized by `fit_ridge_leaf` on these rows."
 function _modeltree_objective(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{Int},
-        leaf::RidgeLeaf{T}, lambda::T) where {T<:AbstractFloat}
+        leaf::RidgeLeaf{T}, lambda::T,
+        deviations::Vector{T}=Vector{T}(undef, length(rows))) where {T<:AbstractFloat}
     rss = zero(T)
     for i in rows
         fitted = leaf.intercept
@@ -15,7 +16,7 @@ function _modeltree_objective(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Ve
     end
     W = sum(w[i] for i in rows)
     penalty = zero(T)
-    deviations = Vector{T}(undef, length(rows))
+    resize!(deviations, length(rows))
     for (c, j) in enumerate(leaf.features)
         μ = sum((w[i] / W) * X[i, j] for i in rows)
         for (r, i) in enumerate(rows)
@@ -152,6 +153,8 @@ function _modeltree_scan(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{
         eligible::BitVector, lambda::T, min_leaf::T,
         work::_ModelTreeSolve{A}) where {T<:AbstractFloat,A<:AbstractFloat}
     n = length(order)
+    fallback_rows = Int[]
+    deviations = T[]
     right = _modeltree_moments(A, length(regressors))
     right_objectives = fill(A(Inf), n - 1)
     # Subtracting a large prefix from total moments can round a small suffix
@@ -164,9 +167,9 @@ function _modeltree_scan(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{
         right.W >= min_leaf || continue
         objective = _modeltree_moment_objective!(work, right, A(lambda))
         if objective === nothing
-            right_rows = Int[rows[order[t]] for t in (k + 1):n]
-            leaf = fit_ridge_leaf(X, y, w, right_rows, regressors, lambda)
-            objective = _modeltree_objective(X, y, w, right_rows, leaf, lambda)
+            map!(r -> rows[r], resize!(fallback_rows, n - k), view(order, k+1:n))
+            leaf = fit_ridge_leaf(X, y, w, fallback_rows, regressors, lambda)
+            objective = _modeltree_objective(X, y, w, fallback_rows, leaf, lambda, deviations)
         end
         right_objectives[k] = objective
     end
@@ -179,9 +182,9 @@ function _modeltree_scan(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{
         isfinite(right_objectives[k]) && left.W >= min_leaf || continue
         left_objective = _modeltree_moment_objective!(work, left, A(lambda))
         if left_objective === nothing
-            left_rows = Int[rows[order[t]] for t in 1:k]
-            leaf = fit_ridge_leaf(X, y, w, left_rows, regressors, lambda)
-            left_objective = _modeltree_objective(X, y, w, left_rows, leaf, lambda)
+            map!(r -> rows[r], resize!(fallback_rows, k), view(order, 1:k))
+            leaf = fit_ridge_leaf(X, y, w, fallback_rows, regressors, lambda)
+            left_objective = _modeltree_objective(X, y, w, fallback_rows, leaf, lambda, deviations)
         end
         objective = A(left_objective) + right_objectives[k]
         if isfinite(objective) && objective < best_objective

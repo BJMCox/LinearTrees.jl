@@ -86,6 +86,17 @@ using StableRNGs
                 BigFloat(rate) / 3 * BigFloat(scale)^2)
             @test predictive(model, X).scale2 ≈ fill(expected, 2) rtol=3e-15
         end
+        # Squared leverage overflows for the extrapolation case and becomes
+        # subnormal for the strong-prior case. Final scales remain ordinary.
+        for (scale, precision, query) in ((1e-200, 0.01, 1e200), (1e200, 1e308, 0.5))
+            model = fit_continuous_tree(X, zeros(2); max_splits=0,
+                response_normalization=(center=0.0, scale=scale),
+                coefficient_precision=precision)
+            leverage = (1 + abs2(2BigFloat(query) - 1)) / (2 + BigFloat(precision))
+            expected = Float64(leverage * BigFloat(scale)^2 / 3)
+            marginal = predictive(model, reshape([query], :, 1); observation=false)
+            @test only(marginal.scale2) ≈ expected rtol=3e-15
+        end
     end
 
     @testset "Full search evaluates equal-dimension prior changes" begin

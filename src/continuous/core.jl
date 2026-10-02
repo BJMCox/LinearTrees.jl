@@ -370,14 +370,18 @@ function _posterior(B::Union{Matrix{Float64},Transpose{Float64,Matrix{Float64}}}
         noise_shape::Float64, noise_rate::Float64,
         workspace::Union{Nothing,CandidateWorkspace} = nothing)
     gram = B' * B
-    factor = cholesky(Symmetric(gram + coefficient_precision * I); check=false)
     scale = maximum(gram[i, i] for i in axes(gram, 1); init=0.0)
+    for i in axes(gram, 1)
+        gram[i, i] += coefficient_precision
+    end
+    factor = cholesky!(Symmetric(gram); check=false)
     if !issuccess(factor) || minimum(abs2(factor.U[i, i]) for i in axes(gram, 1)) <=
             sqrt(eps(Float64)) * scale
         return _posterior_precise(B, Y, coefficient_precision, noise_shape, noise_rate, scale)
     end
     precision = RidgePrecision(factor.U)
-    coef = precision \ (B' * Y)
+    coef = B' * Y
+    ldiv!(factor, coef)
     residual = if workspace === nothing
         Y - B * coef
     else
@@ -396,7 +400,7 @@ function _posterior(B::Union{Matrix{Float64},Transpose{Float64,Matrix{Float64}}}
              coefficient_precision * sum(abs2, view(coef, :, output))) / 2
     end
     common_score = size(B, 2) / 2 * log(coefficient_precision) -
-        sum(value -> log(abs(value)), diag(precision.R))
+        sum(i -> log(abs(precision.R[i, i])), axes(gram, 1))
     score = size(Y, 2) * common_score - shape * sum(log, rate)
     return Posterior(coef, precision, shape, rate, score)
 end

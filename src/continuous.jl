@@ -299,11 +299,19 @@ function predictive(model::ContinuousTree{Scalar}, X::AbstractMatrix;
         copyto!(view(location, rows, :), location_chunk)
         projected = transpose(post.precision.R) \ transpose(B)
         for (column, row) in enumerate(rows)
-            # The norm also avoids overflowing a squared projected coordinate.
-            leverage, exponent = frexp(hypot(norm(view(projected, :, column)), observation))
+            coordinates = view(projected, :, column)
+            squared = sum(abs2, coordinates) + observation
+            # Ordinary leverage needs no square root. Retain the scaled norm
+            # when squaring would overflow or lose subnormal coordinates.
+            leverage, exponent = if floatmin(Float64) <= squared < Inf
+                frexp(squared)
+            else
+                value, power = frexp(hypot(norm(coordinates), observation))
+                (value^2, 2power)
+            end
             for output in axes(scale2, 2)
                 factor, power = response_scale2[output]
-                scale2[row, output] = ldexp(factor * leverage^2, power + 2exponent)
+                scale2[row, output] = ldexp(factor * leverage, power + exponent)
             end
         end
     end

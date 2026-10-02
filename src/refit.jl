@@ -1,6 +1,6 @@
 # Fixed-partition affine ridge refits for scalar MSE trees.
 
-using LinearAlgebra: norm, qr
+using LinearAlgebra: norm, qr, LAPACK
 
 "One terminal region's full-response affine model and training feature bounds."
 struct RidgeLeaf{T}
@@ -102,6 +102,15 @@ function refit_centered_ratio(x::T, mean::T, scale::T) where {T<:AbstractFloat}
     return isfinite(difference) ? difference / scale : x / scale - mean / scale
 end
 
+_ridge_solve!(A::Matrix{T}, b::Vector{T}) where {T<:AbstractFloat} = qr(A) \ b
+
+function _ridge_solve!(A::Matrix{T}, b::Vector{T}) where {T<:Union{Float32,Float64}}
+    # The augmented ridge system has full column rank; the library QR solve
+    # can overwrite both owned arrays without retaining a factorization.
+    _, solution, _ = LAPACK.gels!('N', A, b)
+    return solution
+end
+
 "Solve one centered, scaled weighted ridge problem with an unpenalized intercept."
 function fit_ridge_leaf(X::Matrix{T}, y::Vector{T}, w::Vector{T},
         rows::Vector{Int}, features::Vector{Int}, lambda::T) where {T<:AbstractFloat}
@@ -137,7 +146,7 @@ function fit_ridge_leaf(X::Matrix{T}, y::Vector{T}, w::Vector{T},
     for c in 1:q
         A[length(rows) + c, c] = sqrt(lambda)
     end
-    standardized = qr(A) \ b
+    standardized = _ridge_solve!(A, b)
     slopes = standardized ./ scales
     intercept = ymin - sum(slopes .* means)
     return RidgeLeaf{T}(copy(features), slopes, intercept, xmin, xmax)
