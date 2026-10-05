@@ -6,6 +6,7 @@
 - Add continuous multivariate trees with pair interactions, shared output geometry, and conditional Student-t predictions.
 - Speed up continuous-tree fitting with sparse QR for larger sparse constraint systems and reuse of unchanged constraint bases.
 - Reduce temporary allocations in model-tree ridge solves and continuous posteriors.
+- Avoid repeated QR fits for near-affine model-tree responses by scoring corrected parent residuals.
 - Add exact, binned, and hybrid split searches with threaded fitting and prediction.
 - Support numeric and categorical table data, observation weights, StatsAPI, and MLJ models.
 - Add built-in and LossFunctions.jl-compatible losses, including multiclass softmax.

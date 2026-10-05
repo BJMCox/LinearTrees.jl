@@ -122,6 +122,28 @@ end
     @test predict(model, X) ≈ predict(reference, Float64.(X)) atol=0.02
 end
 
+@testset "near-affine model-tree scores retain child-constant regressors" begin
+    x = collect(range(-1.0, 1.0; length=40))
+    X = hcat(x, Float64.(x .> 0), fill(0.1, length(x)))
+    y = 1e9 .* x .+ 10 .* (x .> 0)
+    model = fit_model_tree(X, y; lambda=1e-20, min_leaf=5,
+        max_depth=1, split_penalty=0.0, truncate=false)
+    @test model.routing.nodes[1].threshold == x[20]
+    @test maximum(abs, predict(model, X) .- y) < 2e-6
+end
+
+@testset "near-affine model-tree scores retain overflow fallback" begin
+    X = reshape([-1e308, -0.99e308, 0.99e308, 1e308], :, 1)
+    w = [1.0, 1.0, 10.0, 10.0]
+    y = 1e-308 .* X[:, 1] .+ 1e-6 .* (X[:, 1] .> 0)
+    # The parent-centered predictor overflows for the negative observations.
+    # Weighted raw QR fits remain finite, including within each child.
+    model = fit_model_tree(X, y; weights=w, lambda=1e-20, min_leaf=1,
+        max_depth=1, split_penalty=0.0, truncate=false)
+    @test model.routing.nodes[1].threshold == X[2, 1]
+    @test predict(model, X) ≈ y atol=1e-14
+end
+
 @testset "model-tree exact split retains a tiny suffix weight" begin
     X = reshape([0.0, 1.0], :, 1)
     y = [0.0, 1.0]

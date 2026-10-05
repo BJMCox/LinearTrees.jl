@@ -71,6 +71,13 @@ on raw slopes is
 `lambda * diag(centered_covariance) / child_weight`, matching each child's
 weighted-RMS standardization. Each small system uses library Cholesky, with
 the existing augmented-QR leaf fit as a fallback for ill-conditioned systems.
+For nearly affine responses, the scan accumulates residuals from the parent
+linear fit and includes its slopes in the ridge penalty correction. This
+change of coefficient coordinates preserves the full-response objective
+while avoiding repeated QR fits caused by subtracting large, nearly equal
+response moments. Ordinary responses retain the original moment scores.
+Nonfinite residuals restore the original coordinates for the whole node,
+and inaccurate child scores still use augmented QR.
 The selected split is always refit with augmented QR; its verified penalty is
 computed as a norm of weighted slope deviations to avoid overflowing a large
 predictor variance before multiplying by a small slope. Per node, exact-search
@@ -79,3 +86,5 @@ to `p(n - 1)` thresholds costs `O(p n q³)` with `q` bounded by
 `max_features`. Binning reduces the number of systems solved, although it
 still scans the sorted rows for their moments. A scan stores `O(n + q²)`
 auxiliary values, including one right-child objective per boundary.
+Numerical fallbacks can still require repeated raw child fits and quadratic
+work in `n`.

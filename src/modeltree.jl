@@ -68,15 +68,17 @@ function _modeltree_update!(m::_ModelTreeMoments{A}, z::Matrix{A}, r::Int,
 end
 
 "Scratch space reused by child solves; it never owns accumulated moments."
-struct _ModelTreeSolve{T<:AbstractFloat}
+struct _ModelTreeSolve{T<:AbstractFloat,R}
     factor::Matrix{T}
     rhs::Vector{T}
     active::Vector{Int}
+    reference::R
 end
 
-_ModelTreeSolve(::Type{T}, q::Int) where {T<:AbstractFloat} =
-    _ModelTreeSolve(Matrix{T}(undef, q, q), Vector{T}(undef, q),
-        Vector{Int}(undef, q))
+function _ModelTreeSolve(::Type{T}, q::Int, reference) where {T<:AbstractFloat}
+    return _ModelTreeSolve(Matrix{T}(undef, q, q), Vector{T}(undef, q),
+        Vector{Int}(undef, q), reference)
+end
 
 "Child penalized ridge objective from centered covariance and cross moments."
 function _modeltree_moment_objective!(work::_ModelTreeSolve{T},
@@ -99,15 +101,23 @@ function _modeltree_moment_objective!(work::_ModelTreeSolve{T},
         work.active[nactive] = c
     end
     nactive == 0 && return max(zero(T), cYY)
+    baseline = cYY
     for b in 1:nactive
         j = work.active[b]
         work.rhs[b] = m.sxy[j] - m.sx[j] * (m.sy / W)
         for a in 1:b
             i = work.active[a]
             covariance = m.sxx[i, j] - m.sx[i] * m.sx[j] / W
-            work.factor[a, b] = a == b ? covariance + lambda * covariance / W : covariance
+            work.factor[a, b] = covariance
+        end
+        penalty = lambda * work.factor[b, b] / W
+        work.factor[b, b] += penalty
+        if work.reference !== nothing
+            baseline += abs2(sqrt(penalty) * work.reference[j])
+            work.rhs[b] -= penalty * work.reference[j]
         end
     end
+    isfinite(baseline) || return nothing
     # Leading views retain stride-one columns for the library factorization.
     A = Symmetric(view(work.factor, 1:nactive, 1:nactive), :U)
     F = cholesky!(A; check=false)
@@ -122,10 +132,12 @@ function _modeltree_moment_objective!(work::_ModelTreeSolve{T},
     rhs = view(work.rhs, 1:nactive)
     # b'A^-1 b = ||U'\b||² for A = U'U, so scoring needs only one solve.
     ldiv!(adjoint(F.U), rhs)
-    objective = cYY - dot(rhs, rhs)
+    # Translate slopes by the parent fit, including its ridge penalty. This
+    # avoids subtracting the full response scatter for near-affine targets.
+    objective = baseline - dot(rhs, rhs)
     # A small nonnegative difference can be as inaccurate as a negative one.
     # Rescore with QR before it can win against an accurately scored split.
-    tolerance = T(128) * eps(T) * abs(cYY)
+    tolerance = T(128) * eps(T) * abs(baseline)
     isfinite(objective) && objective > tolerance || return nothing
     return objective
 end
@@ -197,7 +209,8 @@ end
 
 "Best greedy split by penalized child fit, with final augmented-QR verification."
 function _modeltree_split(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{Int},
-        parent_objective::T, features::Vector{Int}, regressors::Vector{Int},
+        parent_leaf::RidgeLeaf{T}, parent_objective::T,
+        features::Vector{Int}, regressors::Vector{Int},
         lambda::T, min_leaf::T, split_penalty::T,
         search::Union{ExactSearch,BinnedSearch}) where {T<:AbstractFloat}
     # Penalized child objectives are nonnegative, so no split can improve this.
@@ -211,15 +224,32 @@ function _modeltree_split(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector
     # Each observation's regressors are contiguous during moment accumulation.
     z = Matrix{A}(undef, length(regressors), length(rows))
     centered_y = Vector{A}(undef, length(rows))
+    scatter = zero(A)
     for (r, i) in enumerate(rows)
         for (c, j) in enumerate(regressors)
             z[c, r] = A(X[i, j]) - means[c]
         end
         centered_y[r] = A(y[i]) - ymean
+        scatter += A(w[i]) * abs2(centered_y[r])
+    end
+    # Shift only near-affine nodes: ordinary scores need no penalty correction.
+    reference = nothing
+    if !isempty(regressors) && A(parent_objective) < sqrt(eps(A)) * scatter
+        reference = A.(parent_leaf.slopes)
+        for r in eachindex(rows), c in eachindex(reference)
+            centered_y[r] = muladd(-reference[c], z[c, r], centered_y[r])
+        end
+    end
+    # Use one coordinate system for the whole node, including extreme units.
+    if reference !== nothing && (!all(isfinite, reference) || !all(isfinite, centered_y))
+        reference = nothing
+        for (r, i) in enumerate(rows)
+            centered_y[r] = A(y[i]) - ymean
+        end
     end
     best = nothing
     best_objective = A(parent_objective) - A(split_penalty)
-    work = _ModelTreeSolve(A, length(regressors))
+    work = _ModelTreeSolve(A, length(regressors), reference)
     for j in features
         order = sortperm(rows; by=i -> X[i, j], alg=MergeSort)
         ncuts = length(order) - 1
@@ -284,7 +314,7 @@ function _modeltree_grow!(ctx::_ModelTreeContext{T}, rows::Vector{Int}, depth::I
     append!(ctx.leaf_index, (0, 0))
     W = sum(ctx.w[i] for i in rows)
     if depth < ctx.max_depth && W >= 2 * ctx.min_leaf
-        split = _modeltree_split(ctx.X, ctx.y, ctx.w, rows, objective,
+        split = _modeltree_split(ctx.X, ctx.y, ctx.w, rows, leaf, objective,
             ctx.features, ctx.regressors, ctx.lambda, ctx.min_leaf,
             ctx.split_penalty, ctx.search)
         if split !== nothing
