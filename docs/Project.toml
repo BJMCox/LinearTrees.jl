@@ -4,3 +4,4 @@ LinearTrees = "8dcaa25b-be43-4b0a-960a-aaf476051ed8"
 
 [compat]
 Documenter = "1.19.0"
+LinearTrees = "0.0.1"
