@@ -136,6 +136,8 @@ OPENBLAS_NUM_THREADS=1 julia --project=bench -t1 -e \
 A smoke run can restrict `datasets=(:airfoil,)`, `seeds=301:301`, and `samples=1`.
 To profile model-tree split scoring with CPU and allocation flame graphs, run
 `LT_PROFILE_CASES=9 julia --project=bench -t1 bench/profile.jl`.
+Case 10 preserves a near-affine regression fixture: a small step beside a large
+linear signal, with exact and refined searches. Select it with `LT_PROFILE_CASES=10`.
 PProf progress stays in artifact logs. `LT_PROFILE_OUT` selects the output directory.
 Record Julia/package versions, CPU, Julia/BLAS thread counts, checkout revision
 and source changes with every result file. Compare paired per-seed outcomes and

@@ -114,6 +114,11 @@ open(joinpath(OUT, "jet.txt"), "w") do io
         (typeof(refitted), Matrix{Float64}, Vector{Float64}, Matrix{Float64}, Vector{Float64})))
     push!(counts, "fit_model_tree" => section(io, "fit_model_tree", fit_model_tree,
         (Matrix{Float64}, Vector{Float64})))
+    for T in (Float32, Float64)
+        push!(counts, "fit_model_tree/binned/$T" => section(io, "fit_model_tree binned $T",
+            (Xa, ya) -> fit_model_tree(Xa, ya; split_search = BinnedSearch(nbins = 32), nthreads = 4),
+            (Matrix{T}, Vector{T})))
+    end
     push!(counts, "shap" => section(io, "shap", shap, (typeof(tree), Matrix{Float64})))
     push!(counts, "shap!" => section(io, "shap!", shap!,
         (Matrix{Float64}, Vector{Bool}, typeof(tree), Matrix{Float64})))

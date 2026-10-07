@@ -47,6 +47,16 @@ beside each feature's best coarse cut. Binning can change the chosen split
 and has no quality-error bound.
 `HybridSearch` and categorical predictors are not supported here.
 
+`nthreads=Threads.nthreads()` limits parallel feature scans for binned searches
+on large nodes with sufficiently sparse bin edges and refinement. Exact
+searches, dense binned searches, and small nodes stay serial: many small linear
+algebra calls can contend inside BLAS when scanned concurrently. Each worker
+owns its scan buffers, and tied scores retain the supplied feature order.
+Tree growth remains serial. Use `nthreads=1` when an outer loop already runs
+independent fits in parallel. With `t` workers, moment-scan buffers grow from
+`O(n + q²)` to `O(t(n + q²))`, in addition to the shared centered predictors.
+QR fallback can also allocate `O(n q + q²)` temporary storage per active worker.
+
 The fit uses positive-weight rows only. Zero-weight rows do not affect split
 selection, ridge fitting, or stored feature bounds. Scaling all weights
 changes the effective ridge and split penalties; their values should be
@@ -84,7 +94,7 @@ predictor variance before multiplying by a small slope. Per node, exact-search
 sorting costs `O(p n log n)`, moment updates cost `O(p n q²)`, and scoring up
 to `p(n - 1)` thresholds costs `O(p n q³)` with `q` bounded by
 `max_features`. Binning reduces the number of systems solved, although it
-still scans the sorted rows for their moments. A scan stores `O(n + q²)`
-auxiliary values, including one right-child objective per boundary.
+still scans the sorted rows for their moments. Without QR fallback, a scan
+stores `O(n + q²)` auxiliary values, including one right-child objective per boundary.
 Numerical fallbacks can still require repeated raw child fits and quadratic
 work in `n`.

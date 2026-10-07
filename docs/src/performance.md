@@ -76,11 +76,13 @@ julia --threads=auto --project
 
 ```julia
 tree = fit_tree(X, y; nthreads = 4)
+model = fit_model_tree(X, y; split_search = BinnedSearch(), nthreads = 4)
 yhat = predict(tree, Xnew; nthreads = 4)
 ```
 
 The default is `Threads.nthreads()`. Small workloads remain serial where
 threading would add overhead. More threads can increase scratch-memory use.
+Model trees parallelize binned feature scans on large nodes; exact scans stay serial.
 Use `nthreads = 1` when an outer loop already parallelizes independent fits.
 
 ## Reuse prediction storage
@@ -153,7 +155,9 @@ JULIA_NUM_THREADS=1 LT_PROFILE_CASES=7,8 \
 
 Cases 7 and 8 fit a 30-round boosted model and a four-split continuous tree
 on fixed synthetic data. Case 9 compares exact, refined, and coarse model-tree
-fits. Their inputs come from StableRNGs seeds. Each case
+fits. Case 10 checks near-affine scoring with a small step beside a large linear
+signal. Cases 1–9 use StableRNGs seeds; case 10 preserves its original Xoshiro
+fixture, so compare it on the same Julia version. Each case
 records a BenchmarkTools median, total bytes and allocation count, a CPU
 profile, and a sampled allocation profile. The PProf flame graphs and their
 logs share the chosen output directory. Raw sampled bytes in an allocation
