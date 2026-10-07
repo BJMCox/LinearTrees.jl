@@ -207,12 +207,91 @@ function _modeltree_scan(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{
     return best_k, best_objective
 end
 
+"One feature chunk's best split; its order vector belongs to that scan."
+struct _ModelTreeCandidate{T<:AbstractFloat,A<:AbstractFloat}
+    feature::Int
+    threshold::T
+    order::Vector{Int}
+    cut::Int
+    objective::A
+end
+
+"Scan a feature chunk with private solve buffers and read-only node coordinates."
+function _modeltree_scan_features(X::Matrix{T}, y::Vector{T}, w::Vector{T},
+        rows::Vector{Int}, features, regressors::Vector{Int}, z::Matrix{A},
+        centered_y::Vector{A}, reference, lambda::T, min_leaf::T,
+        search::Union{ExactSearch,BinnedSearch}, best_objective::A) where {T<:AbstractFloat,A<:AbstractFloat}
+    best = nothing
+    work = _ModelTreeSolve(A, length(regressors), reference)
+    for j in features
+        order = sortperm(rows; by=i -> X[i, j], alg=MergeSort)
+        ncuts = length(order) - 1
+        ncuts < 1 && continue
+        eligible = trues(ncuts)
+        edges = Int[]
+        if search isa BinnedSearch && length(rows) > search.nbins
+            edges = _modeltree_bin_edges(X, rows, order, j, search.nbins)
+            fill!(eligible, false)
+            eligible[edges] .= true
+        end
+        cut, objective = _modeltree_scan(X, y, w, rows, regressors, z,
+            centered_y, order, j, eligible, lambda, min_leaf, work)
+        if search isa BinnedSearch && search.refine && !isempty(edges) && cut > 0
+            where = searchsortedfirst(edges, cut)
+            lo = where == 1 ? 1 : edges[where - 1] + 1
+            hi = where == length(edges) ? ncuts : edges[where + 1]
+            eligible[lo:hi] .= true
+            cut, objective = _modeltree_scan(X, y, w, rows, regressors, z,
+                centered_y, order, j, eligible, lambda, min_leaf, work)
+        end
+        if cut > 0 && objective < best_objective
+            best_objective = objective
+            best = _ModelTreeCandidate(j, X[rows[order[cut]], j], order, cut, objective)
+        end
+    end
+    return best
+end
+
+"Reduce contiguous feature chunks in supplied order, including tied scores."
+function _modeltree_best_features(X::Matrix{T}, y::Vector{T}, w::Vector{T},
+        rows::Vector{Int}, features::Vector{Int}, regressors::Vector{Int}, z::Matrix{A},
+        centered_y::Vector{A}, reference, lambda::T, min_leaf::T,
+        search::Union{ExactSearch,BinnedSearch}, bound::A, nthreads::Int) where {T<:AbstractFloat,A<:AbstractFloat}
+    workers = min(nthreads, length(features))
+    # Frequent small LAPACK solves can contend inside BLAS during exact scans.
+    # Binned scans amortize those calls over longer moment-accumulation loops.
+    if workers == 1 || search isa ExactSearch || length(rows) < 4096 ||
+            length(rows) ÷ search.nbins < 64 || (search.refine && search.nbins < 32)
+        return _modeltree_scan_features(X, y, w, rows, features, regressors, z,
+            centered_y, reference, lambda, min_leaf, search, bound)
+    end
+    results = Vector{Union{Nothing,_ModelTreeCandidate{T,A}}}(undef, workers)
+    # Chunk ownership does not depend on the thread a task currently runs on.
+    # @threads joins every worker before returning, including on failure.
+    Threads.@threads for worker in 1:workers
+        lo = fld((worker - 1) * length(features), workers) + 1
+        hi = fld(worker * length(features), workers)
+        results[worker] = _modeltree_scan_features(X, y, w, rows,
+            view(features, lo:hi), regressors, z, centered_y, reference,
+            lambda, min_leaf, search, bound)
+    end
+    best = nothing
+    best_objective = bound
+    for candidate in results
+        if candidate !== nothing && candidate.objective < best_objective
+            best = candidate
+            best_objective = candidate.objective
+        end
+    end
+    return best
+end
+
 "Best greedy split by penalized child fit, with final augmented-QR verification."
 function _modeltree_split(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector{Int},
         parent_leaf::RidgeLeaf{T}, parent_objective::T,
         features::Vector{Int}, regressors::Vector{Int},
         lambda::T, min_leaf::T, split_penalty::T,
-        search::Union{ExactSearch,BinnedSearch}) where {T<:AbstractFloat}
+        search::Union{ExactSearch,BinnedSearch}, nthreads::Int) where {T<:AbstractFloat}
     # Penalized child objectives are nonnegative, so no split can improve this.
     parent_objective <= split_penalty && return nothing
     # Narrow moments cannot resolve near-affine residuals and would repeatedly
@@ -247,35 +326,9 @@ function _modeltree_split(X::Matrix{T}, y::Vector{T}, w::Vector{T}, rows::Vector
             centered_y[r] = A(y[i]) - ymean
         end
     end
-    best = nothing
-    best_objective = A(parent_objective) - A(split_penalty)
-    work = _ModelTreeSolve(A, length(regressors), reference)
-    for j in features
-        order = sortperm(rows; by=i -> X[i, j], alg=MergeSort)
-        ncuts = length(order) - 1
-        ncuts < 1 && continue
-        eligible = trues(ncuts)
-        edges = Int[]
-        if search isa BinnedSearch && length(rows) > search.nbins
-            edges = _modeltree_bin_edges(X, rows, order, j, search.nbins)
-            fill!(eligible, false)
-            eligible[edges] .= true
-        end
-        cut, objective = _modeltree_scan(X, y, w, rows, regressors, z,
-            centered_y, order, j, eligible, lambda, min_leaf, work)
-        if search isa BinnedSearch && search.refine && !isempty(edges) && cut > 0
-            where = searchsortedfirst(edges, cut)
-            lo = where == 1 ? 1 : edges[where - 1] + 1
-            hi = where == length(edges) ? ncuts : edges[where + 1]
-            eligible[lo:hi] .= true
-            cut, objective = _modeltree_scan(X, y, w, rows, regressors, z,
-                centered_y, order, j, eligible, lambda, min_leaf, work)
-        end
-        if cut > 0 && objective < best_objective
-            best_objective = objective
-            best = (feature=j, threshold=X[rows[order[cut]], j], order, cut)
-        end
-    end
+    best = _modeltree_best_features(X, y, w, rows, features, regressors, z,
+        centered_y, reference, lambda, min_leaf, search,
+        A(parent_objective) - A(split_penalty), nthreads)
     best === nothing && return nothing
     left = Int[rows[best.order[t]] for t in 1:best.cut]
     right = Int[rows[best.order[t]] for t in (best.cut + 1):length(rows)]
@@ -301,6 +354,7 @@ struct _ModelTreeContext{T<:AbstractFloat,S<:Union{ExactSearch,BinnedSearch}}
     min_leaf::T
     split_penalty::T
     search::S
+    nthreads::Int
     nodes::Vector{Node{T,T}}
     leaf_index::Vector{Int}
     leaves::Vector{RidgeLeaf{T}}
@@ -316,7 +370,7 @@ function _modeltree_grow!(ctx::_ModelTreeContext{T}, rows::Vector{Int}, depth::I
     if depth < ctx.max_depth && W >= 2 * ctx.min_leaf
         split = _modeltree_split(ctx.X, ctx.y, ctx.w, rows, leaf, objective,
             ctx.features, ctx.regressors, ctx.lambda, ctx.min_leaf,
-            ctx.split_penalty, ctx.search)
+            ctx.split_penalty, ctx.search, ctx.nthreads)
         if split !== nothing
             left = _modeltree_grow!(ctx, split.left, depth + 1,
                 split.leftleaf, split.left_objective)
@@ -340,7 +394,7 @@ end
     fit_model_tree(X, y; features=1:size(X, 2), max_features=8, lambda=1.0,
                    max_depth=4, min_leaf=8, split_penalty=1.0,
                    split_search=ExactSearch(), weights=nothing,
-                   truncate=true) -> RefitTree
+                   truncate=true, nthreads=Threads.nthreads()) -> RefitTree
 
 Fit a scalar-MSE tree with full-response ridge linear leaves. At each node,
 `ExactSearch()` evaluates every eligible distinct-value threshold by the
@@ -351,11 +405,14 @@ also form the bounded leaf-regressor basis. The intercept is unpenalized.
 Each accepted split improves the augmented-QR-verified objective by more than
 `split_penalty`. This is greedy parametric partitioning, not a calibrated
 statistical significance test.
+`nthreads` limits parallel feature scans for binned searches on large nodes.
+Exact searches, dense binned searches, small nodes, and tree growth stay serial.
+Tied split selection follows the supplied feature order regardless of thread count.
 """
 function fit_model_tree(X::AbstractMatrix, y::AbstractVector;
         features=1:size(X, 2), max_features=8, lambda=1.0, max_depth=4,
         min_leaf=8, split_penalty=1.0, split_search::SplitSearch=ExactSearch(),
-        weights=nothing, truncate::Bool=true)
+        weights=nothing, truncate::Bool=true, nthreads::Integer=Threads.nthreads())
     n, p = size(X)
     length(y) == n || throw(DimensionMismatch("X has $n rows, y has $(length(y))"))
     features isa AbstractVector && all(j -> j isa Integer, features) ||
@@ -392,7 +449,8 @@ function fit_model_tree(X::AbstractMatrix, y::AbstractVector;
     rows = collect(eachindex(yv))
     regressors = chosen[1:min(length(chosen), Int(max_features))]
     ctx = _ModelTreeContext(Xm, yv, wv, chosen, regressors, λ, Int(max_depth),
-        minimum_weight, penalty, split_search, Node{T,T}[], Int[], RidgeLeaf{T}[])
+        minimum_weight, penalty, split_search, Int(clamp(nthreads, 1, Threads.nthreads())),
+        Node{T,T}[], Int[], RidgeLeaf{T}[])
     root_leaf = fit_ridge_leaf(Xm, yv, wv, rows, regressors, λ)
     root_objective = _modeltree_objective(Xm, yv, wv, rows, root_leaf, λ)
     _modeltree_grow!(ctx, rows, 0, root_leaf, root_objective)

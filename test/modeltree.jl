@@ -2,6 +2,67 @@ using Statistics: mean
 using LinearAlgebra: qr, I
 using StableRNGs: StableRNG
 
+@testset "model-tree workers preserve weighted splits and supplied-order ties" begin
+    rng = StableRNG(7102026)
+    data = round.(rand(rng, 4608, 5); digits=2)
+    X = hcat(data[:, 1:2], data[:, 1], data[:, 3:5])
+    y = ifelse.(X[:, 1] .< 0.5, 1 .+ 2X[:, 2] .- X[:, 4],
+        -1 .- 3X[:, 2] .+ 2X[:, 4]) .+ 0.1randn(rng, size(X, 1))
+    weights = 0.5 .+ rand(rng, length(y))
+    weights[1:31:end] .= 0
+    # More than 4096 positive-weight rows enter real worker scans. Identical
+    # columns 3 and 1 live in different chunks with four workers.
+    options = (; features=[3, 1, 6, 2, 5, 4], max_features=4,
+        max_depth=2, min_leaf=20, split_penalty=0.0, weights)
+    topology(model) = [(n.feature, n.threshold) for n in model.routing.nodes]
+    for T in (Float32, Float64), search in (ExactSearch(),
+            BinnedSearch(nbins=32, refine=false), BinnedSearch(nbins=32),
+            BinnedSearch(), BinnedSearch(nbins=8),
+            BinnedSearch(nbins=4096, refine=false))
+        Xt, yt = T.(X), T.(y)
+        serial = fit_model_tree(Xt, yt; options..., split_search=search, nthreads=1)
+        threaded = fit_model_tree(Xt, yt; options..., split_search=search, nthreads=4)
+        @test serial.routing.nodes[1].feature == 3
+        @test topology(threaded) == topology(serial)
+        @test predict(threaded, Xt) ≈ predict(serial, Xt)
+    end
+    options = (; options..., split_search=BinnedSearch(nbins=32))
+    serial = fit_model_tree(X, y; options..., nthreads=1)
+    # Calls from outer tasks must own separate scratch and support nesting.
+    tasks = [Threads.@spawn fit_model_tree(X, y; options..., nthreads=4) for _ in 1:2]
+    @test all(model -> topology(model) == topology(serial), fetch.(tasks))
+    clamped = fit_model_tree(X, y; options..., nthreads=0)
+    @test topology(clamped) == topology(serial)
+end
+
+@testset "model-tree workers retain residual coordinates and raw QR fallback" begin
+    rng = StableRNG(7102027)
+    X = randn(rng, 4608, 4)
+    y = 1e8X[:, 1] .+ 0.3 .* (X[:, 2] .> 0.1)
+    for search in (BinnedSearch(nbins=32, refine=false), BinnedSearch(nbins=32))
+        options = (; lambda=1e-12, max_depth=1, min_leaf=20,
+            split_penalty=0.0, split_search=search, truncate=false)
+        serial = fit_model_tree(X, y; options..., nthreads=1)
+        threaded = fit_model_tree(X, y; options..., nthreads=4)
+        @test length(threaded.leaves) == 2
+        @test threaded.routing.nodes == serial.routing.nodes
+        @test maximum(abs, predict(threaded, X) .- predict(serial, X)) < 1e-6
+    end
+    x = repeat([-1e308, -0.99e308, 0.99e308, 1e308]; inner=1024)
+    X = hcat(x, x)
+    y = 1e-308 .* x .+ 1e-6 .* (x .> 0)
+    weights = repeat([1.0, 1.0, 10.0, 10.0]; inner=1024)
+    # Parent centering overflows, while raw weighted child QR remains finite.
+    options = (; features=[2, 1], max_features=1, lambda=1e-20, max_depth=1,
+        min_leaf=1024, split_penalty=0.0, weights, truncate=false,
+        split_search=BinnedSearch(nbins=32))
+    serial = fit_model_tree(X, y; options..., nthreads=1)
+    threaded = fit_model_tree(X, y; options..., nthreads=typemax(Int))
+    @test threaded.routing.nodes[1].feature == 2
+    @test threaded.routing.nodes == serial.routing.nodes
+    @test predict(threaded, X) ≈ y atol=1e-12
+end
+
 @testset "greedy model tree finds a change in slope" begin
     x = collect(range(-2.0, 2.0; length=81))
     X = hcat(x, sin.(2 .* x))

@@ -3,8 +3,7 @@
 #     julia --project=bench -t auto bench/profile.jl        # threaded pass
 #     julia --project=bench -t 1    bench/profile.jl        # serial pass
 #
-# Case data lives in `bench/cases.jl`, all from `StableRNG` seeds, so two runs
-# on one machine profile the same trees.
+# Case data lives in `bench/cases.jl`, with fixed seeds for repeated runs.
 #
 # Each case gets a warm-up call, a `BenchmarkTools` median, a CPU profile
 # (flat text plus a PProf flame graph), and an allocation profile. PProf output
@@ -19,6 +18,7 @@
 #
 # Set `LT_PROFILE_CASES=7,8` to run only boosting and continuous fits.
 # Set `LT_PROFILE_CASES=9` to profile exact, refined, and coarse model-tree fits.
+# Set `LT_PROFILE_CASES=10` to profile near-affine model-tree scoring.
 # Set `LT_PROFILE_OUT` to write artifacts outside the checkout.
 
 using Profile, PProf, BenchmarkTools, Printf, LinearAlgebra
@@ -135,7 +135,7 @@ function run_case(name, f; label = name)
     return nothing
 end
 
-wanted = haskey(ENV, "LT_PROFILE_CASES") ? parse.(Int, split(ENV["LT_PROFILE_CASES"], ",")) : collect(1:9)
+wanted = haskey(ENV, "LT_PROFILE_CASES") ? parse.(Int, split(ENV["LT_PROFILE_CASES"], ",")) : collect(1:10)
 
 println("Julia ", VERSION, "  threads=", NT, "  BLAS=", BLAS.get_num_threads(),
     "  CPU=", Sys.cpu_info()[1].model)
@@ -185,6 +185,14 @@ if 9 in wanted
             ("coarse", BinnedSearch(nbins = 24, refine = false)))
         run_case("case9-modeltree-$name", () -> fit_model_tree(X9, y9;
             max_depth = 4, min_leaf = 12, lambda = 1.0, split_penalty = 0.0,
+            split_search = search))
+    end
+end
+if 10 in wanted
+    X10, y10 = case10_data()
+    for (name, search) in (("exact", ExactSearch()), ("refined", BinnedSearch(nbins = 32)))
+        run_case("case10-near-affine-$name", () -> fit_model_tree(X10, y10;
+            max_depth = 1, min_leaf = 20, lambda = 1e-12, split_penalty = 0.0,
             split_search = search))
     end
 end

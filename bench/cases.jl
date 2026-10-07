@@ -1,10 +1,10 @@
 # Shared case data for the profiling pass. `bench/profile.jl` includes this.
 #
-# Every case builds its data from a `StableRNG` seed, so two runs on the same
-# machine profile the same tree. Sizes follow the P1 brief.
+# Fixed seeds keep repeated runs on the same Julia version comparable.
 
 using LinearTrees, StableRNGs, StaticArrays, Statistics
 using CategoricalArrays, DataFrames
+using Random: Xoshiro
 
 "Case 1 data: MSE, n = 200_000, p = 20, step target, max_depth = 12."
 function case1_data()
@@ -99,5 +99,13 @@ function case9_data()
     y = ifelse.(X[:, 1] .< 0.5,
         1 .+ 2X[:, 2] .- X[:, 3], -1 .- 3X[:, 2] .+ 2X[:, 3]) .+
         0.4X[:, 4] .+ 0.2randn(rng, size(X, 1))
+    return X, y
+end
+
+"Case 10 data: a small jump beside a large linear signal, n = 600, p = 3."
+function case10_data()
+    # Preserve the fixture used to measure the near-affine QR fallback fix.
+    X = randn(Xoshiro(2102026), 600, 6)[:, 1:3]
+    y = 1e8X[:, 1] .+ 0.3 .* (X[:, 2] .> 0.1)
     return X, y
 end
