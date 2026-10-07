@@ -21,7 +21,7 @@ with all four fields split apart and by 20% with `weight` alone split out. The
 paths are at most one element per tree level and stay in L1, so there is no
 locality to win, while every extra array costs another bounds check per read
 (this package forbids `@inbounds`) and another `resize!`/`copyto!` pair in
-`copyinto!`, which runs three times per split node per row.
+`copyinto!`, which runs up to three times per split node per row.
 """
 struct PathElem
     feature::Int
@@ -39,9 +39,9 @@ two child recursions, so each depth owns its own pair; the own-path is dead
 once `attribute_constant!` returns, so one scratch per depth is enough. The
 root's path sits outside the depth arrays because `visit!` at depth 1 already
 claims `hot[1]`/`cold[1]`. Grows lazily: `visit!` calls `ensure_depth!` on
-entry, and the first row of a `row_blocks` block already recurses into both
-children at every split, so it drives the pool to the tree's full depth
-before any later row needs it.
+entry. Both children are visited, so the first row reaches the full depth.
+Each path buffer grows only when needed; a later row can first use an own-path
+buffer when earlier rows had zero own terms.
 
 One pool per `row_blocks` block: it is mutated for every row, so it must never
 be shared across tasks.
@@ -211,14 +211,18 @@ function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem},
         xc = tree.truncate ? min(max(xraw, n.xmin), n.xmax) : xraw
         val = n.lcoef * n.xmean + n.lintercept
         own = n.lcoef * (xc - n.xmean)
-        prev = findfirst(e -> e.feature == j, path)
-        ownpath = copyinto!(pool.own[depth], path)
-        if prev === nothing
-            extend!(ownpath, 0.0, 1.0, j)
-        else
-            extend!(unwind!(ownpath, prev), 0.0, path[prev].onefrac, j)
+        if !iszero(own)
+            prev = findfirst(e -> e.feature == j, path)
+            ione = prev === nothing ? 1.0 : path[prev].onefrac
+            # A cold ancestor on j requires j absent, while own requires it
+            # present: this finite term is zero for every coalition.
+            if ione != 0 || !all(isfinite, own)
+                ownpath = copyinto!(pool.own[depth], path)
+                prev === nothing || unwind!(ownpath, prev)
+                extend!(ownpath, 0.0, ione, j)
+                attribute_constant!(φ, ownpath, own, row)
+            end
         end
-        attribute_constant!(φ, ownpath, own, row)
         visit!(φ, tree, x, row, n.left, path, pool, depth + 1, acc + val)
         return nothing
     end
@@ -248,8 +252,12 @@ function visit!(φ, tree::LinearTree{T,V}, x, row, k, path::Vector{PathElem},
     # cover. That also makes ownpath no child's path, so it cannot ride down
     # in acc; pushing it down would cost each leaf one path per ancestor split
     # feature instead.
-    ownpath = extend!(copyinto!(pool.own[depth], path), 0.0, ione, j)
-    attribute_constant!(φ, ownpath, hotown, row)
+    # Skip zero games, but keep the old arithmetic for nonfinite increments.
+    # The repeated-feature unwind above still serves both child paths.
+    if !iszero(hotown) && (ione != 0 || !all(isfinite, hotown))
+        ownpath = extend!(copyinto!(pool.own[depth], path), 0.0, ione, j)
+        attribute_constant!(φ, ownpath, hotown, row)
+    end
     # hotpath and coldpath are already the paths the hot/cold recursion needs,
     # so they are passed straight into visit! rather than rebuilt there --
     # shap_recurse! would otherwise refill a buffer and extend! a second time

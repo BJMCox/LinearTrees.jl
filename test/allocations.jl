@@ -52,8 +52,8 @@ end
 
 @testset "shap recursion does not allocate per row after warm-up" begin
     # Fails the moment a `copy(path)` (or any other fresh Vector{PathElem})
-    # comes back into `visit!`: the first row grows the pool, so a second row
-    # can only allocate if the recursion builds paths instead of reusing them.
+    # comes back into `visit!`: these rows exercise the same buffer sizes.
+    # A skipped zero own term can leave its buffer to grow on a later row.
     function shap_recurse_alloc()
         rng = StableRNG(31)
         X = rand(rng, 600, 4)

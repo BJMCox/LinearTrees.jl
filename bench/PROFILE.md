@@ -799,3 +799,38 @@ rest of this pass did. Nothing committed.
 
 `max_lin_chain = 8` on case 1 is also a no-op: the fit reaches a chain of at
 most eight anyway, so it grows the same 3808 nodes in the same 1125 ms.
+
+## SHAP zero-game pruning (2026-10-07)
+
+Against `47d2be0`, skip an own-feature attribution when its increment is zero
+in every output coordinate. Also skip a finite increment when an ancestor
+requires that feature absent: the own term requires it present, so their
+product is zero for every coalition. Keep nonfinite increments on the existing
+arithmetic path. Child paths, repeated-feature unwinding, and constants do not
+change. No model cache, path-layout change, or new dependency is needed.
+
+Julia 1.13.1, Apple M4 Pro, one Julia thread and one BLAS thread. Sequential
+BenchmarkTools runs use the same fitted models and query matrices. Medians
+use five samples for case 6 and 51 for the smaller cases, with one evaluation
+per sample. Fits are outside the timed calls.
+
+| Full call | Base ms | Pruned ms | Speedup |
+| --- | ---: | ---: | ---: |
+| Case 6 `shap`, 10000 rows | 2824.33 | 2079.08 | 1.36x |
+| Case 6 `shap!`, 10000 rows | 2789.09 | 2082.73 | 1.34x |
+| Depth-10 categorical, 4000 rows | 10.58 | 9.00 | 1.18x |
+| Softmax, 4000 rows | 2.07 | 1.38 | 1.50x |
+| LIN chain, 4000 rows | 1.05 | 1.00 | approximately flat |
+| Boosted MSE, 3000 rows | 10.35 | 9.11 | 1.14x |
+| Boosted Logistic, 3000 rows | 10.44 | 9.06 | 1.15x |
+| Boosted Softmax, 3000 rows | 10.23 | 8.43 | 1.21x |
+
+Separate nine-sample case-6 trials took 2804 ms on the base, 2619 ms with only
+the zero-increment guard, 2346 ms with only the repeated-feature guard, and
+2128 ms with both. The combined change retains both measured gains.
+
+Case-6 `shap` allocations fall from 153 to 149 and bytes from 845680 to 844224.
+CPU and full-sampling allocation profiles confirm less own-path work and
+buffer growth. These are allocated bytes, not peak memory. A zero first row
+can defer own-buffer growth to a later nonzero row; warmed buffers still reuse
+their capacity. LIN-only workloads have no meaningful runtime gain.
