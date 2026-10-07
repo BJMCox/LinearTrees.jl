@@ -93,6 +93,44 @@ end
     end
 end
 
+@testset "vector SHAP matches coalitions with repeated split and LIN features" begin
+    V = SVector{2,Float64}
+    N(; kw...) = Node{Float64,V}(; kw...)
+    nodes = [
+        N(feature = 1, threshold = 0.0, left = 2, right = 3, cover = 10.0,
+            lintercept = V(0.5, -0.2), rintercept = V(-0.3, 0.7), model = PCON),
+        N(feature = 2, threshold = 0.0, left = 4, right = 5, cover = 4.0,
+            lcoef = V(1.0, 0.0), rcoef = V(0.0, -2.0),
+            lintercept = V(0.1, 0.4), rintercept = V(-0.6, 0.2), model = PLIN),
+        N(feature = 1, threshold = 0.5, left = 6, right = 7, cover = 6.0,
+            lcoef = V(2.0, 0.0), rcoef = V(0.0, 1.0),
+            lintercept = V(0.3, -0.1), rintercept = V(-0.4, 0.6), model = PLIN),
+        N(feature = 1, left = 8, right = 8, cover = 1.0,
+            lcoef = V(0.0, 3.0), lintercept = V(0.2, -0.5), model = LIN),
+        N(lintercept = V(1.0, -1.0), cover = 3.0),
+        N(lintercept = V(-0.2, 0.5), cover = 2.0),
+        N(lintercept = V(0.7, 0.4), cover = 4.0),
+        N(lintercept = V(-0.3, 0.9), cover = 1.0),
+    ]
+    t = LinearTree{Float64,V,Softmax{3}}(nodes, UInt64[], Softmax(3),
+        V(-100, -100), V(100, 100), zero(V), 2, false)
+    # At the mean every own term is zero. Away from it, one vector coordinate
+    # can be zero while the other is not. Repeated features reach cold paths.
+    X = [-1.0 -1.0; 0.0 0.0; 1.0 -1.0]
+    res = shap(t, X)
+    for i in axes(X, 1)
+        x = X[i, :]
+        v0, v1, v2, v12 = (game_value(t, x, S) for S in
+            (Set{Int}(), Set([1]), Set([2]), Set([1, 2])))
+        for k in 1:2
+            expected = [(v1[k] - v0[k] + v12[k] - v2[k]) / 2,
+                (v2[k] - v0[k] + v12[k] - v1[k]) / 2]
+            @test res.values[i, :, k] ≈ expected atol = 1e-12
+        end
+        @test res.base ≈ v0 atol = 1e-12
+    end
+end
+
 @testset "tree shap! validates buffers before changing them" begin
     X = reshape(collect(1.0:20.0), 10, 2)
     t = fit_tree(X, X[:, 1]; max_depth = 0)
