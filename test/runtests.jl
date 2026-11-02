@@ -12,16 +12,30 @@ using LinearAlgebra
     # Base broadcast and vcat that 1.12 infers cleanly, so the lint gate runs on 1.12+.
     if VERSION >= v"1.12"
         @testset "Code linting (JET.jl)" begin
-            # Julia 1.13's generic QR/norm analysis reaches impossible Union{}
-            # views and iterate(::Nothing) inside these two stdlib functions.
-            # Standalone QR/norm calls reproduce them. Check concrete refits below.
-            ignored = v"1.13" <= VERSION < v"1.14" ?
-                (JET.AnyFrameMethod(LinearAlgebra.generic_norm2),
-                 JET.AnyFrameMethod(LinearAlgebra.norm_recursive_check)) : ()
-            JET.test_package(LinearTrees; ignored_modules = ignored)
+            # Abstract package scans misreport valid Base.supertype/getproperty
+            # calls on Julia 1.14 prereleases. Keep the broad scan on stable Julia
+            # and check concrete public calls on every compiler tested here.
+            if isempty(VERSION.prerelease)
+                # Julia 1.13's generic QR/norm analysis reaches impossible Union{}
+                # views and iterate(::Nothing) inside these two stdlib functions.
+                # Standalone QR/norm calls reproduce them. Check concrete refits below.
+                ignored =
+                    v"1.13" <= VERSION < v"1.14" ?
+                    (
+                        JET.AnyFrameMethod(LinearAlgebra.generic_norm2),
+                        JET.AnyFrameMethod(LinearAlgebra.norm_recursive_check),
+                    ) : ()
+                JET.test_package(LinearTrees; ignored_modules = ignored)
+            end
             for T in (Float32, Float64)
-                JET.test_opt(refit_leaves,
-                    (LinearTree{T,T,MSE}, Matrix{T}, Vector{T}); target_modules = (LinearTrees,))
+                JET.test_call(fit_tree, (Matrix{T}, Vector{T}))
+                JET.test_call(fit_boost, (Matrix{T}, Vector{T}))
+                JET.test_call(predict, (LinearTree{T,T,MSE}, Matrix{T}))
+                JET.test_opt(
+                    refit_leaves,
+                    (LinearTree{T,T,MSE}, Matrix{T}, Vector{T});
+                    target_modules = (LinearTrees,),
+                )
             end
         end
     end
