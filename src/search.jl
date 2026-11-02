@@ -11,7 +11,7 @@ struct ExactSearch <: SplitSearch end
 """
     BinnedSearch(; nbins=64, refine=true)
 
-Approximate numeric split search for scalar-score losses. Build at most `nbins`
+Approximate numeric split search for scalar or vector scores. Build at most `nbins`
 equal-count bins within each node, keeping tied values together. Evaluate bin
 edges using sufficient statistics of the original feature values and responses.
 Weights retain their frequency meaning. Categorical search remains exact.
@@ -21,8 +21,9 @@ to the winning coarse split. No refinement runs when a constant or unsplit
 line wins. Nodes with at most `nbins` rows use exact search.
 
 This can change the chosen model and predictions. It does not guarantee the
-exact optimum or an error bound. `nbins` must be at least two. Vector-score
-losses, including `Softmax`, require `ExactSearch()`.
+exact optimum or an error bound. `nbins` must be at least two. For `Softmax`,
+the search uses the same diagonal-Hessian surrogate as `ExactSearch()` and
+selects one shared split by summing the coordinate objectives.
 """
 struct BinnedSearch <: SplitSearch
     nbins::Int
@@ -115,7 +116,7 @@ function score_splits(best::Candidate{T,V}, candidates, rule, n, dmin) where {T,
 end
 
 function scan_feature(xs::AbstractVector{T}, zs::AbstractVector{V}, hs, ws,
-        rule, min_leaf, dmin, search::BinnedSearch, buf::BinSums{T,V}) where {T,V<:Real}
+        rule, min_leaf, dmin, search::BinnedSearch, buf::BinSums{T,V}) where {T<:Real,V}
     m = length(xs)
     m <= search.nbins && return scan_feature(xs, zs, hs, ws, rule, min_leaf, dmin)
     offset = fitting_offset(first(xs), last(xs))

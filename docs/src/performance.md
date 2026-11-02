@@ -15,12 +15,11 @@ rows before changing the search policy.
 | Method | Numeric thresholds | Categorical features | Softmax |
 |:--|:--|:--|:--|
 | [`ExactSearch`](@ref) | All eligible thresholds in each node | Supported | Supported |
-| [`BinnedSearch`](@ref) | Node-local bins, with optional refinement | Exact categorical search | Unsupported |
+| [`BinnedSearch`](@ref) | Node-local bins, with optional refinement | Exact categorical search | Supported |
 | [`HybridSearch`](@ref) | Global bins, then local refinement | Unsupported | Unsupported |
 
-Use exact search as the reference. Try local or hybrid search for scalar-score
-fits where threshold search is expensive. Even `Softmax(2)` uses vector scores
-and requires exact search.
+Use exact search as the reference. Try local bins when threshold search is
+expensive, including multiclass fits. Hybrid search supports scalar scores.
 
 ```@example searches
 using LinearTrees, Random, Statistics
@@ -47,6 +46,20 @@ values, so binning restricts thresholds without replacing features by bin center
 Refinement searches the two bins beside the winning coarse boundary. It does
 not run when a constant or unsplit line wins. Small nodes use exact search.
 Set `refine = false` to omit refinement.
+
+For `Softmax`, all score coordinates share one split. Candidate scores sum
+their coordinate objectives using the same diagonal-Hessian approximation as
+exact search. This also supports vector-valued `Frozen` targets and multiclass
+boosting. Bins count stored rows, while fitting and minimum leaf sizes use
+frequency weights. Replicating weighted rows can therefore change the bins.
+
+```@example searches
+classes = [row[1] > 0.5 ? 1 : row[2] > 0.5 ? 2 : 3 for row in eachrow(X)]
+multiclass = fit_tree(X[train, :], classes[train], Softmax(3);
+    split_search = BinnedSearch(nbins = 32), max_depth = 4)
+probabilities = predict(multiclass, X[valid, :])
+mean(argmax.(eachrow(probabilities)) .== classes[valid])
+```
 
 ### Global bins with local refinement
 

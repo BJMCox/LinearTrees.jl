@@ -250,7 +250,7 @@ must be finite. Use [`predict`](@ref) for response-scale predictions and
 - `categorical=Int[]`: columns containing positive integer category codes.
 - `rule=BIC()`: node selection rule. See [`BIC`](@ref) and [`GainRule`](@ref).
 - `split_search=ExactSearch()`: numeric threshold search. [`BinnedSearch`](@ref)
-  and [`HybridSearch`](@ref) offer approximate search for scalar-score losses.
+  supports scalar or vector scores. [`HybridSearch`](@ref) supports scalar scores.
 - `max_depth=12`: maximum branching depth. Unsplit `LIN` nodes add no depth.
 - `min_fit=10`: minimum total row weight for another model-selection step.
 - `min_leaf=5`: minimum total row weight on each side of a split.
@@ -295,8 +295,8 @@ function _fit_tree(X::AbstractMatrix, y::AbstractVector, loss::Loss, workspace;
     nthreads = clamp(nthreads, 1, Threads.nthreads())
     T = float(promote_type(eltype(X), target_eltype(loss, y)))
     V = coeftype(loss, T)
-    V <: Real || split_search isa ExactSearch ||
-        throw(ArgumentError("$(typeof(split_search)) requires scalar coefficients; use ExactSearch() with $(typeof(loss))"))
+    V <: Real || split_search isa Union{ExactSearch,BinnedSearch} ||
+        throw(ArgumentError("$(typeof(split_search)) requires scalar coefficients; use ExactSearch() or BinnedSearch() with $(typeof(loss))"))
     n, p = size(X)
     feats = sort!(unique!(collect(Int, features)))
     isempty(feats) && throw(ArgumentError("features must not be empty"))
@@ -371,8 +371,8 @@ function _fit_tree(Xm::Matrix{T}, yv::Vector{Y}, w::Vector{T}, loss::L, rule::R,
         presort::Union{Nothing,AbstractMatrix{Int32}}, workspace;
         max_depth, min_fit, min_leaf, min_sum_hessian, max_lin_chain, truncate, truncation_factor,
         nthreads, niter, split_search::S) where {T,V,Y,L<:Loss,R<:SelectionRule,S<:SplitSearch}
-    V <: Real || split_search isa ExactSearch ||
-        throw(ArgumentError("$(typeof(split_search)) requires scalar coefficients; use ExactSearch() with $(typeof(loss))"))
+    V <: Real || split_search isa Union{ExactSearch,BinnedSearch} ||
+        throw(ArgumentError("$(typeof(split_search)) requires scalar coefficients; use ExactSearch() or BinnedSearch() with $(typeof(loss))"))
     n, p = size(Xm)
     f0 = V(initscore(loss, yv, w))
     # every `scorebound` method returns bounds in its own working type (often

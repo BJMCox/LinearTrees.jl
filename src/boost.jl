@@ -185,8 +185,8 @@ function fit_boost(X::AbstractMatrix, y::AbstractVector, loss::Loss = MSE();
     all(isfinite, Xm) || throw(ArgumentError("X contains NaN or Inf"))
     n = length(keep)
     V = coeftype(loss, T)
-    V <: Real || split_search isa ExactSearch ||
-        throw(ArgumentError("$(typeof(split_search)) requires scalar coefficients; use ExactSearch() with $(typeof(loss))"))
+    V <: Real || split_search isa Union{ExactSearch,BinnedSearch} ||
+        throw(ArgumentError("$(typeof(split_search)) requires scalar coefficients; use ExactSearch() or BinnedSearch() with $(typeof(loss))"))
     f0 = V(initscore(loss, yv, w))
     lo, hi = truncate ? map(V, scorebound(loss, yv)) : infbounds(V)
     F = fill(f0, n)
