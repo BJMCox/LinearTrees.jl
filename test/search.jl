@@ -126,7 +126,7 @@ using StableRNGs, StaticArrays, Random, LinearAlgebra
         target = [(SVector{2}(z[i, :]), SVector{2}(h[i, :])) for i in eachindex(x)]
         coarse = collect(8:8:56)
 
-        function raw_fit(kind, boundary)
+        function raw_fit(x, z, h, w, kind, boundary)
             left = x .<= x[boundary]
             A = if kind == PCON
                 hcat(left, .!left)
@@ -152,7 +152,7 @@ using StableRNGs, StaticArrays, Random, LinearAlgebra
         end
 
         for kind in (PCON, BLIN, PLIN)
-            coarse_fits = [raw_fit(kind, boundary) for boundary in coarse]
+            coarse_fits = [raw_fit(x, z, h, w, kind, boundary) for boundary in coarse]
             winner = coarse_fits[argmin(getproperty.(coarse_fits, :objective))]
             for refine in (false, true)
                 boundaries =
@@ -165,7 +165,7 @@ using StableRNGs, StaticArrays, Random, LinearAlgebra
                         (kind != PLIN || 5 <= boundary <= 59),
                     boundaries,
                 )
-                fits = [raw_fit(kind, boundary) for boundary in boundaries]
+                fits = [raw_fit(x, z, h, w, kind, boundary) for boundary in boundaries]
                 expected = fits[argmin(getproperty.(fits, :objective))].prediction
                 model = fit_tree(
                     reshape(x, :, 1),
