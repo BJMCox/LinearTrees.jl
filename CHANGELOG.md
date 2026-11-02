@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Support `BinnedSearch` for multiclass trees, multiclass boosting, and vector-valued `Frozen` targets.
+
 ## 0.0.2 — 2026-11-02
 
 - Add continuous multivariate trees with pair interactions, shared output geometry, and conditional Student-t predictions.

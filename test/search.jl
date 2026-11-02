@@ -1,4 +1,4 @@
-using StableRNGs
+using StableRNGs, StaticArrays, Random, LinearAlgebra
 
 @testset "split search" begin
     rng = StableRNG(401)
@@ -105,13 +105,157 @@ using StableRNGs
         bn = fit_boost(bigX, bigy; rng = rngn, boostkw...)
         @test all(a.nodes == b.nodes for (a, b) in zip(b1.trees, bn.trees))
         @test rand(rng1) == rand(rngn)
+
+        classes = [row[1] > 0.43 ? 1 : row[2] > 0.57 ? 2 : 3 for row in eachrow(bigX)]
+        serial =
+            fit_tree(bigX, classes, Softmax(3); split_search = search, max_depth = 2, nthreads = 1)
+        threaded = fit_tree(bigX, classes, Softmax(3); split_search = search, max_depth = 2)
+        @test predict(serial, bigX) ≈ predict(threaded, bigX)
+        rng1, rngn = Xoshiro(1104), Xoshiro(1104)
+        b1 = fit_boost(bigX, classes, Softmax(3); rng = rng1, nthreads = 1, boostkw...)
+        bn = fit_boost(bigX, classes, Softmax(3); rng = rngn, boostkw...)
+        @test predict(b1, bigX) ≈ predict(bn, bigX)
+        @test rand(rng1) == rand(rngn)
     end
 
-    @testset "scalar-target support boundary" begin
-        classes = [X[i, 1] > 0.5 ? 1 : X[i, 2] > 0.5 ? 2 : 3 for i in axes(X, 1)]
-        @test_throws ArgumentError fit_tree(X, classes, Softmax(3); split_search = BinnedSearch())
-        V = typeof(LinearTrees.coeftype(Softmax(3), Float64)(0, 0))
-        target = [(V(y[i], -y[i]), V(1, 1)) for i in eachindex(y)]
-        @test_throws ArgumentError fit_tree(X, target, Frozen{V}(); split_search = BinnedSearch())
+    @testset "vector bins match independent weighted regression" begin
+        x = collect(range(-2.0, 2.0; length = 64))
+        z = hcat(@.(0.7x + 2(x > 0.3) + 0.2sin(5x)), @.(-1.1x - 1.5(x > -0.4) + 0.1cos(3x)))
+        h = hcat(@.(0.4 + exp(x / 2)), @.(2.1 - 0.5sin(x)))
+        w = Float64.(repeat([1, 3, 2, 4], 16))
+        target = [(SVector{2}(z[i, :]), SVector{2}(h[i, :])) for i in eachindex(x)]
+        coarse = collect(8:8:56)
+
+        function raw_fit(x, z, h, w, kind, boundary)
+            left = x .<= x[boundary]
+            A = if kind == PCON
+                hcat(left, .!left)
+            elseif kind == BLIN
+                hcat(x, ones(length(x)), max.(x .- x[boundary], 0))
+            else
+                hcat(x .* left, left, x .* .!left, .!left)
+            end
+            prediction = zeros(size(z))
+            objective = 0.0
+            for k in axes(z, 2)
+                mass = w .* h[:, k]
+                rootmass = sqrt.(mass)
+                beta = (A .* rootmass) \ (z[:, k] .* rootmass)
+                prediction[:, k] = A * beta
+                residual = z[:, k] - prediction[:, k]
+                objective += sum(mass .* residual .^ 2)
+                for rows in (left, .!left)
+                    prediction[rows, k] .+= sum(mass[rows] .* residual[rows]) / sum(mass[rows])
+                end
+            end
+            return (; boundary, objective, prediction)
+        end
+
+        for kind in (PCON, BLIN, PLIN)
+            coarse_fits = [raw_fit(x, z, h, w, kind, boundary) for boundary in coarse]
+            winner = coarse_fits[argmin(getproperty.(coarse_fits, :objective))]
+            for refine in (false, true)
+                boundaries =
+                    refine ?
+                    union(coarse, max(1, winner.boundary-7):min(63, winner.boundary+8)) : coarse
+                filter!(
+                    boundary ->
+                        sum(w[1:boundary]) >= 5 &&
+                        sum(w[(boundary+1):end]) >= 5 &&
+                        (kind != PLIN || 5 <= boundary <= 59),
+                    boundaries,
+                )
+                fits = [raw_fit(x, z, h, w, kind, boundary) for boundary in boundaries]
+                expected = fits[argmin(getproperty.(fits, :objective))].prediction
+                model = fit_tree(
+                    reshape(x, :, 1),
+                    target,
+                    Frozen{SVector{2,Float64}}();
+                    weights = w,
+                    split_search = BinnedSearch(; nbins = 8, refine),
+                    rule = MinDeviance((kind,)),
+                    max_depth = 1,
+                    min_leaf = 5,
+                    truncate = false,
+                )
+                observed = reduce(hcat, score(model, reshape(x, :, 1)))'
+                @test observed ≈ expected rtol=1e-10 atol=1e-10
+            end
+        end
+    end
+
+    @testset "binned binary softmax matches logistic" begin
+        bx = reshape(collect(range(-2.0f0, 2.0f0; length = 120)), :, 1)
+        by = Float32[mod(i, 7) < 2 + 3(bx[i] > 0.25) for i in eachindex(bx)]
+        for search in (BinnedSearch(nbins = 8, refine = false), BinnedSearch(nbins = 8))
+            logistic = fit_tree(bx, by, Logistic(); split_search = search, max_depth = 3)
+            softmax =
+                fit_tree(bx, Int.(2 .- by), Softmax(2); split_search = search, max_depth = 3)
+            @test predict(softmax, bx)[:, 1] ≈ predict(logistic, bx) rtol=2e-5 atol=2e-6
+        end
+    end
+
+    @testset "multiclass trees and boosting" begin
+        rng = Xoshiro(1102)
+        mx = rand(rng, 600, 3)
+        label(row) = row[1] > 0.43 ? 1 : row[2] > 0.57 ? 2 : 3
+        my = label.(eachrow(mx))
+        testx = rand(rng, 200, 3)
+        testy = label.(eachrow(testx))
+        for search in (BinnedSearch(nbins = 12, refine = false), BinnedSearch(nbins = 12))
+            tree = fit_tree(mx, my, Softmax(3); split_search = search, max_depth = 3)
+            boost = fit_boost(
+                mx,
+                my,
+                Softmax(3);
+                split_search = search,
+                nrounds = 5,
+                max_depth = 2,
+                rng = Xoshiro(1103),
+            )
+            for model in (tree, boost)
+                p = predict(model, testx)
+                @test maximum(abs, sum(p; dims = 2) .- 1) < 1e-12
+                @test count(==(true), argmax.(eachrow(p)) .== testy) > 180
+            end
+        end
+        small = mx[1:30, :]
+        exact = fit_tree(small, my[1:30], Softmax(3); split_search = ExactSearch())
+        fallback =
+            fit_tree(small, my[1:30], Softmax(3); split_search = BinnedSearch(nbins = 32))
+        @test predict(exact, testx) ≈ predict(fallback, testx)
+
+        levels = reshape(repeat(Float64.(1:6), inner = 12), :, 1)
+        classes = repeat([1, 2, 3, 1, 2, 3], inner = 12)
+        weights = repeat([1.0, 3.0, 2.0], 24)
+        exactcat = fit_tree(levels, classes, Softmax(3); weights, categorical = [1])
+        binnedcat = fit_tree(
+            levels,
+            classes,
+            Softmax(3);
+            weights,
+            categorical = [1],
+            split_search = BinnedSearch(nbins = 2),
+        )
+        @test predict(binnedcat, levels) ≈ predict(exactcat, levels)
+    end
+
+    @testset "vector bins retain small suffixes and zero curvature" begin
+        V = SVector{3,Float64}
+        fx = reshape([0.0, 0.0, 0.0, 1.0], :, 1)
+        target = [(V(0, 5, 999), V(1e16, 1, 0)) for _ = 1:3]
+        push!(target, (V(100, -20, -999), V(1, 1e16, 0)))
+        model = fit_tree(
+            fx,
+            target,
+            Frozen{V}();
+            split_search = BinnedSearch(nbins = 2),
+            weights = [4.0, 1.0, 2.0, 5.0],
+            rule = GainRule(lambda_slope = 0, lambda_intercept = 0),
+            min_fit = 1,
+            min_leaf = 1,
+            max_depth = 1,
+        )
+        @test score(model, fx) ≈ [V(0, 5, 0), V(0, 5, 0), V(0, 5, 0), V(100, -20, 0)] atol=1e-10
     end
 end

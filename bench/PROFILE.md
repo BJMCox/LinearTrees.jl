@@ -834,3 +834,41 @@ CPU and full-sampling allocation profiles confirm less own-path work and
 buffer growth. These are allocated bytes, not peak memory. A zero first row
 can defer own-buffer growth to a later nonzero row; warmed buffers still reuse
 their capacity. LIN-only workloads have no meaningful runtime gain.
+
+## Multiclass binned search
+
+`bench/multiclass_search.jl` compares exact, 64-bin coarse, and 64-bin refined
+searches on fixed train/test data with piecewise linear class logits. Run it
+through the benchmark environment:
+
+```julia
+include("bench/multiclass_search.jl")
+rows = bench_multiclass_search()
+```
+
+The 2026-11-02 measurement uses Julia 1.13.3, Apple M4 Pro, one Julia thread,
+one OpenBLAS thread, 6000 training rows, six predictors, and 4000 test rows.
+Seeds 1103–1105 each use seven warmed timing samples. Tree depth is five.
+Boosting uses eight rounds of depth-three trees. Test labels do not tune settings.
+
+Each cell gives the median exact/approximate runtime ratio across the three
+seeds, followed by the observed seed range. These synthetic cases do not
+establish a general accuracy ranking or a portable speed guarantee.
+
+| Classes | Coarse tree | Refined tree | Coarse boost | Refined boost |
+| ---: | ---: | ---: | ---: | ---: |
+| 3 | 3.70x (3.63–3.83) | 3.73x (3.55–3.78) | 2.42x (1.99–3.53) | 2.20x (1.90–3.56) |
+| 8 | 5.92x (4.38–10.23) | 6.21x (4.81–11.07) | 3.92x (3.63–3.99) | 3.20x (2.48–3.37) |
+| 16 | 1.93x (1.85–2.98) | 1.98x (1.95–2.77) | 2.28x (1.30–2.66) | 2.13x (1.41–2.25) |
+
+Across all 18 tree/boost fixtures, refined search changes held-out log loss
+by −0.000978 to +0.001749 and multiclass Brier score by −0.000553 to +0.000279.
+Coarse search changes these metrics by −0.001599 to +0.003654 and −0.000816 to
++0.000996. Lower scores are better. Refinement does not guarantee better
+held-out quality on each fixture.
+
+Exact-search quality matches the v0.0.2 baseline. The original coordinatewise
+linear fits and diagonal Softmax surrogate are unchanged. Runtime falls by
+scoring fewer thresholds. Allocation volume remains close to exact search,
+with extra storage for vector bin moments. The harness returns timing quartiles,
+allocated bytes, allocation counts, and both held-out metrics for each fit.
