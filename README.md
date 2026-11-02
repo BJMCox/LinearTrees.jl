@@ -10,6 +10,17 @@ Supports regression, classification, categorical features, weighted fitting, and
 Also includes continuous multivariate regression trees with conditional Student-t predictive uncertainty.
 Ridge leaf refits, linear-child split selection, validation pruning, and finite Bayesian model averaging provide additional fitting choices.
 
+Install the package on Julia 1.10 or later:
+
+```julia
+using Pkg
+Pkg.add("LinearTrees")
+```
+
+Continuous trees, leaf refits, and pruning require version 0.0.2 or later.
+Until that version is registered, install the development version with
+`Pkg.add(url="https://github.com/BJMCox/LinearTrees.jl")`.
+
 ```julia
 using LinearTrees, Random
 

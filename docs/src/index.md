@@ -15,13 +15,17 @@ exact and approximate split search, local coefficients, and SHAP values.
 
 ## Installation
 
-LinearTrees requires Julia 1.10 or later. Install the development version from
-GitHub in your project environment:
+LinearTrees requires Julia 1.10 or later. Install the registered package in
+your project environment:
 
 ```julia
 using Pkg
-Pkg.add(url = "https://github.com/BJMCox/LinearTrees.jl")
+Pkg.add("LinearTrees")
 ```
+
+Continuous trees, leaf refits, and pruning require version 0.0.2 or later.
+Until that version is registered, install the development version with
+`Pkg.add(url = "https://github.com/BJMCox/LinearTrees.jl")`.
 
 ## A first model
 
