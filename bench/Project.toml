@@ -31,7 +31,7 @@ DecisionTree = "0.12.4"
 DelimitedFiles = "1"
 Distributions = "0.25"
 Downloads = "1.4"
-EvoTrees = "0.19"
+EvoTrees = "0.19, 0.20"
 # JET minor releases support different Julia compiler versions.
 JET = "0.9, 0.10, 0.11, 0.12, 0.13"
 MLJModelInterface = "1.12.1"
